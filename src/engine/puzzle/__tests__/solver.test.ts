@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { TerrainCell } from '../../../core/types';
 import { LevelDefSchema } from '../../../core/schema';
 import { parseLevelGeometry, type Level3D } from '../grid';
-import { solveGeometry, replaySolution, solverSupports, validateAllLevels, validateLevel } from '../solver';
+import { solveGeometry, replaySolution, solutionMoveDirs, solverSupports, validateAllLevels, validateLevel } from '../solver';
 import { AREA_LEVELS } from '../../../data/levels/areas';
 import { ENDLESS_TUNING, generateEndlessFloor, generateEndlessRun } from '../../../data/levels/endless';
 import { DEFAULT_PUZZLE_RULE_SET } from '../rules';
@@ -280,6 +280,23 @@ describe('solver —— 主线 12 关离线校验（ST6 硬门槛）', () => {
         expect(r.solutionMoves, `${r.levelId} 解路 ${r.solutionMoves} 步应 ≤ 2★线 ${lv.parSteps[1]}`).toBeLessThanOrEqual(lv.parSteps[1]);
       }
     }
+  });
+
+  it('solutionMoveDirs 展开序列长度与 replaySolution 一致（自动演示用）', { timeout: 120_000 }, () => {
+    const lv = AREA_LEVELS.find((l) => l.id === 'level-sb-01');
+    expect(lv).toBeDefined();
+    if (lv === undefined) return;
+    const parsed = parseLevelGeometry(lv);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const solved = solveGeometry(parsed.geometry);
+    expect(solved.solvable).toBe(true);
+    const planned = solutionMoveDirs(parsed.geometry, solved.steps);
+    expect(planned.ok).toBe(true);
+    if (!planned.ok) return;
+    const replay = replaySolution(parsed.geometry, solved.steps);
+    expect(replay.ok).toBe(true);
+    expect(planned.dirs.length).toBe(replay.moves);
   });
 
   it('单关校验入口 validateLevel 与批量结果一致', () => {

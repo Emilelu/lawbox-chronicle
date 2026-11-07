@@ -618,6 +618,87 @@ function walkPath(
   return undefined;
 }
 
+/**
+ * 解路 → 完整按键方向序列（先走到发力位，再推）。
+ * 与 replaySolution 同一套走位/实体模拟，供自动演示（autoplay）逐格驱动 store.move。
+ * 纯函数；返回的 dirs 从关卡出生点开始回放。
+ */
+export function solutionMoveDirs(
+  geometry: LevelGeometry,
+  steps: readonly SolveStep[],
+): { readonly ok: true; readonly dirs: readonly Dir[] } | { readonly ok: false; readonly error: string } {
+  const rules = DEFAULT_PUZZLE_RULE_SET;
+  let player = { ...geometry.playerSpawn };
+  let chests = geometry.chestSpawns.map((c) => ({ ...c }));
+  let enemies = geometry.enemySpawns.map((c) => ({ ...c }));
+  const altarKeys = new Set(geometry.altarSpawns.map((a) => `${a.x},${a.y}`));
+  const dirs: Dir[] = [];
+
+  const chestAt = (x: number, y: number): boolean => chests.some((c) => c.x === x && c.y === y);
+  const enemyAt = (x: number, y: number): boolean => enemies.some((e) => e.x === x && e.y === y);
+  const blockedAt = (x: number, y: number): boolean =>
+    chestAt(x, y) ||
+    enemyAt(x, y) ||
+    altarKeys.has(`${x},${y}`) ||
+    (() => {
+      const t = geometry.terrain[y]?.[x];
+      return t === undefined || t === 1;
+    })();
+
+  const ctx: TurnContext = {
+    geometry,
+    planeShifted: false,
+    rules,
+    phaseCharges: 0,
+    detonationsLeft: 0,
+  };
+
+  for (const step of steps) {
+    const path = walkPath(geometry, blockedAt, player, step.stand, geometry.width, geometry.height);
+    if (path === undefined) return { ok: false, error: `玩家无法走到发力位 (${step.stand.x},${step.stand.y})` };
+    for (const dir of path) {
+      const r = resolvePlayerAction(ctx, buildEntities(player, chests, enemies, geometry.altarSpawns), player, { type: 'move', dir });
+      if (!r.ok) return { ok: false, error: `走位失败：${dir} @ (${player.x},${player.y}) → ${r.reason}` };
+      const p = r.entities.find((e) => e.kind === 'player');
+      if (p === undefined) return { ok: false, error: '走位后玩家丢失' };
+      player = { x: p.x, y: p.y };
+      chests = r.entities.filter((e) => e.kind === 'chest').map((e) => ({ x: e.x, y: e.y }));
+      enemies = r.entities.filter((e) => e.kind === 'enemy').map((e) => ({ x: e.x, y: e.y }));
+      dirs.push(dir);
+    }
+    const r2 = resolvePlayerAction(ctx, buildEntities(player, chests, enemies, geometry.altarSpawns), player, { type: 'move', dir: step.dir });
+    if (!r2.ok) return { ok: false, error: `推动失败：${step.dir} @ (${player.x},${player.y}) → ${r2.reason}` };
+    const p2 = r2.entities.find((e) => e.kind === 'player');
+    if (p2 === undefined) return { ok: false, error: '推动后玩家丢失' };
+    player = { x: p2.x, y: p2.y };
+    chests = r2.entities.filter((e) => e.kind === 'chest').map((e) => ({ x: e.x, y: e.y }));
+    enemies = r2.entities.filter((e) => e.kind === 'enemy').map((e) => ({ x: e.x, y: e.y }));
+    dirs.push(step.dir);
+  }
+
+  return { ok: true, dirs };
+}
+
+/**
+ * 从当前玩家位置走到目标格的最短方向序列（只走位、不推）。
+ * 供自动演示按「当前位置」逐步重规划：剧情/战斗打断后也能自愈。
+ */
+export function walkDirs(
+  geometry: LevelGeometry,
+  player: Vec2,
+  blockedPoints: readonly Vec2[],
+  target: Vec2,
+): { readonly ok: true; readonly dirs: readonly Dir[] } | { readonly ok: false; readonly error: string } {
+  const blockedKeys = new Set(blockedPoints.map((p) => `${p.x},${p.y}`));
+  const blockedAt = (x: number, y: number): boolean => {
+    if (blockedKeys.has(`${x},${y}`)) return true;
+    const t = geometry.terrain[y]?.[x];
+    return t === undefined || t === 1;
+  };
+  const path = walkPath(geometry, blockedAt, player, target, geometry.width, geometry.height);
+  return path === undefined ? { ok: false, error: `无法走到 (${target.x},${target.y})` } : { ok: true, dirs: path };
+}
+
 /* ============================== 解路回放验证 =============================== */
 
 /**

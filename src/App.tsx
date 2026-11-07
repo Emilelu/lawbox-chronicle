@@ -26,6 +26,7 @@ import { MetaTerminal } from './input/MetaTerminal';
 import { ErrorBoundary } from './input/ErrorBoundary';
 import { useKeyActions } from './input/useKeyActions';
 import { PlaneInvertOverlay } from './view/ui/PlaneInvertOverlay';
+import { AutoPlayLayer } from './demo/autoPlay';
 // 收集器随模块加载自动安装（bus 计数 / store 镜像 / 成就重评）
 import './archive/statsCollector';
 import './archive/logbook';
@@ -48,6 +49,8 @@ export default function App() {
       <MetaTerminal />
       <BGMController />
       <PlaneInvertOverlay />
+      {/* 自动演示：URL ?autoplay=1 时启用（默认不渲染任何内容） */}
+      <AutoPlayLayer />
     </ErrorBoundary>
   );
 }
