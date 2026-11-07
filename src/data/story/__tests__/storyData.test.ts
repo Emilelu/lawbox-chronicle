@@ -1,0 +1,592 @@
+/**
+ * 剧本数据侧单测：
+ *  - 全量剧本静态体检（无悬空边/缺入口 —— K15 的数据侧断言）；
+ *  - 四天使模板保真（台词顺序差异 + 姐妹锁）；
+ *  - 作者谜题（两组答案 / 全角宽容 / 重试提示 / 弱点绑定）；
+ *  - BOSS 三幕（秒杀数值 700999314 / 分身封顶 64 / 护盾调参 / 通关成就）；
+ *  - 隐藏关全链路（作弊码链 → Base64 → 命运三武装 → 真结局 / 伪结局）；
+ *  - 越界四方向规则与跨表引用（卡/武器/敌人 id 与 data 层对齐）。
+ */
+
+import { describe, expect, it } from 'vitest';
+import {
+  IDLE_STORY_RUNTIME,
+  advanceStory,
+  chooseStory,
+  resolveBattleResult,
+  startStory,
+  submitStoryInput,
+  validateScript,
+  type StoryEffect,
+  type StoryRuntimeState,
+  type StoryScriptDef,
+} from '../../../engine/story/interpreter';
+import { queryTrigger, GATE_MAKEUP_SCRIPTS, type TriggerContext } from '../../../engine/story/triggers';
+import {
+  ANGEL_PARAMS,
+  ANGEL_SCRIPTS,
+  ANGEL_TRIGGER_RULES,
+  ANGEL_FEATHER_SCRIPT,
+} from '../angels';
+import {
+  AUTHOR_PUZZLE_ANSWERS,
+  AUTHOR_PUZZLE_SCRIPT,
+  AUTHOR_PUZZLE_SOLVER,
+  AUTHOR_TRIGGER_RULES,
+  BOSS_ATTACK_AFTER_PUZZLE,
+  AUTHOR_HINT_SCRIPT,
+  normalizePuzzleInput,
+  resolveBossWeakness,
+} from '../authorPuzzle';
+import {
+  BOSS_ACTS_SCRIPT,
+  BOSS_BATTLE_TUNING,
+  BOSS_SLAUGHTER_DAMAGE,
+  BOSS_TRIGGER_RULES,
+  shadowCount,
+} from '../bossActs';
+import {
+  GARBAGE_KILLER,
+  HIDDEN_GAME_SCRIPT,
+  HIDDEN_GAME_SOLVERS,
+  decodeHiddenHint,
+  runMetaTerminalCommand,
+} from '../hiddenGame';
+import {
+  EAST_LANDING_POS,
+  OUTSKIRT_CHALLENGE_LAYERS,
+  OUTSKIRT_SCRIPTS,
+  OUTSKIRT_TRIGGER_RULES,
+} from '../outskirts';
+import { CARDS } from '../../gacha';
+import { WEAPONS } from '../../weapons';
+import { ENEMIES } from '../../enemies';
+
+/* ============================ 剧本总注册表 ================================ */
+
+const ALL_SCRIPTS: readonly StoryScriptDef[] = [
+  ...ANGEL_SCRIPTS,
+  ANGEL_FEATHER_SCRIPT,
+  AUTHOR_PUZZLE_SCRIPT,
+  AUTHOR_HINT_SCRIPT,
+  BOSS_ACTS_SCRIPT,
+  HIDDEN_GAME_SCRIPT,
+  ...OUTSKIRT_SCRIPTS,
+  ...GATE_MAKEUP_SCRIPTS,
+];
+
+const ALL_SCRIPT_IDS = new Set(ALL_SCRIPTS.map((s) => s.id));
+
+function findScript(id: string): StoryScriptDef {
+  const found = ALL_SCRIPTS.find((s) => s.id === id);
+  expect(found, `剧本 ${id} 应存在`).toBeTruthy();
+  return found as StoryScriptDef;
+}
+
+/** 连续 advance 直到离开 dialogue 阶段（返回最后一次的效果，供守卫/结局断言） */
+function walk(script: StoryScriptDef, runtime: StoryRuntimeState): { state: StoryRuntimeState; effects: StoryEffect[] } {
+  let cur = runtime;
+  let lastEffects: StoryEffect[] = [];
+  for (let i = 0; i < 128; i += 1) {
+    if (cur.phase !== 'dialogue') return { state: cur, effects: lastEffects };
+    const step = advanceStory([script], cur);
+    cur = step.state;
+    lastEffects = [...step.effects];
+  }
+  return { state: cur, effects: lastEffects };
+}
+
+/* ============================== 静态体检 ================================== */
+
+describe('剧本数据 —— 静态体检（K15 数据侧断言）', () => {
+  it('所有剧本无悬空边、入口存在', () => {
+    for (const script of ALL_SCRIPTS) {
+      expect(validateScript(script), `${script.id} 应无结构问题`).toEqual([]);
+    }
+  });
+
+  it('剧本 id 无重复', () => {
+    expect(ALL_SCRIPTS.length).toBe(ALL_SCRIPT_IDS.size);
+  });
+
+  it('所有触发规则的 scriptId 都能对应到真实剧本（含门槛补发剧本）', () => {
+    const rules = [
+      ...ANGEL_TRIGGER_RULES,
+      ...AUTHOR_TRIGGER_RULES,
+      ...BOSS_TRIGGER_RULES,
+      ...OUTSKIRT_TRIGGER_RULES,
+    ];
+    for (const rule of rules) {
+      expect(
+        ALL_SCRIPT_IDS.has(rule.scriptId),
+        `规则 ${rule.id} 的剧本 ${rule.scriptId} 应存在`,
+      ).toBe(true);
+    }
+  });
+
+  it('剧本引用的武器/敌人/卡 id 与 data 层表对齐（跨表字符串 id 校验）', () => {
+    const weaponIds = new Set(WEAPONS.map((w) => w.id));
+    const enemyIds = new Set(ENEMIES.map((e) => e.id));
+    const cardIds = new Set(CARDS.map((c) => c.id));
+    for (const script of ALL_SCRIPTS) {
+      for (const node of script.nodes) {
+        const effects: readonly StoryEffect[] = node.kind === 'dialogue' ? node.onEnterEffects ?? [] : [];
+        for (const eff of effects) {
+          if (eff.kind === 'grantWeapon') expect(weaponIds.has(eff.weaponId), eff.weaponId).toBe(true);
+          if (eff.kind === 'setEnemyAttack') expect(enemyIds.has(eff.enemyId), eff.enemyId).toBe(true);
+          if (eff.kind === 'grantCard') expect(cardIds.has(eff.cardId), eff.cardId).toBe(true);
+        }
+        if (node.kind === 'battle') expect(enemyIds.has(node.enemyId), node.enemyId).toBe(true);
+      }
+    }
+  });
+
+  it('所有谜题节点都注册了求解器', () => {
+    for (const script of ALL_SCRIPTS) {
+      for (const node of script.nodes) {
+        if (node.kind !== 'puzzle') continue;
+        const registered =
+          HIDDEN_GAME_SOLVERS[node.puzzleId] !== undefined || node.puzzleId === 'puzzle-author-xyz';
+        expect(registered, `谜题 ${node.puzzleId}（剧本 ${script.id}）应有求解器`).toBe(true);
+      }
+    }
+  });
+});
+
+/* ============================== 四天使 ==================================== */
+
+describe('angels —— 同一模板 × 4（Game.java:509-808 数据化）', () => {
+  it('四位天使坐标与 Game.java:48-51 一致', () => {
+    expect(ANGEL_PARAMS.map((p) => [p.x, p.y])).toEqual([
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]);
+  });
+
+  it('台词顺序保真：①②「难度」在「劝告」前，③④把劝告提前（:540-545 vs :711-716）', () => {
+    const orderOf = (script: StoryScriptDef): number[] => {
+      const entry = script.nodes[0];
+      if (entry === undefined || entry.kind !== 'dialogue') return [];
+      const angelLines = entry.lines.filter((l) => l.speakerId.startsWith('npc-angel'));
+      return [angelLines.findIndex((l) => l.text.includes('难易度')), angelLines.findIndex((l) => l.text.includes('听我一句劝'))];
+    };
+    const s1 = orderOf(findScript('script-angel-1'));
+    const s3 = orderOf(findScript('script-angel-3'));
+    const q1 = s1[0];
+    const b1 = s1[1];
+    const q3 = s3[0];
+    const b3 = s3[1];
+    expect(q1 !== undefined && b1 !== undefined && q1 < b1).toBe(true); // ①：难度 → 劝告
+    expect(q3 !== undefined && b3 !== undefined && b3 < q3).toBe(true); // ③：劝告 → 难度
+  });
+
+  it('每位天使发匕首 + 临别角色卡 + 姐妹锁 flag', () => {
+    for (const script of ANGEL_SCRIPTS) {
+      const entry = script.nodes[0];
+      expect(entry?.kind).toBe('dialogue');
+      if (entry === undefined || entry.kind !== 'dialogue') continue;
+      expect(entry.onEnterEffects).toContainEqual({ kind: 'grantWeapon', weaponId: 'weapon-dagger' });
+      // 集成期：临别赠礼按天使编号发对应角色卡（card-chr-angel-1..4，与卡表对齐）
+      const seq = Number(script.id.replace('script-angel-', ''));
+      expect(entry.onEnterEffects).toContainEqual({
+        kind: 'grantCard',
+        cardId: `card-chr-angel-${seq}`,
+        source: 'angel-farewell',
+      });
+      expect(entry.onEnterEffects).toContainEqual({
+        kind: 'setFlag',
+        key: 'story:angels-met',
+        value: expect.any(String),
+      });
+    }
+  });
+
+  it('姐妹锁：遇到一位后，其余天使规则被 unlessFlag 封锁，只余羽毛事件', () => {
+    const ctx: TriggerContext = {
+      x: -1,
+      y: 0, // 天使②坐标
+      flags: { 'story:angels-met': 'angel-1' },
+      seenEventIds: [],
+    };
+    const hit = queryTrigger(ANGEL_TRIGGER_RULES, ctx);
+    expect(hit?.scriptId).toBe('script-angel-feather'); // 只剩羽毛
+  });
+
+  it('未遇到任何天使时，天使①规则可命中（半径 1 内）', () => {
+    const hit = queryTrigger(ANGEL_TRIGGER_RULES, { x: 2, y: 0, flags: {}, seenEventIds: [] });
+    expect(hit?.scriptId).toBe('script-angel-1');
+  });
+});
+
+/* ============================== 作者谜题 ================================== */
+
+describe('authorPuzzle —— x-y=(D-1)-z（Game.java:481-491）', () => {
+  it('两组答案与 Game.java:483-484 注释一致', () => {
+    expect([...AUTHOR_PUZZLE_ANSWERS]).toEqual(['5,5,1', '1,5,5']);
+  });
+
+  it('两组答案（含全角/空格变体）都判对', () => {
+    for (const raw of ['5,5,1', '1,5,5', '５，５，１', ' 1, 5, 5 ']) {
+      expect(AUTHOR_PUZZLE_SOLVER(raw, { flags: {}, retries: 0, ownedCardIds: [] }).ok).toBe(true);
+    }
+  });
+
+  it('答错 → 非致命 + 阶梯提示（原版 System.exit 的改写）', () => {
+    const first = AUTHOR_PUZZLE_SOLVER('9,9,9', { flags: {}, retries: 0, ownedCardIds: [] });
+    expect(first.ok).toBe(false);
+    expect(first.fatal).toBe(false);
+    expect(first.hint).toContain('尤拉公式');
+
+    const second = AUTHOR_PUZZLE_SOLVER('9,9,9', { flags: {}, retries: 1, ownedCardIds: [] });
+    expect(second.hint).toContain('互换');
+
+    const third = AUTHOR_PUZZLE_SOLVER('9,9,9', { flags: {}, retries: 2, ownedCardIds: [] });
+    expect(third.hint).toContain('蒙');
+  });
+
+  it('答对效果：BOSS 攻击归零（:495）+ 真实卸装（K13）+ 祖传拐杖（:500）+ 钥匙 flag', () => {
+    const owned = ['card-a', 'card-b', 'card-c', 'card-d', 'card-e', 'card-f', 'card-g'];
+    const r = AUTHOR_PUZZLE_SOLVER('5,5,1', { flags: {}, retries: 0, ownedCardIds: owned });
+    expect(r.ok).toBe(true);
+    const effects = r.effects ?? [];
+    expect(effects).toContainEqual({ kind: 'setEnemyAttack', enemyId: 'enemy-ylzz', value: BOSS_ATTACK_AFTER_PUZZLE });
+    expect(effects).toContainEqual({ kind: 'unequipWeapon' });
+    expect(effects).toContainEqual({ kind: 'grantWeapon', weaponId: 'weapon-gfsStick' });
+    expect(effects).toContainEqual({ kind: 'setFlag', key: 'story:key-boss', value: 'card-e' });
+    expect(BOSS_ATTACK_AFTER_PUZZLE).toBe(0);
+  });
+
+  it('弱点绑定：答案首位数字 = 卡池编号（1-based，循环取模），空池回退作者卡', () => {
+    const owned = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'];
+    expect(resolveBossWeakness('5,5,1', owned).cardId).toBe('c5');
+    expect(resolveBossWeakness('1,5,5', owned).cardId).toBe('c1');
+    expect(resolveBossWeakness('5,5,1', ['only']).cardId).toBe('only'); // (5-1)%1=0
+    expect(resolveBossWeakness('1,5,5', []).cardId).toBe('card-chr-author');
+    expect(resolveBossWeakness('5,5,1', []).multiplier).toBe(2);
+  });
+
+  it('输入归一化：全角逗号/数字/空白 → 判定仍严格', () => {
+    expect(normalizePuzzleInput('５， ５，１')).toBe('5,5,1');
+    expect(normalizePuzzleInput('5、5、1')).toBe('5,5,1');
+    expect(AUTHOR_PUZZLE_SOLVER('5,5,2', { flags: {}, retries: 0, ownedCardIds: [] }).ok).toBe(false);
+  });
+
+  it('作者触发：三怪全灭才现身（Game.java:328-329 的 requireFlags 化）', () => {
+    const atAuthor: TriggerContext = { x: -2, y: 4, flags: {}, seenEventIds: [] };
+    expect(queryTrigger(AUTHOR_TRIGGER_RULES, atAuthor)?.scriptId).toBe('script-author-hint');
+    const cleared: TriggerContext = {
+      x: -2,
+      y: 4,
+      flags: {
+        'story:defeated:enemy-caixukun': true,
+        'story:defeated:enemy-guolaoshi': true,
+        'story:defeated:enemy-dygg': true,
+      },
+      seenEventIds: [],
+    };
+    expect(queryTrigger(AUTHOR_TRIGGER_RULES, cleared)?.scriptId).toBe('script-author-puzzle');
+  });
+});
+
+/* ============================== BOSS 三幕 ================================= */
+
+describe('bossActs —— 秒杀演出 / 护盾化 BOSS 战 / 结局（Game.java:1491-1861）', () => {
+  it('秒杀伤害 = 233666438 × 3 = 700999314（Game.java:1602 保真）', () => {
+    expect(BOSS_SLAUGHTER_DAMAGE).toBe(700999314);
+  });
+
+  it('分身序列每回合 ×2 且封顶 64（K10：原 long 无界翻倍的有界化）', () => {
+    expect(shadowCount(0)).toBe(1);
+    expect(shadowCount(1)).toBe(2);
+    expect(shadowCount(5)).toBe(32);
+    expect(shadowCount(6)).toBe(64);
+    expect(shadowCount(100)).toBe(64);
+  });
+
+  it('护盾调参：盾 233（原 defense，launchBattle 真实接线 enemyShield）+ 分身机制（弱点由档案克星武器 ×2 承载，失真字段已删）', () => {
+    expect(BOSS_BATTLE_TUNING.shield).toBe(233);
+    expect(BOSS_BATTLE_TUNING.shadowCap).toBe(64);
+    expect(BOSS_BATTLE_TUNING.weaknessCardFlag).toBeUndefined();
+    expect(BOSS_BATTLE_TUNING.weaknessMultiplier).toBeUndefined();
+  });
+
+  it('未带钥匙 → 秒杀结局（closable，无 startBattle）', () => {
+    const s0 = startStory([BOSS_ACTS_SCRIPT], BOSS_ACTS_SCRIPT.id);
+    const stepped = walk(BOSS_ACTS_SCRIPT, s0.state);
+    expect(stepped.state.nodeId).toBe('boss-slaughter-end');
+    expect(stepped.state.phase).toBe('finished');
+    expect(stepped.effects.some((e) => e.kind === 'startBattle')).toBe(false);
+    const ending = stepped.effects.find((e) => e.kind === 'showEnding');
+    expect(ending).toMatchObject({ kind: 'showEnding', endingId: 'boss-slaughter', closable: true });
+  });
+
+  it('带钥匙 → 开战（发 startBattle）→ 胜利 → 结局 + 成就 + META 终端解锁', () => {
+    const keyed: StoryRuntimeState = { ...IDLE_STORY_RUNTIME, flags: { 'story:key-boss': 'card-x' } };
+    const atBattle = walk(BOSS_ACTS_SCRIPT, startStory([BOSS_ACTS_SCRIPT], BOSS_ACTS_SCRIPT.id, keyed).state);
+    expect(atBattle.state.nodeId).toBe('boss-battle');
+    expect(atBattle.state.phase).toBe('awaiting-battle');
+    expect(atBattle.effects.find((e) => e.kind === 'startBattle')).toMatchObject({
+      kind: 'startBattle',
+      enemyId: 'enemy-ylzz',
+      tuning: BOSS_BATTLE_TUNING,
+    });
+
+    const won = resolveBattleResult([BOSS_ACTS_SCRIPT], atBattle.state, true);
+    expect(won.state.nodeId).toBe('boss-letter');
+    expect(won.state.flags['story:boss-defeated']).toBe(true);
+
+    const epilogue = walk(BOSS_ACTS_SCRIPT, won.state);
+    expect(epilogue.state.nodeId).toBe('boss-epilogue');
+    expect(epilogue.state.phase).toBe('finished');
+    expect(epilogue.effects.find((e) => e.kind === 'showEnding')).toMatchObject({
+      kind: 'showEnding',
+      endingId: 'world-saved',
+      achievementId: 'ach-cane-boss',
+      unlocksMetaTerminal: true,
+      closable: true,
+    });
+  });
+
+  it('战败 → 显式 loseNext 结局（closable，不锁控制）', () => {
+    const keyed: StoryRuntimeState = { ...IDLE_STORY_RUNTIME, flags: { 'story:key-boss': 'card-x' } };
+    const atBattle = walk(BOSS_ACTS_SCRIPT, startStory([BOSS_ACTS_SCRIPT], BOSS_ACTS_SCRIPT.id, keyed).state);
+    const lost = resolveBattleResult([BOSS_ACTS_SCRIPT], atBattle.state, false);
+    expect(lost.state.nodeId).toBe('boss-defeat');
+    const ending = lost.effects.find((e) => e.kind === 'showEnding');
+    expect(ending && ending.kind === 'showEnding' && ending.closable).toBe(true);
+  });
+
+  it('BOSS 触发规则：坐标 (-5,5)（Game.java:58）', () => {
+    const hit = queryTrigger(BOSS_TRIGGER_RULES, { x: -4, y: 5, flags: {}, seenEventIds: [] });
+    expect(hit?.scriptId).toBe('script-boss-acts');
+    expect(queryTrigger(BOSS_TRIGGER_RULES, { x: 0, y: 0, flags: {}, seenEventIds: [] })).toBeNull();
+  });
+});
+
+/* ============================== 隐藏关 ==================================== */
+
+describe('hiddenGame —— 作弊码链 / Base64 / 反转真结局（EasterEgg.java:71-341）', () => {
+  const SOLVERS = HIDDEN_GAME_SOLVERS;
+
+  function submit(state: StoryRuntimeState, raw: string): StoryRuntimeState {
+    return submitStoryInput([HIDDEN_GAME_SCRIPT], state, raw, { solvers: SOLVERS }).state;
+  }
+
+  function choose(state: StoryRuntimeState, choiceId: string): StoryRuntimeState {
+    return chooseStory([HIDDEN_GAME_SCRIPT], state, choiceId).state;
+  }
+
+  it('Base64 提示解出原作暗语（EasterEgg.java:188）', () => {
+    expect(decodeHiddenHint()).toBe('Use some instructions to save you.');
+  });
+
+  it('真结局全链路：作弊码链 → BABA → 命运武装 → 杀死乱码', () => {
+    let s = startStory([HIDDEN_GAME_SCRIPT], HIDDEN_GAME_SCRIPT.id).state;
+    s = walk(HIDDEN_GAME_SCRIPT, s).state; // 开场白读完 → setname
+    expect(s.nodeId).toBe('hg-setname');
+    s = submit(s, '/kill--SetName');
+    expect(s.nodeId).toBe('hg-setname-ok');
+
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    expect(s.nodeId).toBe('hg-cxk');
+    s = choose(s, 'syskill');
+    expect(s.nodeId).toBe('hg-cxk-killed');
+    expect(s.flags['hg:weapon:gfs']).toBe(true);
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    expect(s.nodeId).toBe('hg-note');
+    s = choose(s, 'open');
+    expect(s.nodeId).toBe('hg-note-open');
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    expect(s.nodeId).toBe('hg-go1');
+    s = submit(s, 'w');
+    expect(s.nodeId).toBe('hg-dygg-intro');
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    s = choose(s, 'first-strike');
+    expect(s.nodeId).toBe('hg-dygg-win');
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    expect(s.nodeId).toBe('hg-go2');
+    s = submit(s, 'w');
+    expect(s.nodeId).toBe('hg-fog');
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    expect(s.nodeId).toBe('hg-go3');
+    s = submit(s, 's');
+    expect(s.nodeId).toBe('hg-dread');
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    expect(s.nodeId).toBe('hg-go4');
+    s = submit(s, 's');
+    expect(s.nodeId).toBe('hg-guolaoshi-intro');
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    s = choose(s, 'swing');
+    expect(s.nodeId).toBe('hg-gls-win');
+    expect(s.flags['hg:weapon:hotel']).toBe(true);
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    expect(s.nodeId).toBe('hg-go5');
+    s = submit(s, 'adad');
+    expect(s.nodeId).toBe('hg-mound');
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    expect(s.nodeId).toBe('hg-shout');
+    s = submit(s, 'BABA');
+    expect(s.nodeId).toBe('hg-boss-intro');
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    // walk 一路读完 BOSS 登场与「真实清空背包」两段，停在指令门前
+    expect(s.nodeId).toBe('hg-boss-give');
+
+    // 命运三武装三选一（背包已真实清空，指令仍可呼出）
+    s = submit(s, '/give--@p--爷爷的拐杖');
+    expect(s.nodeId).toBe('hg-win-gfs');
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    // 读完胜利台词与 Horrible Atmosphere，停在反转门前
+    expect(s.nodeId).toBe('hg-final-gate');
+    expect(s.flags['hg:weapon:gfs']).toBeUndefined(); // K13：背包被真实清空
+    expect(s.flags['hg:atmosphere-reached']).toBe(true);
+
+    // 反转：用原作指令语法反过来杀死乱码
+    const finalStep = submitStoryInput([HIDDEN_GAME_SCRIPT], s, `/kill--${GARBAGE_KILLER}`, { solvers: SOLVERS });
+    s = finalStep.state;
+    expect(s.nodeId).toBe('hg-true-end');
+    expect(s.phase).toBe('finished');
+    expect(finalStep.effects.find((e) => e.kind === 'showEnding')).toMatchObject({
+      kind: 'showEnding',
+      endingId: 'hidden-true-end',
+      achievementId: 'ach-true-end',
+      unlocksMetaTerminal: true,
+      closable: true,
+    });
+  });
+
+  it('命运三武装分别路由到三个胜利节点', () => {
+    const solver = HIDDEN_GAME_SOLVERS['hg-puzzle-give'];
+    expect(solver).toBeDefined();
+    for (const [cmd, node] of [
+      ['/give--@p--赤手空拳', 'hg-win-fist'],
+      ['/give--@p--爷爷的拐杖', 'hg-win-gfs'],
+      ['/give--@p--㊙Hotel', 'hg-win-hotel'],
+    ] as const) {
+      const r = solver?.(cmd, { flags: {}, retries: 0, ownedCardIds: [] });
+      expect(r?.ok).toBe(true);
+      expect(r?.successNext).toBe(node);
+    }
+    expect(solver?.('/give--@p--苹果', { flags: {}, retries: 0, ownedCardIds: [] }).ok).toBe(false);
+  });
+
+  it('关键岔路答错 → 对应死亡结局（全是 closable，绝不退出）', () => {
+    // 开幕雷击：名字输错（原作：被天上掉下来的石头砸死）
+    let s = startStory([HIDDEN_GAME_SCRIPT], HIDDEN_GAME_SCRIPT.id).state;
+    s = walk(HIDDEN_GAME_SCRIPT, s).state;
+    s = submit(s, '张三');
+    expect(s.nodeId).toBe('hg-die-stone');
+
+    // BABA 大小写严格（原作 equals("BABA")）
+    const baba = HIDDEN_GAME_SOLVERS['hg-puzzle-baba']?.('baba', { flags: {}, retries: 0, ownedCardIds: [] });
+    expect(baba?.ok).toBe(false);
+    expect(baba?.fatal).toBe(true);
+
+    // 终局乱码门：普通输入 → 伪结局（原版 END 演出）
+    const finalWrong = HIDDEN_GAME_SOLVERS['hg-puzzle-final']?.('跑', { flags: {}, retries: 0, ownedCardIds: [] });
+    expect(finalWrong?.ok).toBe(false);
+    expect(finalWrong?.fatal).toBe(true);
+    expect(finalWrong?.echo).toContain('杀死了');
+  });
+
+  it('伪结局节点 closable 且带 META 提示（反转入口可见）', () => {
+    const node = HIDDEN_GAME_SCRIPT.nodes.find((n) => n.id === 'hg-pseudo-end');
+    expect(node?.kind).toBe('ending');
+    if (node?.kind === 'ending') {
+      expect(node.closable).toBe(true);
+      expect(node.endingId).toBe('hidden-pseudo-end');
+    }
+  });
+});
+
+/* ============================== META 终端 ================================= */
+
+describe('META 终端 —— 真结局剧本侧（未知输入只回显，K3）', () => {
+  it('真结局指令：主线通关后触发 meta-true-end + 成就', () => {
+    const out = runMetaTerminalCommand({ raw: `/kill--${GARBAGE_KILLER}`, flags: { 'story:boss-defeated': true } });
+    expect(out.effects).toContainEqual({
+      kind: 'showEnding',
+      endingId: 'meta-true-end',
+      closable: true,
+      achievementId: 'ach-true-end',
+    });
+  });
+
+  it('未通关/未见乱码 → 终端锁定回显，不发结局', () => {
+    const out = runMetaTerminalCommand({ raw: `/kill--${GARBAGE_KILLER}`, flags: {} });
+    expect(out.effects).toEqual([]);
+    expect(out.echo.join()).toContain('北方');
+  });
+
+  it('隐藏关 atmosphere 旗标同样解锁真结局指令', () => {
+    const out = runMetaTerminalCommand({ raw: `/kill--${GARBAGE_KILLER}`, flags: { 'hg:atmosphere-reached': true } });
+    expect(out.effects.some((e) => e.kind === 'showEnding' && e.endingId === 'meta-true-end')).toBe(true);
+  });
+
+  it('原作作弊码回响 + 未知输入纯回显（绝不执行为移动）', () => {
+    expect(runMetaTerminalCommand({ raw: '/kill--SetName', flags: {} }).echo.length).toBeGreaterThan(0);
+    const baba = runMetaTerminalCommand({ raw: 'BABA', flags: {} });
+    expect(baba.effects).toContainEqual({ kind: 'setFlag', key: 'meta:baba-echoed', value: true });
+
+    const unknown = runMetaTerminalCommand({ raw: 'w', flags: {} });
+    expect(unknown.effects).toEqual([]);
+    expect(unknown.echo.join()).toContain('w');
+    expect(unknown.echo.join()).toContain('回显');
+
+    expect(runMetaTerminalCommand({ raw: 'exit', flags: {} }).echo.join()).toContain('不是移动指令');
+  });
+});
+
+/* ============================== 越界四方向 ================================ */
+
+describe('outskirts —— 四方向越界（Game.java:121-284 的事件表化）', () => {
+  it('挑战层元数据三件套齐备（南/东/西），出处可追溯', () => {
+    expect(Object.keys(OUTSKIRT_CHALLENGE_LAYERS).sort()).toEqual(['east-endless', 'south-abyss', 'west-end-wall']);
+    expect(OUTSKIRT_CHALLENGE_LAYERS['east-endless']?.origin).toContain('Game.java:134');
+    expect(OUTSKIRT_CHALLENGE_LAYERS['south-abyss']?.origin).toContain('Game.java:127');
+    expect(OUTSKIRT_CHALLENGE_LAYERS['west-end-wall']?.origin).toContain('Game.java:139');
+  });
+
+  it('四方向 beyond 规则按坐标命中（阈值 ±7：|8| 起）', () => {
+    expect(queryTrigger(OUTSKIRT_TRIGGER_RULES, { x: 0, y: 8, flags: {}, seenEventIds: [] })?.scriptId).toBe('script-outskirt-north');
+    expect(queryTrigger(OUTSKIRT_TRIGGER_RULES, { x: 0, y: -8, flags: {}, seenEventIds: [] })?.scriptId).toBe('script-outskirt-south');
+    expect(queryTrigger(OUTSKIRT_TRIGGER_RULES, { x: 8, y: 0, flags: {}, seenEventIds: [] })?.scriptId).toBe('script-outskirt-east');
+    expect(queryTrigger(OUTSKIRT_TRIGGER_RULES, { x: -8, y: 0, flags: {}, seenEventIds: [] })?.scriptId).toBe('script-outskirt-west');
+    expect(queryTrigger(OUTSKIRT_TRIGGER_RULES, { x: 0, y: 0, flags: {}, seenEventIds: [] })).toBeNull();
+  });
+
+  it('缓冲带 |6|~|7| 命中警示剧本且 once（原版 Game.java:282 文案保留）', () => {
+    const hit = queryTrigger(OUTSKIRT_TRIGGER_RULES, { x: 0, y: 6, flags: {}, seenEventIds: [] });
+    expect(hit?.scriptId).toBe('script-outskirt-buffer');
+    expect(hit?.once).not.toBe(false);
+    // 警示看过后，同坐标不再触发任何越界规则（beyond 未达）
+    const seen = queryTrigger(OUTSKIRT_TRIGGER_RULES, {
+      x: 0,
+      y: 6,
+      flags: {},
+      seenEventIds: ['trigger-outskirt-buffer-north'],
+    });
+    expect(seen).toBeNull();
+  });
+
+  it('东侧剧本保留原版落点 (-5,3)（Game.java:136-137）', () => {
+    expect(EAST_LANDING_POS).toEqual({ x: -5, y: 3 });
+  });
+
+  it('北方剧本「进入」分支 → 终局由集成层映射为 enterScript（隐藏关）', () => {
+    const script = findScript('script-outskirt-north');
+    const s0 = startStory([script], script.id);
+    const s1 = walk(script, s0.state).state;
+    expect(s1.nodeId).toBe('outskirt-north-choice');
+    const s2 = chooseStory([script], s1, 'enter').state;
+    const stepped = walk(script, s2);
+    expect(stepped.state.phase).toBe('finished');
+    // 集成约定：endingId 'outskirt-north-transit' 由 store 映射为 enterScript
+    expect(stepped.effects.find((e) => e.kind === 'showEnding')).toMatchObject({
+      kind: 'showEnding',
+      endingId: 'outskirt-north-transit',
+      closable: true,
+    });
+  });
+});
