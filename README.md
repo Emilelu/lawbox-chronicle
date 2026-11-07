@@ -3,7 +3,7 @@
 > **推箱解谜是世界骨架，鬼畜文字冒险是剧情血肉，法则卡实时改写推箱物理与战斗公式。**
 > 用一次冒险，改写「注定 abandoned」的 META 结局。
 
-![version](https://img.shields.io/badge/version-0.1.0-blue) ![stack](https://img.shields.io/badge/React_18-TypeScript_strict-Vite_5-3178c6) ![tests](https://img.shields.io/badge/vitest-31_files_%2F_470_tests-green)
+![version](https://img.shields.io/badge/version-0.1.0-blue) ![stack](https://img.shields.io/badge/React_18-TypeScript_strict-Vite_5-3178c6) ![tests](https://img.shields.io/badge/vitest-31_files_%2F_474_tests-green)
 
 把三个废弃老游戏熔成一个连续的 3D 箱庭冒险：
 
@@ -80,7 +80,7 @@
 
 ### 新玩法清单
 
-1. **法则卡改写系统（核心融合玩法）**：抽卡产出的「法则卡」把规则补丁实时注入推箱引擎 `RuleSet` 与战斗公式参数——如「镜像拉箱」「斜向推挤」「箱可推离基座」「伤害=攻-防 改为 攻/2」。补丁注册表见 `src/core/lawRegistry.ts`（18 个已注册补丁 id，`applyPatch` 为纯函数）。法则卡获取有三层保险保证零软锁（十连 3★ 保底 / 50 抽硬保底 / 40 抽法则定向保底 + 碎片直购，见 `src/engine/gacha/pity.ts`）。
+1. **法则卡改写系统（核心融合玩法）**：抽卡产出的「法则卡」把规则补丁实时注入推箱引擎 `RuleSet` 与战斗公式参数——如「镜像拉箱」「斜向推挤」「箱可推离基座」「伤害=攻-防 改为 攻/2」。补丁注册表见 `src/core/lawRegistry.ts`（17 个已注册补丁 id，`applyPatch` 为纯函数）。法则卡获取有三层保险保证零软锁（十连 3★ 保底 / 50 抽硬保底 / 40 抽法则定向保底 + 碎片直购，见 `src/engine/gacha/pity.ts`）。
 2. **布阵推挤战**：战斗前置「布阵阶段」，怪物方块化（重量∝HP）在 3D 战斗网格上可被推挤——推下深渊/推进尖刺按比例扣血甚至秒杀小怪，BOSS 免疫推挤必须走公式战。推箱技巧第一次成为战斗资源（`src/engine/combat/shove.ts`）。操作：布阵期方向键/WASD 或战斗面板方向钮推挤；`Tab` 切换布阵模式；战场尖刺格由关卡图例 5 现算、深渊格由 `battleHazardsFor` 生成，3D 舞台按 `hazardCells` 渲染（`src/view/ui/CombatPanel.tsx` + `src/view/three/GridArena.tsx`）。
 3. **立体推箱与箱落攻击**：推箱从平面升级为多高度层 3D（坡道/落差），把箱子推下高台可砸伤下方敌人、压碎尖刺、触发机关——地形本身成为武器（`src/engine/puzzle/grid.ts` 高度语义）。
 4. **阴阳位面**：SanBPushChest 的「障碍物定时随机变换」升格为玩法机制——世界有阳/阴两面，F 键切换位面（需「位面通行」法则卡解锁），部分石板/道路/机关仅阴面存在。14 张原作墙皮资产成为阴面随机墙皮；状态驱动按需渲染，无常驻定时器。
@@ -106,7 +106,7 @@
 | **framer-motion（overlay）/ useFrame（3D）** | overlay 动效走 framer-motion（抽卡翻牌演出、模态转场）；3D 内动效走 R3F 的 `useFrame`，两者各司其职 |
 | **howler.js** | 音频资源经 import 由打包器解析，BGM/SFX 挂 React 生命周期、卸载即停——一次性消灭三类音乐 bug：KichikuAdventure 非守护线程挂死、BandoriLotteryEmulator 异常 `System.exit` 杀主线程、SanBPushChest 首键 go 门槛无声 |
 | **zod** | 关卡/卡池/事件表的 id 引用在集成期校验（发卡→法则补丁、掉落→武器、事件→敌人、音频→文件），「README 与代码系统性不一致」类问题无处藏身 |
-| **vitest** | 引擎层纯函数可脱离 React 单测。当前 31 个测试文件 / 470 个用例，含主线 12 关离线可解性常驻门 |
+| **vitest** | 引擎层纯函数可脱离 React 单测。当前 31 个测试文件 / 474 个用例，含主线 12 关离线可解性常驻门 |
 
 ### 架构图
 
@@ -201,7 +201,7 @@ src/
 
 - **单一真相源**：一切游戏状态在 `core/store/gameStore.ts` 的唯一 store 中；`segment`/`combat` 等旧形状读点是单向投影，永远只在该状态写入的同一 `set()` 里重算，不是第二真相源。
 - **守卫先于索引**：全项目唯一网格索引点是 `core/gridMove.ts` 的 `cellAt`/`isInside`，越界是显式 `{ ok: false }`；配合 `tsconfig.app.json` 的 `strict` + `noUncheckedIndexedAccess`，靠 JS 越界返回 undefined 兜底的写法在类型层就不可能。
-- **引擎纯函数**：`engine/` 四个引擎零 React 依赖，action → 纯函数 → 新状态，vitest 直接覆盖（当前 470 用例）。
+- **引擎纯函数**：`engine/` 四个引擎零 React 依赖，action → 纯函数 → 新状态，vitest 直接覆盖（当前 474 用例）。
 - **演出与状态分离**：音效/震屏/粒子一律经 `core/events/bus` 广播，不进状态机。
 
 ---
@@ -221,7 +221,7 @@ npm run preview    # 预览 dist/ 构建产物
 
 | 命令 | 结果 |
 | --- | --- |
-| `npm run test` | ✅ 通过：**31 个测试文件 / 470 个用例全绿**（67.3s），含主线 12 关「零法则可解」离线校验门与逐格回放验证 |
+| `npm run test` | ✅ 通过：**31 个测试文件 / 474 个用例全绿**（67.3s），含主线 12 关「零法则可解」离线校验门与逐格回放验证 |
 | `npm run build` | ✅ 通过：`tsc -b && vite build` 成功（5.75s），产物含三套 BGM、20 个音效与全部贴图 |
 | `npm install` | 未实跑（本机 `node_modules` 已存在）；为标准安装命令 |
 | `npm run dev` | 未实跑（常驻开发服务器，不便在文档流程中启动）；脚本已定义于 `package.json` |
@@ -343,7 +343,7 @@ npm run preview    # 预览 dist/ 构建产物
 
 ## 本轮修复对照（12 项）
 
-> 上轮验收发现的 9 个必修缺口 + 3 组顺手修，本轮由引擎接线 / 3D 视觉 / 面板三位工程师分区修复。这些不是原作 bug，而是新作引擎能力「已实现但不可达」的接线缺口与 UI 补齐。修复后门禁通过：`npm run test` 31 文件 / 470 用例全绿（本 README 撰写时实测）。
+> 上轮验收发现的 9 个必修缺口 + 3 组顺手修，本轮由引擎接线 / 3D 视觉 / 面板三位工程师分区修复。这些不是原作 bug，而是新作引擎能力「已实现但不可达」的接线缺口与 UI 补齐。修复后门禁通过：`npm run test` 31 文件 / 474 用例全绿（本 README 撰写时实测）。
 
 | # | 修复项 | 缺口（修复前） | 本作落实 |
 | --- | --- | --- | --- |

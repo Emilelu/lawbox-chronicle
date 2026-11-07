@@ -7,6 +7,7 @@
  * 入口挂 HUD 右上按钮组（🗺）。
  */
 
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { create } from 'zustand';
 import { useGameStore } from '../../core/store/gameStore';
@@ -14,6 +15,7 @@ import { hasClearedLevel, hasReachedLevel } from '../../input/cheatRegistry';
 import { LEVELS } from '../../data/levels';
 import type { GameState, LevelDef } from '../../core/types';
 import { tUi } from '../../data/i18n/uiText';
+import { bus } from '../../core/events/bus';
 
 /* ============================== 面板开关分片 =============================== */
 
@@ -53,6 +55,15 @@ export function LevelSelectPanel() {
   const close = useLevelSelectStore((s) => s.close);
   const locale = useGameStore((s) => s.locale);
   const state = useGameStore((s) => s);
+
+  // Esc / closeOverlay 经总线统一关闭本面板（键位表承诺「Esc 关闭浮层」）
+  useEffect(
+    () =>
+      bus.subscribe((e) => {
+        if (e.type === 'ui/closePanels') close();
+      }),
+    [close],
+  );
 
   if (!open) return null;
 

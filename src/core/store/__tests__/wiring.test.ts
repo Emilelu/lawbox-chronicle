@@ -217,3 +217,29 @@ describe('P-engine · META 终端真结局（store.runMetaTerminal）', () => {
     expect(store().story.flags['last-ending-id']).toBe('meta-true-end');
   });
 });
+
+/* ===================== 主线进度解锁（软锁修复） ===================== */
+
+describe('通关解锁下一关（主线软锁修复）', () => {
+  it('结算 level-sb-01 后 reached:level-sb-02 置位', () => {
+    store().startLevel('level-sb-01');
+    expect(store().story.flags['reached:level-sb-02']).not.toBe(true);
+    useGameStore.setState({ result: { levelId: 'level-sb-01', stars: 3, steps: 12 } });
+    expect(store().story.flags['reached:level-sb-01']).toBe(true);
+    expect(store().story.flags['reached:level-sb-02']).toBe(true);
+  });
+
+  it('无段位时关闭抽卡浮层回到标题页（不再落到空白 playing）', () => {
+    expect(store().segment).toBeNull();
+    useGameStore.setState({ phase: 'gacha' });
+    store().closeOverlay();
+    expect(store().phase).toBe('title');
+  });
+
+  it('有段位时关闭抽卡浮层回到 playing', () => {
+    store().startLevel('level-sb-01');
+    useGameStore.setState({ phase: 'gacha' });
+    store().closeOverlay();
+    expect(store().phase).toBe('playing');
+  });
+});

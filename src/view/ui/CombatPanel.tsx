@@ -8,9 +8,9 @@
  *    战斗中确认布阵开打，无战斗时打开卡组面板）；
  *  - 技能 → 共享契约无 'combatSkill' 动作：按钮以 onSkill prop 为注入点，
  *    缺省行为经 bus 发 ui/toast 提示（见 combat.skillLocked），不伪造动作。
- * 战斗开打已由 store 的 launchBattle（combat-engine）装配接管；本文件仅保留
- * endCombat() 退场桥接（胜利/败北后的「离开战斗」——共享契约的 closeOverlay
- * 不覆盖 combat 相）。
+ * 战斗开打与结算均由 store 的 launchBattle / settleBattleEnd 接管：终局在同一次
+ * 状态更新里清空 combat，本面板不承担退场（旧的 settled 分支与 endCombat 已删除，
+ * 它们因 combat 同步清空而永远不可达）。
  * 武器选择沿 K7 教训：点选前 canEquipWeapon 断言 id 在武器表内，杜绝 off-by-one。
  */
 
@@ -21,13 +21,6 @@ import { bus } from '../../core/events/bus';
 import type { CombatState, Dir, WeaponDef } from '../../core/types';
 import { WEAPONS, findEnemy, findWeapon } from '../../data';
 import { tUi } from '../../data/i18n/uiText';
-
-/* --------------------------- 模块内桥接（纯 UI 侧） ------------------------- */
-
-/** 退场桥接：胜利/败北画面里「离开战斗」（共享契约暂无对应动作） */
-export function endCombat(): void {
-  useGameStore.setState({ phase: 'playing', combat: null });
-}
 
 /* ------------------------------ 纯逻辑导出 -------------------------------- */
 
@@ -79,7 +72,6 @@ export function CombatPanel({ onSkill }: { onSkill?: () => void }) {
   const hpRatio = combat.enemyMaxHp > 0 ? Math.max(0, enemyHp / combat.enemyMaxHp) : 0;
   const isBattle = combat.phase === 'battle';
   const isFormation = combat.phase === 'formation';
-  const settled = combat.phase === 'victory' || combat.phase === 'defeat';
   const weapon = combat.equippedWeaponId !== null ? findWeapon(combat.equippedWeaponId) : undefined;
 
   const equip = (weaponId: string) => {
@@ -147,8 +139,7 @@ export function CombatPanel({ onSkill }: { onSkill?: () => void }) {
       </div>
 
       {/* 五动作 + 武器选择（K7：点击选武器，index/uid 均经断言） */}
-      {!settled && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', flexWrap: 'wrap' }}>
           <button style={ACTION_BTN} onClick={() => store().dispatch({ type: 'toggleFormation' })}>
             ⬡ {tUi(locale, 'combat.formation')}
           </button>
@@ -226,24 +217,6 @@ export function CombatPanel({ onSkill }: { onSkill?: () => void }) {
             </span>
           </div>
         </div>
-      )}
-
-      {/* 胜负画面（可离开、不锁控制） */}
-      {settled && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <motion.span
-            initial={{ scale: 0.7, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            style={{ fontSize: 20, fontWeight: 800, color: combat.phase === 'victory' ? 'var(--neon-gold)' : 'var(--neon-rose)' }}
-          >
-            {combat.phase === 'victory' ? tUi(locale, 'combat.victory') : tUi(locale, 'combat.defeat')}
-          </motion.span>
-          <span style={{ flex: 1 }} />
-          <button className="btn-neon" style={{ padding: '0.5em 1.4em' }} onClick={endCombat}>
-            {tUi(locale, 'combat.endCombat')}
-          </button>
-        </div>
-      )}
 
       {/* 战报 + 伤害浮层 */}
       {recentLog.length > 0 && (

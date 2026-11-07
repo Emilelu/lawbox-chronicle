@@ -100,7 +100,14 @@ useGameStore.subscribe((state) => {
     if (levelId !== null) setProgressFlag(`reached:${levelId}`, true);
   }
   const resultLevelId = state.result?.levelId;
-  if (resultLevelId !== undefined) setProgressFlag(`cleared:${resultLevelId}`, true);
+  if (resultLevelId !== undefined) {
+    setProgressFlag(`cleared:${resultLevelId}`, true);
+    // 通关即解锁下一关（修复主线软锁：新存档通关后 reached:<next> 永不置位，
+    // 选关面板与 cheat-level-next 都会把玩家锁死在本关）
+    const clearedIndex = LEVELS.findIndex((l) => l.id === resultLevelId);
+    const nextLevel = clearedIndex >= 0 ? LEVELS[clearedIndex + 1] : undefined;
+    if (nextLevel !== undefined) setProgressFlag(`reached:${nextLevel.id}`, true);
+  }
 });
 
 /* ========================= 皮肤 / 墙皮 / 彩蛋状态 =========================== */

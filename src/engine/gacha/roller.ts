@@ -231,13 +231,16 @@ export function performGacha(args: PerformGachaArgs): PerformGachaResult {
   });
 
   const cardLookup = buildCardLookup(pool);
+  // 同批去重：本批已抽到的卡也计入「已持有」——同一十连重复出同一张卡时，
+  // 第二张应显示重复并结算碎片，而不是两张都标 NEW（B 修复）
+  const ownedInBatch = new Set<string>(ownedCardIds);
   const pullPairs = pityApplied.rarities.map((slotRarity, i) => {
     let card: CardDef;
     let directedHit = false;
     if (i === pityApplied.directedIndex) {
       // 层3 定向：只从「未持有 ∧ 卡面稀有度 === 本抽档位」的法则卡中均匀 pick
       const candidates = [...pool.entries[4], ...pool.entries[3], ...pool.entries[2]].filter(
-        (c) => c.kind === 'law' && c.rarity === slotRarity && !ownedCardIds.has(c.id),
+        (c) => c.kind === 'law' && c.rarity === slotRarity && !ownedInBatch.has(c.id),
       );
       if (candidates.length > 0) {
         card = rng.pick(candidates);
@@ -248,11 +251,13 @@ export function performGacha(args: PerformGachaArgs): PerformGachaResult {
     } else {
       card = pickCardForRarity(pool, slotRarity, rng);
     }
+    const isNew = !ownedInBatch.has(card.id);
+    ownedInBatch.add(card.id);
     const pull: GachaPull = {
       uid: stableUid('pull', rng, counters.totalPulls + i + 1),
       cardId: card.id,
       rarity: slotRarity,
-      isNew: !ownedCardIds.has(card.id),
+      isNew,
     };
     return { pull, directedHit };
   });

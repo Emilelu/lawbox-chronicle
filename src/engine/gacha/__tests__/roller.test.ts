@@ -567,3 +567,38 @@ describe('骨架兼容层与星石定价', () => {
     expect(validateGachaPool(FORMAL_POOL)).toEqual([]);
   });
 });
+
+/* ===================== 同批重复卡去重（B 修复） ===================== */
+
+describe('同一十连重复卡：第二张标重复并结算碎片', () => {
+  it('同批内第二次抽到同一张卡时 isNew=false', () => {
+    // 每档只留 1 个条目：十连必然重复出同一张卡，无需依赖随机分布
+    const first = (r: 2 | 3 | 4) => {
+      const entry = FORMAL_POOL.entries[r][0];
+      if (entry === undefined) throw new Error(`rarity ${r} 条目为空`);
+      return entry;
+    };
+    const tiny: GachaPoolDef = {
+      ...FORMAL_POOL,
+      forceLastPullThreeStarOnTen: false,
+      entries: { 2: [first(2)], 3: [first(3)], 4: [first(4)] },
+    };
+    const result = performGacha({
+      pool: tiny,
+      rng: createRng('dupe-batch'),
+      counters: EMPTY_PITY_COUNTERS,
+      ownedCardIds: new Set(),
+      times: 10,
+    });
+    expect(result.pulls).toHaveLength(10);
+    const seen = new Set<string>();
+    for (const pull of result.pulls) {
+      if (seen.has(pull.cardId)) {
+        expect(pull.isNew, `${pull.cardId} 同批第二次出现应为重复`).toBe(false);
+      } else {
+        expect(pull.isNew, `${pull.cardId} 首次出现应为 NEW`).toBe(true);
+      }
+      seen.add(pull.cardId);
+    }
+  });
+});

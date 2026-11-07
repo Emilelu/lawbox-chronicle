@@ -27,6 +27,7 @@ export type FxEvent =
   | { readonly type: 'fx/planeShift' }
   | { readonly type: 'camera/orbitTo'; readonly target: Vec2; readonly pitch: number }
   | { readonly type: 'ui/toast'; readonly messageKey: string }
+  | { readonly type: 'ui/closePanels' }
   | { readonly type: 'debug/mark'; readonly label: string };
 
 export type FxHandler = (event: FxEvent) => void;

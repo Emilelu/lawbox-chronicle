@@ -1320,9 +1320,13 @@ export const useGameStore = create<GameStore>()(
         closeOverlay() {
           const state = get();
           // 终局/抽卡/设置 overlay 全部可关闭且不锁控制（根治 S11）
-          if (state.result !== null) set({ result: null, phase: 'playing' });
-          if (state.phase === 'gacha') set({ phase: 'playing' });
+          // 无段位（标题页单抽）时回到标题，而不是落到没有世界的 playing 空白页
+          const fallbackPhase = state.segment === null ? 'title' : 'playing';
+          if (state.result !== null) set({ result: null, phase: fallbackPhase });
+          if (state.phase === 'gacha') set({ phase: fallbackPhase });
           if (state.activePanel !== 'none') set({ activePanel: 'none' });
+          // 选关/档案面板的开关在各自分片里：经总线通知它们一起关闭（Esc 语义一致）
+          bus.publish({ type: 'ui/closePanels' });
         },
 
         removeChestById(chestId) {

@@ -64,17 +64,27 @@ describe('enemySpawns 出生点校验（R7）', () => {
     }
   });
 
-  it('越界/负坐标/重复/撞墙/撞尖刺/撞玩家/撞箱子出生点均被拒绝', () => {
+  it('越界/负坐标/重复/撞墙/撞尖刺/撞玩家/撞箱子出生点均被拒绝（并断言命中的 refine）', () => {
     const base = AREA_LEVELS.find((l) => l.id === 'level-lb-08');
     if (base === undefined) throw new Error('lb-08 缺失');
     const mk = (enemySpawns: readonly { x: number; y: number }[]) => ({ ...base, enemySpawns });
-    expect(LevelDefSchema.safeParse(mk([{ x: 99, y: 0 }])).success).toBe(false); // 越界
-    expect(LevelDefSchema.safeParse(mk([{ x: -1, y: 0 }])).success).toBe(false); // 负坐标
-    expect(LevelDefSchema.safeParse(mk([{ x: 5, y: 5 }, { x: 5, y: 5 }])).success).toBe(false); // 重复
-    expect(LevelDefSchema.safeParse(mk([{ x: 0, y: 1 }])).success).toBe(false); // 撞墙
-    expect(LevelDefSchema.safeParse(mk([{ x: 5, y: 3 }])).success).toBe(false); // 撞尖刺
-    expect(LevelDefSchema.safeParse(mk([{ x: 1, y: 1 }])).success).toBe(false); // 撞玩家出生点
-    expect(LevelDefSchema.safeParse(mk([{ x: 2, y: 2 }])).success).toBe(false); // 撞箱子出生点
+    // 与 altarSpawns 同款护栏：断言「被哪条 refine 拒绝」而不只是被拒绝
+    const expectRejectedBy = (spawns: readonly { x: number; y: number }[], message: string) => {
+      const parsed = LevelDefSchema.safeParse(mk(spawns));
+      expect(parsed.success, `期望被拒绝：${JSON.stringify(spawns)}`).toBe(false);
+      if (parsed.success) return;
+      expect(
+        parsed.error.issues.some((i) => i.message === message),
+        `${JSON.stringify(spawns)} 应由「${message}」拒绝，实际 issues=${JSON.stringify(parsed.error.issues)}`,
+      ).toBe(true);
+    };
+    expectRejectedBy([{ x: 99, y: 0 }], 'enemySpawns 必须在网格边界内'); // 越界
+    expectRejectedBy([{ x: -1, y: 0 }], 'enemySpawns 必须在网格边界内'); // 负坐标
+    expectRejectedBy([{ x: 5, y: 5 }, { x: 5, y: 5 }], 'enemySpawns 不得出现重复坐标'); // 重复
+    expectRejectedBy([{ x: 0, y: 1 }], 'enemySpawns 不得落在墙/尖刺/玩家/箱子出生点格'); // 撞墙
+    expectRejectedBy([{ x: 5, y: 3 }], 'enemySpawns 不得落在墙/尖刺/玩家/箱子出生点格'); // 撞尖刺
+    expectRejectedBy([{ x: 1, y: 1 }], 'enemySpawns 不得落在墙/尖刺/玩家/箱子出生点格'); // 撞玩家出生点
+    expectRejectedBy([{ x: 2, y: 2 }], 'enemySpawns 不得落在墙/尖刺/玩家/箱子出生点格'); // 撞箱子出生点
   });
 });
 

@@ -8,6 +8,8 @@ coverage/
 
 # 本地环境与编辑器
 *.local
+.env*
+!.env.example
 .DS_Store
 Thumbs.db
 

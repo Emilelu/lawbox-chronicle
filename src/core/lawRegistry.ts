@@ -136,8 +136,8 @@ export const LAW_PATCHES: Readonly<Record<LawPatchId, LawPatchDef>> = Object.fre
     rarity: 3,
     effect: { op: 'set', field: 'chestOffGoalEnabled', value: true },
   },
-  // ---- 谜题侧补丁（与 engine/puzzle/rules.ts 的 PUZZLE_LAW_PATCHES 同 id 同 effect；
-  //      稀有度对齐补位注册表的声明注释，谜题引擎经 buildPuzzleRuleSet 消费） ----
+  // ---- 谜题侧补丁（曾由 engine/puzzle/rules.ts 的副本表补位；现已收拢到本注册表
+  //      作为唯一真相，谜题引擎经 buildPuzzleRuleSet → applyPatchChain 消费） ----
   'mirror-pull': {
     id: 'mirror-pull',
     name: '镜像拉箱',

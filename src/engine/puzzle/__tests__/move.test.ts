@@ -10,7 +10,8 @@ import { isSolved, parseLevelGeometry, type Level3D } from '../grid';
 import { applyPuzzleMove, createPuzzleState, grantPhaseCharges, HISTORY_LIMIT, type PuzzleState } from '../move';
 import { undoPuzzle, canUndo, historyDepth } from '../undo';
 import { checkDeadlock, computeDeadSquares } from '../deadlock';
-import { buildPuzzleRuleSet, DEFAULT_PUZZLE_RULE_SET, applyPuzzlePatch, PUZZLE_LAW_IDS } from '../rules';
+import { buildPuzzleRuleSet, DEFAULT_PUZZLE_RULE_SET } from '../rules';
+import { LAW_PATCH_IDS } from '../../../core/lawRegistry';
 
 /* ================================ 工具 ==================================== */
 
@@ -216,7 +217,7 @@ describe('move —— 高度层：爬升与箱落', () => {
     expect(st1.entities.some((e) => e.id === 'enemy-1')).toBe(false);
 
     // 引爆：「箱落引爆」给 1 次爆炸，清除落点四邻 (5,2) 的道具
-    const patched = applyPuzzlePatch(rules, 'chest-detonate');
+    const patched = buildPuzzleRuleSet(rules, ['chest-detonate']);
     expectOk(patched);
     const detRules = (patched as { ok: true; ruleSet: typeof rules }).ruleSet;
     const s2 = createPuzzleState(g, detRules, [player(3, 1), chest('chest-1', 4, 1), entity('prop-1', 'prop', 5, 2, true)]);
@@ -581,27 +582,27 @@ describe('deadlock —— 死角与冻结', () => {
 
 /* ============================== 补丁注册表 ================================ */
 
-describe('rules —— 谜题法则补丁注册表', () => {
-  it('全部补丁 id 可应用且 zod 校验通过；未知 id 拒绝；叠加有钳制', () => {
+describe('rules —— 谜题法则补丁注册表（单一真相：core/lawRegistry）', () => {
+  it('全部 17 个补丁 id 可经 core 注册表应用；未知 id 拒绝；叠加有钳制', () => {
     let rules = DEFAULT_PUZZLE_RULE_SET;
-    for (const id of PUZZLE_LAW_IDS) {
-      const r = applyPuzzlePatch(rules, id);
+    for (const id of LAW_PATCH_IDS) {
+      const r = buildPuzzleRuleSet(rules, [id]);
       expectOk(r);
       rules = (r as { ok: true; ruleSet: typeof rules }).ruleSet;
     }
     expect(rules.pullEnabled).toBe(true);
     expect(rules.detonationCharges).toBe(2); // chest-detonate +1、explode-plus-1 +1
     expect(rules.knockbackCells).toBe(2); // knockback-plus-2（combat 应用点）
-    expect(applyPuzzlePatch(rules, 'no-such-law')).toMatchObject({ ok: false });
+    expect(buildPuzzleRuleSet(rules, ['no-such-law'])).toMatchObject({ ok: false });
   });
 
-  it('buildPuzzleRuleSet 分流：core 补丁走注册表，谜题补丁走补位表，未知 id 整体失败', () => {
+  it('buildPuzzleRuleSet 单一真相：所有补丁经 core 注册表，未知 id 整体失败', () => {
     expect(buildPuzzleRuleSet(DEFAULT_PUZZLE_RULE_SET, ['wider-push', 'mirror-pull', 'unknown-x'])).toMatchObject({ ok: false });
     const okCase = buildPuzzleRuleSet(DEFAULT_PUZZLE_RULE_SET, ['wider-push', 'mirror-pull']);
     expectOk(okCase);
     const rules = (okCase as { ok: true; ruleSet: typeof DEFAULT_PUZZLE_RULE_SET }).ruleSet;
     expect(rules.pushRange).toBe(2); // core applyPatchChain 产出
-    expect(rules.pullEnabled).toBe(true); // 谜题补位表产出
+    expect(rules.pullEnabled).toBe(true); // 同一注册表产出（无副本表）
     expect(rules.moveCost).toBe(1); // 其余字段保留默认
   });
 });

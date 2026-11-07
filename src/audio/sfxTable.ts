@@ -114,6 +114,7 @@ export function eventSfx(event: FxEvent): SfxKey | null {
     case 'anim/slide':
     case 'camera/orbitTo':
     case 'ui/toast':
+    case 'ui/closePanels':
     case 'debug/mark':
       return null;
     default: {

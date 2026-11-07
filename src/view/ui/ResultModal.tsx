@@ -14,7 +14,7 @@
 import { motion } from 'framer-motion';
 import { useGameStore } from '../../core/store/gameStore';
 import { starStoneReward } from '../../core/formula';
-import { CARDS, findLevel } from '../../data';
+import { CARDS, LEVELS, findLevel } from '../../data';
 import type { LevelDef } from '../../core/types';
 import { stripBr, tUi } from '../../data/i18n/uiText';
 import { rarityColor } from './GachaOverlay';
@@ -69,6 +69,13 @@ export function ResultModal() {
 
   const store = useGameStore.getState;
   const summary = summarizeResult(result, findLevel);
+  // 通关即解锁下一关（cheatRegistry 的进度订阅同源置位 reached:<next>）；
+  // 结算面板直接提供「下一关」，省去回选关面板的一步
+  const nextLevel = (() => {
+    if (summary === null) return undefined;
+    const idx = LEVELS.findIndex((l) => l.id === summary.levelId);
+    return idx >= 0 ? LEVELS[idx + 1] : undefined;
+  })();
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -144,6 +151,15 @@ export function ResultModal() {
               <button className="btn-neon" onClick={() => store().replaySegment()}>
                 ⟲ {tUi(locale, 'legacy.replay')}
               </button>
+              {nextLevel !== undefined && (
+                <button
+                  className="btn-neon"
+                  onClick={() => store().startLevel(nextLevel.id)}
+                  title={`下一关：${nextLevel.name}`}
+                >
+                  ▸ 下一关
+                </button>
+              )}
               <button className="chip" style={{ cursor: 'pointer', padding: '0.6em 1.4em' }} onClick={() => store().closeOverlay()}>
                 {tUi(locale, 'ui.continue')} ▸
               </button>

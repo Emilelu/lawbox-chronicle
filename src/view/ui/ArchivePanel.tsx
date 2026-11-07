@@ -15,9 +15,11 @@
  * 已接好，只写统计分片、不碰正式池），并把怀旧池与正式池累计 4★ 曲线并排。
  */
 
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { create } from 'zustand';
 import { useGameStore } from '../../core/store/gameStore';
+import { bus } from '../../core/events/bus';
 import { useLogbookStore, type CodexCardEntry } from '../../archive/logbook';
 import {
   POOL_NOSTALGIA,
@@ -223,6 +225,15 @@ export function ArchivePanel() {
   const codexCards = useLogbookStore((s) => s.codexCards);
   const achievements = useLogbookStore((s) => s.achievements);
   const stats = useStatsStore((s) => s);
+
+  // Esc / closeOverlay 经总线统一关闭本面板（键位表承诺「Esc 关闭浮层」）
+  useEffect(
+    () =>
+      bus.subscribe((e) => {
+        if (e.type === 'ui/closePanels') close();
+      }),
+    [close],
+  );
 
   if (!open) return null;
 
