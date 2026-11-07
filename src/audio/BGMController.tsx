@@ -27,19 +27,34 @@
 import { useEffect } from 'react';
 import { useGameStore } from '../core/store/gameStore';
 import type { GameState } from '../core/types';
+import { findEnemy } from '../data';
 import { initAudioManager, playBgm } from './audioManager';
 
+/** 宽松读取谜题投影的位面状态（core 对 puzzle 是 unknown 投影，不引入引擎类型依赖） */
+function isPlaneShifted(puzzle: unknown): boolean {
+  return (
+    typeof puzzle === 'object' &&
+    puzzle !== null &&
+    (puzzle as { readonly planeShifted?: unknown }).planeShifted === true
+  );
+}
+
 /**
- * 区域 → BGM 的映射（纯函数，vitest 可测）。
- * 当前可播曲目仅两首（见 manifest 的 playable 契约）：箱庭（探索/标题）
- * 用 sanb-pushchest-bgm，星愿祭坛（抽卡）用 bandori-lottery-bgm。
- * domain-1..3 外域的专属曲目录入后，在「segment 存在」分支按 level.area
- * 扩展映射即可 —— store 在 startLevel/rollGacha 也发显式 bgm/play 事件，
- * 播放器对同一 id 去重，两路控制天然收敛。
+ * 区域/战况 → BGM 的映射（纯函数，vitest 可测）。
+ * 四首曲目全部可播：抽卡 → Bandori 旋律；BOSS 战 → God Knows（原 .mid 转码）；
+ * 阴面位面 → Black Rose（原 .mid 转码）；其余探索/标题 → 箱庭回响。
+ * store 在 startLevel/rollGacha 也发显式 bgm/play 事件，播放器对同一 id
+ * 去重，两路控制天然收敛。
  */
 export function desiredBgmFor(state: GameState): string {
   if (state.phase === 'gacha') return 'bgm-bandori'; // 星愿祭坛 → Bandori 旋律
-  return 'bgm-sanb'; // 标题画面与全部探索区域 → 箱庭回响
+  if (state.combat !== null && findEnemy(state.combat.enemyId)?.boss === true) {
+    return 'bgm-god-knows'; // BOSS 战 → God Knows（原 .mid 转码）
+  }
+  if (isPlaneShifted(state.puzzle)) {
+    return 'bgm-black-rose'; // 阴面位面 → Black Rose（原 .mid 转码）
+  }
+  return 'bgm-sanb'; // 标题画面与其余探索区域 → 箱庭回响
 }
 
 export function BGMController(): null {

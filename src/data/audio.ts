@@ -5,9 +5,9 @@
  *  - bgm/sanb-pushchest-bgm.mp3   ← SanBPushChest/assets/audios/bgm.mp3
  *  - bgm/bandori-lottery-bgm.mp3  ← BandoriLotteryEmulator/bgm.mp3
  *  - bgm/god-knows.mp3 / black-rose.mp3 ← KichikuAdventure 的两个 .mid
- *    ⚠ 浏览器不可播 .mid；本机 ffmpeg 无 MIDI 解码器（仅 sds demuxer，无
- *      libfluidsynth/libmodplug），强转只会得到空流，故保留 .mid 原件于
- *      src/assets/audio/midi/，playable:false，待 fluidsynth/timidity + soundfont 转换。
+ *    经 FluidSynth 2.6.2 + GeneralUser GS 音源离线渲染为 wav，再用
+ *    ffmpeg（libmp3lame）转码为 mp3；.mid 原件保留在
+ *    src/assets/audio/midi/ 备查。
  *  - sfx/effect*.wav ← SanBPushChest/assets/audios/effects/effect*.wav(20)
  * 播放由 howler 承担：资源经打包器 import 解析，BGM/SFX 挂 React 生命周期，
  * 组件卸载即停 —— 一次性根治三个老项目的音乐 bug（非守护线程挂死 /
@@ -34,17 +34,17 @@ export const AUDIO_MANIFEST: AudioManifest = {
     },
     {
       id: 'bgm-god-knows',
-      title: 'God Knows…（原 .mid）',
-      file: 'midi/GodKnows.mid',
+      title: 'God Knows…',
+      file: 'bgm/god-knows.mp3',
       source: 'KichikuAdventure/src/me/emilelu/KichikuAdventure/GodKnows.mid',
-      playable: false,
+      playable: true,
     },
     {
       id: 'bgm-black-rose',
-      title: 'Black Rose（原 .mid）',
-      file: 'midi/black_rose.mid',
+      title: 'Black Rose',
+      file: 'bgm/black-rose.mp3',
       source: 'KichikuAdventure/src/me/emilelu/KichikuAdventure/black_rose.mid',
-      playable: false,
+      playable: true,
     },
   ],
   sfx: [

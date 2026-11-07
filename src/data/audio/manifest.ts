@@ -14,9 +14,9 @@
  *  - bandori-lottery-bgm.mp3：BanG Dream 官方专辑（BandoriLotteryEmulator/
  *    README.md:8「BGM 取自 BanG Dream 官方专辑」），license 标注
  *    replaceBeforeShip —— 上架前必须替换或取得授权；
- *  - GodKnows.mid / black_rose.mid：KichikuAdventure 仓库资产（GPLv3 项目，
- *    其 README.md:5 自述为需手动复制的 mid 曲目），浏览器不可播，playable:false，
- *    待 MIDI→音频格式转码后才能进播放管线。
+ *  - GodKnows.mid / black_rose.mid：KichikuAdventure 仓库资产（GPLv3 项目），
+ *    已用 FluidSynth 2.6.2 + GeneralUser GS 渲染为 mp3（bgm/god-knows.mp3 /
+ *    bgm/black-rose.mp3），playable:true；.mid 原件保留备查。
  */
 
 import { AUDIO_MANIFEST } from '../audio';
@@ -84,12 +84,12 @@ const BGM_LICENSES: Readonly<Record<string, Omit<LicenseInfo, 'source'>>> = Obje
   'bgm-god-knows': {
     license: 'GPL-3.0',
     origin: 'KichikuAdventure',
-    note: 'KichikuAdventure 仓库资产（GPLv3）；.mid 浏览器不可播，等待 MIDI 转码',
+    note: 'KichikuAdventure 仓库资产（GPLv3）；已用 FluidSynth 2.6.2 + GeneralUser GS 渲染为 mp3（.mid 原件保留备查）',
   },
   'bgm-black-rose': {
     license: 'GPL-3.0',
     origin: 'KichikuAdventure',
-    note: 'KichikuAdventure 仓库资产（GPLv3）；.mid 浏览器不可播，等待 MIDI 转码',
+    note: 'KichikuAdventure 仓库资产（GPLv3）；已用 FluidSynth 2.6.2 + GeneralUser GS 渲染为 mp3（.mid 原件保留备查）',
   },
 });
 

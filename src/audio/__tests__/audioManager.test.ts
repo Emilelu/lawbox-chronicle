@@ -185,14 +185,12 @@ describe('audioManager —— 首次交互自动解锁（S13，替代 go 门槛�
 });
 
 describe('audioManager —— K11：错误上屏不吞', () => {
-  it('不可播条目（.mid）明确记录并拒绝', () => {
+  it('原 .mid 曲目转码为 mp3 后可正常播放（不再记录 unplayable）', () => {
     initAudioManager();
     window.dispatchEvent(new Event('pointerdown'));
     const r = playBgm('bgm-god-knows');
-    expect(r.ok).toBe(false);
-    expect(r.reason).toBe('unplayable');
-    expect(getAudioErrors().some((e) => e.kind === 'bgm-unplayable' && e.assetId === 'bgm-god-knows')).toBe(true);
-    expect(getAudioDebugState().currentBgmId).toBeNull();
+    expect(r.ok).toBe(true);
+    expect(getAudioErrors().some((e) => e.kind === 'bgm-unplayable')).toBe(false);
   });
 
   it('未知 id 记录为 missing；清理接口可用', () => {

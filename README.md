@@ -194,7 +194,7 @@ src/
 ├── audio/           # audioManager（howler 唯一封装）+ BGMController 挂载点
 ├── input/           # 输入层：键盘/触屏/META 终端归一为语义 GameAction
 ├── archive/         # statsCollector 抽卡曲线 / logbook 战斗日志（独立 persist 分片）
-└── assets/          # 三老项目搬运素材（图 32 + 音效 20 + BGM 2 + .mid 原件 2）
+└── assets/          # 三老项目搬运素材（图 32 + 音效 20 + BGM 4（含 2 首 .mid 转码）+ .mid 原件 2）
 ```
 
 关键不变量：
@@ -305,7 +305,7 @@ npm run preview    # 预览 dist/ 构建产物
 | KT1 | 代码中 0 条 TODO/FIXME 注释；但 EasterEgg 整个游戏是自称 abandoned 的半成品：数值全是摆设（Boss.hp=2147483647、evolvedPlayerU.normalAttack=Boss.hp 只在死亡文案出现）、GodMode 接口返回 null（EasterEgg.java:33-41）、『胜利』结局仍是死亡 | `src/me/emilelu/KichikuAdventure/EasterEgg.java:75`（'This game is abandoned'）、28-41、33；README.md:33 | 原提案全数落地：做成可解锁隐藏关（`src/data/story/hiddenGame.ts`）；作弊码文化保留为 META 终端指令（`/kill--`、`/give--@p--`、`BABA`，见 `src/data/cheats/commands.ts` 终端别名表）；「最终结局也是死亡」改造成 META 反转真结局「拒绝剧本的人」；GodMode 类无敌能力以作弊条目形式走 CheatRegistry 同一道门 |
 | KT2 | 迷吼tiao 介绍「可以多次使用」但全游戏无任何次数/耐久/弹药机制 | README.md:26、`Game.java:63` | 做成消耗次数型武器：爆炸耐久 3 次（`src/data/weapons.ts` 的 `detonation` 耐久字段，注释明确标注 KT2），填补武器体系单调性 |
 | KT3 | 爷爷的拐杖「可以击退敌人 ? 米」无击退机制（? 号本身就是未填的坑） | README.md:28、`Game.java:65` | 做成带位移效果的武器：`knockbackSteps = 2`（weapons.ts），由 `src/engine/combat/effects.ts` 消费为击退位移——改变敌我站位、形成距离博弈，正好利用网格地图 |
-| KT4 | BGM 停止机制未完成：`Music.setIsEnd` 定义后全项目零调用，线程无法优雅终止 | `Music.java:24-26、53` | 音频挂 React 生命周期，卸载即停（`src/audio/BGMController.tsx` + `audioManager.ts`）。两个 .mid 原件已入库 `src/assets/audio/midi/`（浏览器不可直接播放，合成转换仍为待办——本机需 fluidsynth/timidity + soundfont） |
+| KT4 | BGM 停止机制未完成：`Music.setIsEnd` 定义后全项目零调用，线程无法优雅终止 | `Music.java:24-26、53` | 音频挂 React 生命周期，卸载即停（`src/audio/BGMController.tsx` + `audioManager.ts`）。两个 .mid 已用 FluidSynth 2.6.2 + GeneralUser GS 转码为 `bgm/god-knows.mp3`、`bgm/black-rose.mp3` 并接入播放管线（BOSS 战 / 阴面位面），原件保留备查 |
 | KT5 | README 承诺的前作合并只完成一半：注释称前作 StrangeAdventure『可以通过地图越界传送过去』，实际仅北越界接彩蛋，东=传送回地图、南/西=直接死亡 | `Game.java:1856-1858`；README.md:29-33 | 四个越界方向都做成内容：越界「beyond」事件触发外域剧本（`src/data/story/outskirts.ts`），东侧 = 无尽回廊程序生成关卡（`src/data/levels/endless.ts`），死亡分支均为 closable 高难度终局——兑现「四方向不同彩蛋」 |
 | KT6 | 中文 I/O 依赖平台默认字符集（实测 UTF-8 输入『男』在 GBK 控制台被解码成乱码导致性别校验失败直接退出），README.md:6 只让用户去改 IDE 编码 | README.md:4-6；实测命令 `java -cp … Game < UTF-8输入` → 「输入的性别有误」（Game.java:27-32）；改喂 GBK 编码输入后才通过 | Web 天然 UTF-8，问题整体消灭；「校验失败即杀进程」改为 closable 终局可再战，无一击退出路径 |
 | KT7 | printDialogue 巨型 if-else 链（约 1540 行）+ 19 个参数传递状态，NPC 四分支台词几乎完全复制粘贴（509-557/558-643/644-728/729-809 四段近似代码） | `Game.java:324-1866` | 数据驱动重构完成：坐标→事件表（`src/data/story/`，含 `angels.ts` 四天使参数化、`authorPuzzle.ts`、`bossActs.ts`、`mobs.ts`），台词文本外置，由 `src/engine/story/interpreter.ts` 解释执行——React 组件化的天然切入点已成现实 |
@@ -373,7 +373,7 @@ npm run preview    # 预览 dist/ 构建产物
 | `src/data/gacha/pools.ts` | BandoriLotteryEmulator `Lottery.java:40-46` 概率（正式池逐卡化 + 怀旧池原样复刻）+ 三层保底参数 |
 | `src/data/story/**` | KichikuAdventure `Game.java` printDialogue 对白 + `EasterEgg.java:71-341` 隐藏关剧本 |
 | `src/assets/**` | SanBPushChest assets（图 32 + 音效 20 + BGM 2）、BandoriLotteryEmulator BGM 1 |
-| `src/assets/audio/midi/` | KichikuAdventure 两个 .mid 原件（**浏览器不可播**，本机 ffmpeg 无 MIDI 合成器，待 fluidsynth/timidity + soundfont 转换） |
+| `src/assets/audio/midi/` | KichikuAdventure 两个 .mid 原件（保留备查）；已转码为 `bgm/god-knows.mp3`、`bgm/black-rose.mp3`（FluidSynth 2.6.2 + GeneralUser GS） |
 
 ---
 

@@ -169,9 +169,10 @@ describe('音频素材 —— manifest 声明的文件必须真实存在', () =>
     }
   });
 
-  it('.mid 条目明确标记 playable:false（浏览器不可播 MIDI 的诚实契约）', () => {
-    const mids = WORLD_TABLES.audio.bgm.filter((b) => b.file.endsWith('.mid'));
-    expect(mids.length).toBe(2);
-    for (const m of mids) expect(m.playable).toBe(false);
+  it('全部 BGM 均可播（.mid 已转码为 mp3，file 均为浏览器可播扩展名）', () => {
+    for (const b of WORLD_TABLES.audio.bgm) {
+      expect(b.playable, `${b.id} 应可播`).toBe(true);
+      expect(b.file, `${b.id} 文件扩展名`).toMatch(/\.(mp3|ogg|wav)$/);
+    }
   });
 });

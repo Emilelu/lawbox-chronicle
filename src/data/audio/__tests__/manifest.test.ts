@@ -43,13 +43,16 @@ describe('manifest —— 许可维度完备性', () => {
     expect(bandori?.note).toContain('BanG Dream');
   });
 
-  it('两首 .mid 来自 KichikuAdventure（GPL-3.0）且明确 playable:false', () => {
-    const mids = ASSET_MANIFEST.bgm.filter((b) => b.file.endsWith('.mid'));
-    expect(mids.map((m) => m.id).sort()).toEqual(['bgm-black-rose', 'bgm-god-knows'].sort());
-    for (const mid of mids) {
-      expect(mid.playable).toBe(false);
-      expect(mid.license).toBe('GPL-3.0');
-      expect(mid.origin).toBe('KichikuAdventure');
+  it('两首 KichikuAdventure 曲目已由 .mid 转码为可播 mp3（GPL-3.0）', () => {
+    const converted = ASSET_MANIFEST.bgm.filter(
+      (b) => b.id === 'bgm-god-knows' || b.id === 'bgm-black-rose',
+    );
+    expect(converted.map((b) => b.id).sort()).toEqual(['bgm-black-rose', 'bgm-god-knows']);
+    for (const b of converted) {
+      expect(b.playable).toBe(true);
+      expect(b.file).toMatch(/^bgm\/(god-knows|black-rose)\.mp3$/);
+      expect(b.license).toBe('GPL-3.0');
+      expect(b.origin).toBe('KichikuAdventure');
     }
   });
 
@@ -101,8 +104,10 @@ describe('manifest —— 与数据层 audio.ts 零漂移', () => {
     }
   });
 
-  it('可播 BGM 只有 sanb 与 bandori 两首', () => {
-    expect([...PLAYABLE_BGM_IDS].sort()).toEqual(['bgm-bandori', 'bgm-sanb'].sort());
+  it('可播 BGM 为全部四首（两首原曲 + 两首 .mid 转码）', () => {
+    expect([...PLAYABLE_BGM_IDS].sort()).toEqual(
+      ['bgm-bandori', 'bgm-sanb', 'bgm-god-knows', 'bgm-black-rose'].sort(),
+    );
   });
 });
 
