@@ -38,15 +38,19 @@ import {
 
 /* ============================ 解锁谓词（S9/S10） =========================== */
 
-/** 「到达某关」= 旗标 reached:<id> 为真，或当前段位已排到该关或之后 */
+/** 「到达某关」= 旗标 reached:<id> 为真，或当前段位已排到该关或之后，或上一关已通关 */
 export function hasReachedLevel(state: GameState, levelId: string): boolean {
   if (state.story.flags[`reached:${levelId}`] === true) return true;
   const targetIndex = LEVELS.findIndex((l) => l.id === levelId);
   if (targetIndex < 0) return false;
   const segment = state.segment;
-  if (segment === null) return false;
-  const currentIndex = LEVELS.findIndex((l) => l.id === segment.levelId);
-  return currentIndex >= targetIndex;
+  if (segment !== null) {
+    const currentIndex = LEVELS.findIndex((l) => l.id === segment.levelId);
+    if (currentIndex >= targetIndex) return true;
+  }
+  // 旧存档回填：上一关已通关但 reached:<本关> 未写入时，视为已到达
+  const prev = targetIndex > 0 ? LEVELS[targetIndex - 1] : undefined;
+  return prev !== undefined && state.story.flags[`cleared:${prev.id}`] === true;
 }
 
 /** 「通关某关」= 旗标 cleared:<id> 为真，或结算面板正停在该关 */

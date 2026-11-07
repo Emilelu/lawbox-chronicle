@@ -31,6 +31,7 @@ const SAMPLE_EVENTS: readonly FxEvent[] = [
   { type: 'fx/planeShift' },
   { type: 'camera/orbitTo', target: { x: 0, y: 0 }, pitch: 60 },
   { type: 'ui/toast', messageKey: 'toast.skeletonReady' },
+  { type: 'ui/closePanels' },
   { type: 'debug/mark', label: 'test' },
 ];
 

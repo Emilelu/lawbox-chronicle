@@ -3,7 +3,7 @@
 > **推箱解谜是世界骨架，鬼畜文字冒险是剧情血肉，法则卡实时改写推箱物理与战斗公式。**
 > 用一次冒险，改写「注定 abandoned」的 META 结局。
 
-![version](https://img.shields.io/badge/version-0.1.0-blue) ![stack](https://img.shields.io/badge/React_18-TypeScript_strict-Vite_5-3178c6) ![tests](https://img.shields.io/badge/vitest-31_files_%2F_474_tests-green)
+![version](https://img.shields.io/badge/version-0.1.0-blue) ![stack](https://img.shields.io/badge/React_18-TypeScript_strict-Vite_5-3178c6) ![tests](https://img.shields.io/badge/vitest-31_files_%2F_475_tests-green)
 
 把三个废弃老游戏熔成一个连续的 3D 箱庭冒险：
 
@@ -106,7 +106,7 @@
 | **framer-motion（overlay）/ useFrame（3D）** | overlay 动效走 framer-motion（抽卡翻牌演出、模态转场）；3D 内动效走 R3F 的 `useFrame`，两者各司其职 |
 | **howler.js** | 音频资源经 import 由打包器解析，BGM/SFX 挂 React 生命周期、卸载即停——一次性消灭三类音乐 bug：KichikuAdventure 非守护线程挂死、BandoriLotteryEmulator 异常 `System.exit` 杀主线程、SanBPushChest 首键 go 门槛无声 |
 | **zod** | 关卡/卡池/事件表的 id 引用在集成期校验（发卡→法则补丁、掉落→武器、事件→敌人、音频→文件），「README 与代码系统性不一致」类问题无处藏身 |
-| **vitest** | 引擎层纯函数可脱离 React 单测。当前 31 个测试文件 / 474 个用例，含主线 12 关离线可解性常驻门 |
+| **vitest** | 引擎层纯函数可脱离 React 单测。当前 31 个测试文件 / 475 个用例，含主线 12 关离线可解性常驻门 |
 
 ### 架构图
 
@@ -201,7 +201,7 @@ src/
 
 - **单一真相源**：一切游戏状态在 `core/store/gameStore.ts` 的唯一 store 中；`segment`/`combat` 等旧形状读点是单向投影，永远只在该状态写入的同一 `set()` 里重算，不是第二真相源。
 - **守卫先于索引**：全项目唯一网格索引点是 `core/gridMove.ts` 的 `cellAt`/`isInside`，越界是显式 `{ ok: false }`；配合 `tsconfig.app.json` 的 `strict` + `noUncheckedIndexedAccess`，靠 JS 越界返回 undefined 兜底的写法在类型层就不可能。
-- **引擎纯函数**：`engine/` 四个引擎零 React 依赖，action → 纯函数 → 新状态，vitest 直接覆盖（当前 474 用例）。
+- **引擎纯函数**：`engine/` 四个引擎零 React 依赖，action → 纯函数 → 新状态，vitest 直接覆盖（当前 475 用例）。
 - **演出与状态分离**：音效/震屏/粒子一律经 `core/events/bus` 广播，不进状态机。
 
 ---
@@ -221,7 +221,7 @@ npm run preview    # 预览 dist/ 构建产物
 
 | 命令 | 结果 |
 | --- | --- |
-| `npm run test` | ✅ 通过：**31 个测试文件 / 474 个用例全绿**（67.3s），含主线 12 关「零法则可解」离线校验门与逐格回放验证 |
+| `npm run test` | ✅ 通过：**31 个测试文件 / 475 个用例全绿**（67.3s），含主线 12 关「零法则可解」离线校验门与逐格回放验证 |
 | `npm run build` | ✅ 通过：`tsc -b && vite build` 成功（5.75s），产物含三套 BGM、20 个音效与全部贴图 |
 | `npm install` | 未实跑（本机 `node_modules` 已存在）；为标准安装命令 |
 | `npm run dev` | 未实跑（常驻开发服务器，不便在文档流程中启动）；脚本已定义于 `package.json` |
@@ -246,7 +246,7 @@ npm run preview    # 预览 dist/ 构建产物
 | K6 | 全项目 22 个 Scanner 共享 System.in 且从不关闭，首个 Scanner 缓冲会吞掉后续全部输入导致后续 Scanner 永久阻塞 | `Game.java` 10 处（23/84/285/489/928/932/1155/1159/1407/1411）、`EasterEgg.java` 12 处（80/95/112/117/123/131/135/139/147/161/168/189）；`@SuppressWarnings("resource")`（Game.java:17/323）仅压警告 | 触发条件：输入快于消费（粘贴/管道/脚本）。实测第一次全量跑：Game.java:23 的 Scanner 一次性缓冲了整个输入文件，Game.java:84 的 move Scanner 阻塞在「现在，你可以开始移动了。」后永远收不到输入。交互逐键可侥幸工作，属结构性资源/输入缺陷 | medium | 输入层唯一事件源（`src/input/useKeyActions.ts` + `TouchPad.tsx`），多处 Scanner 抢占输入的结构不存在 |
 | K7 | 武器选择边界检查 off-by-one：允许输入 `bag.size()+1`，触发 IndexOutOfBoundsException 被吞成「逃跑」 | `Game.java:934/1161/1413`（`atglsR <= bag.size() + 1` 应为 `bag.size()`）→ `Game.java:936/1163/1415` `bag.get(atglsR-1)` 越界 → 外层 catch（1010/1237/1488）捕获 | 触发条件：战斗中武器序号恰好等于背包数+1。实测：bag=[匕首] 时输入 2，输出「你因为某些原因逃跑了，害。」而非提示无效，玩家不知发生了什么 | low | `noUncheckedIndexedAccess` 全开 + 守卫式访问，越界选择在类型层不可能（`tsconfig.app.json:26`）；选择项由 zod 校验的数据表驱动 |
 | K8 | 武器攻击加成按背包下标到 weasum 固定列表取值，作者清空背包后下标错位（当前路线靠 BOSS 战硬编码而未爆发） | `Game.java:940/1167/1419`（`weasum.get(atglsR - 1)`）；`Game.java:497-500` `bag.clear()` 后 bag=[爷爷的拐杖] 而 `weasum.get(0)`=匕首 | 触发条件（潜伏）：任何在 `bag.clear()` 之后发生的常规战斗会拿到错误武器数值。当前唯一后续战斗是 BOSS（Game.java:1612-1616 硬编码拐杖、无下标查找）所以未触发；改动剧情或加战斗即踩雷 | low | 武器与加成数值单表声明（`src/data/weapons.ts`），不存在可错位的平行列表；zod 集成期校验形状与引用 |
-| K9 | 战斗胜负结算 message 依赖 finally 块，但玩家死亡走 `System.exit(0)`，finally 不执行；HP 无下限截断，击杀溢出显示负血 | `Game.java:988-996/1216-1223/1467-1474/1841-1860`（finally）、965/1193/1444/1810（System.exit）；无 0 值截断仅上限截断（954-956/974-976 等） | 触发条件：任何击杀。实测日志：「蔡徐坤 现在的血量是 -20」、郭老师 -10、冬泳怪鸽 -31、BOSS -157；玩家死亡路径不打印结算。表现问题，不影响逻辑正确性 | low | 结算为纯函数返回 `StrikeResult` 而非 finally 文案；`clampHp` 下限 0 上限 maxHp，负血不可表达（`src/core/formula.ts`） |
+| K9 | 战斗胜负结算 message 依赖 finally 块，但玩家死亡走 `System.exit(0)`，finally 不执行；HP 无下限截断，击杀溢出显示负血 | `Game.java:988-996/1216-1223/1467-1475/1841-1860`（finally）、965/1193/1444/1810（System.exit）；无 0 值截断仅上限截断（954-956/974-976 等） | 触发条件：任何击杀。实测日志：「蔡徐坤 现在的血量是 -20」、郭老师 -10、冬泳怪鸽 -31、BOSS -157；玩家死亡路径不打印结算。表现问题，不影响逻辑正确性 | low | 结算为纯函数返回 `StrikeResult` 而非 finally 文案；`clampHp` 下限 0 上限 maxHp，负血不可表达（`src/core/formula.ts`） |
 | K10 | BOSS 分身数无界翻倍，long 溢出后打印负数分身 | `Game.java:1614`（`long shadow = 2`）、1828（`shadow = shadow * 2`） | 触发条件：BOSS 战拖过约 62 次「玩家格挡 BOSS」（实测 OvTest：62 次翻倍后 shadow=-9223372036854775808）。极端回合数下触发（全格挡 10 伤/回合需 234 回合），纯表现层 | low | 结算数值由 `engine/combat` 纯函数产出（TS number 语义 + 单测），无 long 累乘溢出语义 |
 | K11 | `Music.Play` 静默吞异常 + `Music.Stop()` 对未初始化 midi 直接解引用 → NPE 风险；BGM 路径硬编码相对路径 | `Music.java:39-40`（空 catch）、43-49（Stop 不判空）、16-18（`new File("src/me/emilelu/KichikuAdventure")`）；`EasterEgg.java:220-221`（连调两次 Stop()） | 触发条件：工作目录不在项目根/两个 mid 未复制（README.md:5 自己承认此风险）→ Play 失败 midi=null → EasterEgg 到达 Horrible Atmosphere 时 Stop() 抛 NPE，且 BGM 静默消失无任何提示 | low | 资源 URL 构建期解析（`import.meta.glob`），加载/播放失败记入错误队列并广播 toast，绝不静默（`src/audio/audioManager.ts`） |
 | K12 | BOSS 战战前「请选择武器」是假的：打印选项但不读任何输入，武器硬编码 | `Game.java:1611`（getBag）→1612（硬编码「你选择了爷爷的拐杖！」），与 `Game.java:1609`「逃跑(被禁用)」一样无输入校验 | 触发条件：BOSS 战开始时玩家按提示输入序号 → 输入滞留缓冲区，战斗结束后被外层 move Scanner 当移动指令消费（输入'1'会得到「输入的内容不合法」） | low | BOSS 走统一战斗管线（`src/engine/combat/`），武器为背包真实条目的显式选择，与常规战斗同一套代码 |
@@ -302,7 +302,7 @@ npm run preview    # 预览 dist/ 构建产物
 
 | # | 未完成项 | 原作位置 | 本作落实 |
 | --- | --- | --- | --- |
-| KT1 | 代码中 0 条 TODO/FIXME 注释；但 EasterEgg 整个游戏是自称 abandoned 的半成品：数值全是摆设（Boss.hp=2147483647、evolvedPlayerU.normalAttack=Boss.hp 只在死亡文案出现）、GodMode 接口返回 null（EasterEgg.java:33-41）、『胜利』结局仍是死亡 | `src/me/emilelu/KichikuAdventure/EasterEgg.java:75`（'This game is abandoned'）、28-41、33；README.md:33 | 原提案全数落地：做成可解锁隐藏关（`src/data/story/hiddenGame.ts`）；作弊码文化保留为 META 终端指令（`/kill--`、`/give--@p--`、`BABA`，见 `src/data/cheats/commands.ts` 终端别名表）；「最终结局也是死亡」改造成 META 反转真结局「拒绝剧本的人」；GodMode 类无敌能力以作弊条目形式走 CheatRegistry 同一道门 |
+| KT1 | 代码中 0 条 TODO/FIXME 注释；但 EasterEgg 整个游戏是自称 abandoned 的半成品：数值全是摆设（Boss.hp=2147583647、evolvedPlayerU.normalAttack=Boss.hp 只在死亡文案出现）、GodMode 接口返回 null（EasterEgg.java:33-41）、『胜利』结局仍是死亡 | `src/me/emilelu/KichikuAdventure/EasterEgg.java:75`（'This game is abandoned'）、28-41、33；README.md:33 | 原提案全数落地：做成可解锁隐藏关（`src/data/story/hiddenGame.ts`）；作弊码文化保留为 META 终端指令（`/kill--`、`/give--@p--`、`BABA`，见 `src/data/cheats/commands.ts` 终端别名表）；「最终结局也是死亡」改造成 META 反转真结局「拒绝剧本的人」；GodMode 类无敌能力以作弊条目形式走 CheatRegistry 同一道门 |
 | KT2 | 迷吼tiao 介绍「可以多次使用」但全游戏无任何次数/耐久/弹药机制 | README.md:26、`Game.java:63` | 做成消耗次数型武器：爆炸耐久 3 次（`src/data/weapons.ts` 的 `detonation` 耐久字段，注释明确标注 KT2），填补武器体系单调性 |
 | KT3 | 爷爷的拐杖「可以击退敌人 ? 米」无击退机制（? 号本身就是未填的坑） | README.md:28、`Game.java:65` | 做成带位移效果的武器：`knockbackSteps = 2`（weapons.ts），由 `src/engine/combat/effects.ts` 消费为击退位移——改变敌我站位、形成距离博弈，正好利用网格地图 |
 | KT4 | BGM 停止机制未完成：`Music.setIsEnd` 定义后全项目零调用，线程无法优雅终止 | `Music.java:24-26、53` | 音频挂 React 生命周期，卸载即停（`src/audio/BGMController.tsx` + `audioManager.ts`）。两个 .mid 原件已入库 `src/assets/audio/midi/`（浏览器不可直接播放，合成转换仍为待办——本机需 fluidsynth/timidity + soundfont） |
@@ -343,7 +343,7 @@ npm run preview    # 预览 dist/ 构建产物
 
 ## 本轮修复对照（12 项）
 
-> 上轮验收发现的 9 个必修缺口 + 3 组顺手修，本轮由引擎接线 / 3D 视觉 / 面板三位工程师分区修复。这些不是原作 bug，而是新作引擎能力「已实现但不可达」的接线缺口与 UI 补齐。修复后门禁通过：`npm run test` 31 文件 / 474 用例全绿（本 README 撰写时实测）。
+> 上轮验收发现的 9 个必修缺口 + 3 组顺手修，本轮由引擎接线 / 3D 视觉 / 面板三位工程师分区修复。这些不是原作 bug，而是新作引擎能力「已实现但不可达」的接线缺口与 UI 补齐。修复后门禁通过：`npm run test` 31 文件 / 475 用例全绿（本 README 撰写时实测）。
 
 | # | 修复项 | 缺口（修复前） | 本作落实 |
 | --- | --- | --- | --- |

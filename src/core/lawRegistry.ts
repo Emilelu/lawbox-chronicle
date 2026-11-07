@@ -24,9 +24,8 @@ export const LAW_PATCH_IDS = [
   'gravity-well', // 重力井：允许推挤出界坠落（combat 斩杀）
   'plane-shift', // 位面通行：解锁 F 位面切换
   'second-chance', // 再临：战败免死一次
-  // ---- 谜题侧补丁（集成期上提注册：与 engine/puzzle/rules.ts 的补位表
-  //      同 id 同 effect；application 经 buildPuzzleRuleSet 分流到补位表，
-  //      core 侧负责卡牌引用校验与 UI 展示；一补丁一卡，稀有度一致） ----
+  // ---- 谜题侧补丁（已全部注册于此：唯一真相，谜题引擎经 buildPuzzleRuleSet
+  //      → applyPatchChain 消费；一补丁一卡，稀有度一致） ----
   'diagonal-push', // 斜向推挤：允许沿对角线推箱
   'chest-off-goal', // 箱可推离：就位箱可推落基座落差
   'mirror-pull', // 镜像拉箱：允许「后退拉箱」
@@ -120,8 +119,8 @@ export const LAW_PATCHES: Readonly<Record<LawPatchId, LawPatchDef>> = Object.fre
     rarity: 4,
     effect: { op: 'set', field: 'secondChance', value: true },
   },
-  // ---- 谜题侧补丁（与 engine/puzzle/rules.ts 的补位表同 id 同 effect；
-  //      本表负责卡牌引用校验与 UI 展示，谜题引擎经 buildPuzzleRuleSet 消费） ----
+  // ---- 谜题侧补丁（唯一真相：谜题引擎经 buildPuzzleRuleSet → applyPatchChain
+  //      消费本表；卡牌引用校验与 UI 展示同源） ----
   'diagonal-push': {
     id: 'diagonal-push',
     name: '斜向推挤',

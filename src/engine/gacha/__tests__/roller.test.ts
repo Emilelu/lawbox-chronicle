@@ -600,5 +600,9 @@ describe('同一十连重复卡：第二张标重复并结算碎片', () => {
       }
       seen.add(pull.cardId);
     }
+    // tiny 池每档唯一一条均为法则卡：同批重复必结算 20 碎片/张
+    const duplicates = result.pulls.filter((pull) => !pull.isNew).length;
+    expect(result.shardsGained).toBe(duplicates * FORMAL_POOL.pity.dupeLawShards);
+    expect(result.shardsGained).toBeGreaterThan(0);
   });
 });

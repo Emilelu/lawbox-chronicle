@@ -21,6 +21,7 @@ import {
 } from '../gameStore';
 import { POOL_NOSTALGIA, useStatsStore } from '../../../archive/statsCollector';
 import { KEY_CODE_TO_ACTION, dispatchBinding } from '../../../input/useKeyActions';
+import { bus } from '../../../core/events/bus';
 import type { PuzzleState } from '../../../engine/puzzle/move';
 
 const store = () => useGameStore.getState();
@@ -241,5 +242,15 @@ describe('通关解锁下一关（主线软锁修复）', () => {
     useGameStore.setState({ phase: 'gacha' });
     store().closeOverlay();
     expect(store().phase).toBe('playing');
+  });
+
+  it('closeOverlay 发布 ui/closePanels（选关/档案面板据此关闭）', () => {
+    const received: string[] = [];
+    const off = bus.subscribe((e) => {
+      if (e.type === 'ui/closePanels') received.push(e.type);
+    });
+    store().closeOverlay();
+    off();
+    expect(received).toEqual(['ui/closePanels']);
   });
 });

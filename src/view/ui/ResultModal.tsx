@@ -155,9 +155,9 @@ export function ResultModal() {
                 <button
                   className="btn-neon"
                   onClick={() => store().startLevel(nextLevel.id)}
-                  title={`下一关：${nextLevel.name}`}
+                  title={`${tUi(locale, 'ui.nextLevel')}：${nextLevel.name}`}
                 >
-                  ▸ 下一关
+                  ▸ {tUi(locale, 'ui.nextLevel')}
                 </button>
               )}
               <button className="chip" style={{ cursor: 'pointer', padding: '0.6em 1.4em' }} onClick={() => store().closeOverlay()}>

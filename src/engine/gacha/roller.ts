@@ -166,13 +166,17 @@ export function rollPoolBatch(
   assertBatchSize(times);
   assertPoolValid(pool);
   const { rarities, boostedTenPull } = rollRarities(pool, rng, args, times);
+  // 同批去重（与 performGacha 同口径）：本批已出现过的卡，第二张起 isNew=false
+  const ownedInBatch = new Set<string>(args.ownedCardIds ?? []);
   const pulls: GachaPull[] = rarities.map((rarity, i) => {
     const card = pickCardForRarity(pool, rarity, rng);
+    const isNew = !ownedInBatch.has(card.id);
+    ownedInBatch.add(card.id);
     return {
       uid: stableUid('pull', rng, args.totalPullsBefore + i + 1),
       cardId: card.id,
       rarity,
-      isNew: !args.ownedCardIds?.has(card.id),
+      isNew,
     };
   });
   return {

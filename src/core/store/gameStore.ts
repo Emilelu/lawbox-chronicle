@@ -688,6 +688,8 @@ export const useGameStore = create<GameStore>()(
           segment: segmentOf(puzzle, levelId),
           storyRuntime: state.storyRuntime.phase === 'idle' ? state.storyRuntime : { ...IDLE_STORY_RUNTIME, flags: { ...state.storyRuntime.flags } },
         });
+        // 进入任意关卡时统一收起外部面板（选关/档案分片经总线关闭）
+        bus.publish({ type: 'ui/closePanels' });
         bus.publish({ type: 'bgm/play', bgmId: 'bgm-sanb' });
       };
 
@@ -847,7 +849,18 @@ export const useGameStore = create<GameStore>()(
         },
 
         backToTitle() {
-          set({ phase: 'title', activePanel: 'none', storyRuntime: { ...IDLE_STORY_RUNTIME, flags: { ...get().story.flags } } });
+          // 回标题即清空一局的世界状态：segment/result 不清会让标题页继续渲染
+          // 旧关卡与旧结算（closeOverlay 的 title 回退也依赖 segment===null）
+          set({
+            phase: 'title',
+            activePanel: 'none',
+            segment: null,
+            puzzle: null,
+            result: null,
+            combat: null,
+            battle: null,
+            storyRuntime: { ...IDLE_STORY_RUNTIME, flags: { ...get().story.flags } },
+          });
         },
 
         dispatch(action) {
