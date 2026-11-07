@@ -249,6 +249,12 @@ describe('solver —— 主线 12 关离线校验（ST6 硬门槛）', () => {
 
   it('全部主线关卡零法则可解，且解路逐格回放通过', { timeout: 600_000 }, () => {
     const reports = validateAllLevels(AREA_LEVELS);
+    // 关卡集合护栏：上游若返回空列表或漏关，下面的循环会空跑通过
+    expect(reports.length, '校验报告数应等于关卡数').toBe(AREA_LEVELS.length);
+    expect(
+      reports.map((r) => r.levelId).sort(),
+      '校验报告应逐关覆盖且不重复',
+    ).toEqual(AREA_LEVELS.map((l) => l.id).sort());
     // 离线校验报告（推数/解路步数/状态数）——用于 parSteps 标定与回归对比
     for (const r of reports) {
       console.info(

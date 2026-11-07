@@ -92,13 +92,23 @@ describe('altarSpawns 出生点校验', () => {
     const base = AREA_LEVELS.find((l) => l.id === 'level-sb-01');
     if (base === undefined) throw new Error('level-sb-01 缺失');
     const mk = (altarSpawns: readonly { x: number; y: number }[]) => ({ ...base, altarSpawns });
-    expect(LevelDefSchema.safeParse(mk([{ x: 99, y: 0 }])).success).toBe(false); // 越界
-    expect(LevelDefSchema.safeParse(mk([{ x: -1, y: 0 }])).success).toBe(false); // 负坐标
-    expect(LevelDefSchema.safeParse(mk([{ x: 7, y: 11 }, { x: 7, y: 11 }])).success).toBe(false); // 重复
-    expect(LevelDefSchema.safeParse(mk([{ x: 0, y: 1 }])).success).toBe(false); // 撞墙
-    expect(LevelDefSchema.safeParse(mk([{ x: 6, y: 1 }])).success).toBe(false); // 撞尖刺
-    expect(LevelDefSchema.safeParse(mk([{ x: 13, y: 1 }])).success).toBe(false); // 撞玩家出生点
-    expect(LevelDefSchema.safeParse(mk([{ x: 6, y: 4 }])).success).toBe(false); // 撞箱子出生点
+    // 断言「被哪条 refine 拒绝」，而不只是被拒绝：规则错位时要能立刻定位
+    const expectRejectedBy = (spawns: readonly { x: number; y: number }[], message: string) => {
+      const parsed = LevelDefSchema.safeParse(mk(spawns));
+      expect(parsed.success, `期望被拒绝：${JSON.stringify(spawns)}`).toBe(false);
+      if (parsed.success) return;
+      expect(
+        parsed.error.issues.some((i) => i.message === message),
+        `${JSON.stringify(spawns)} 应由「${message}」拒绝，实际 issues=${JSON.stringify(parsed.error.issues)}`,
+      ).toBe(true);
+    };
+    expectRejectedBy([{ x: 99, y: 0 }], 'altarSpawns 必须在网格边界内'); // 越界
+    expectRejectedBy([{ x: -1, y: 0 }], 'altarSpawns 必须在网格边界内'); // 负坐标
+    expectRejectedBy([{ x: 7, y: 11 }, { x: 7, y: 11 }], 'altarSpawns 不得出现重复坐标'); // 重复
+    expectRejectedBy([{ x: 0, y: 1 }], 'altarSpawns 不得落在墙/尖刺/玩家/箱子出生点格'); // 撞墙
+    expectRejectedBy([{ x: 6, y: 1 }], 'altarSpawns 不得落在墙/尖刺/玩家/箱子出生点格'); // 撞尖刺
+    expectRejectedBy([{ x: 13, y: 1 }], 'altarSpawns 不得落在墙/尖刺/玩家/箱子出生点格'); // 撞玩家出生点
+    expectRejectedBy([{ x: 6, y: 4 }], 'altarSpawns 不得落在墙/尖刺/玩家/箱子出生点格'); // 撞箱子出生点
   });
 });
 
