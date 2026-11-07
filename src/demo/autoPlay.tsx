@@ -25,6 +25,7 @@ import { WEAPONS } from '../data/weapons';
 import { ALL_SCRIPTS } from '../data/storyScripts';
 import { parseLevelGeometry, type LevelGeometry } from '../engine/puzzle/grid';
 import { solveGeometry, walkDirs, type SolveStep } from '../engine/puzzle/solver';
+import { PRECOMPUTED_SOLUTIONS } from '../data/levels/solutionSteps';
 import type { Dir, GameState } from '../core/types';
 
 export interface AutoPlayConfig {
@@ -170,13 +171,22 @@ export function AutoPlayLayer() {
         return;
       }
       geometry = parsed.geometry;
+      // 预计算解路：运行时零求解，关卡切换不再卡顿（高难关现场求解可达数十秒）
+      const precomputed = PRECOMPUTED_SOLUTIONS[id];
+      if (precomputed !== undefined && precomputed.length > 0) {
+        steps = precomputed;
+        lastProgress = Date.now();
+        setStatus(`${level.name} · 0/${steps.length} 推`);
+        return;
+      }
+      // 兜底：未预计算的关卡（未来新增）现场求解，可能耗时
       const solved = solveGeometry(geometry);
       if (!solved.solvable || solved.steps.length === 0) {
         finish(`求解失败：${level.name}${solved.error !== undefined ? `（${solved.error}）` : ''}`);
         return;
       }
       steps = solved.steps;
-      lastProgress = Date.now(); // 求解可能耗时数十秒，不计入「卡住」判定
+      lastProgress = Date.now();
       setStatus(`${level.name} · 0/${steps.length} 推`);
     };
 

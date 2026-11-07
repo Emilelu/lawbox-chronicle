@@ -3,7 +3,7 @@
 > **推箱解谜是世界骨架，鬼畜文字冒险是剧情血肉，法则卡实时改写推箱物理与战斗公式。**
 > 用一次冒险，改写「注定 abandoned」的 META 结局。
 
-![version](https://img.shields.io/badge/version-0.1.0-blue) ![stack](https://img.shields.io/badge/React_18-TypeScript_strict-Vite_5-3178c6) ![tests](https://img.shields.io/badge/vitest-32_files_%2F_479_tests-green)
+![version](https://img.shields.io/badge/version-0.1.0-blue) ![stack](https://img.shields.io/badge/React_18-TypeScript_strict-Vite_5-3178c6) ![tests](https://img.shields.io/badge/vitest-33_files_%2F_481_tests-green)
 
 把三个废弃老游戏熔成一个连续的 3D 箱庭冒险：
 
@@ -106,7 +106,7 @@
 | **framer-motion（overlay）/ useFrame（3D）** | overlay 动效走 framer-motion（抽卡翻牌演出、模态转场）；3D 内动效走 R3F 的 `useFrame`，两者各司其职 |
 | **howler.js** | 音频资源经 import 由打包器解析，BGM/SFX 挂 React 生命周期、卸载即停——一次性消灭三类音乐 bug：KichikuAdventure 非守护线程挂死、BandoriLotteryEmulator 异常 `System.exit` 杀主线程、SanBPushChest 首键 go 门槛无声 |
 | **zod** | 关卡/卡池/事件表的 id 引用在集成期校验（发卡→法则补丁、掉落→武器、事件→敌人、音频→文件），「README 与代码系统性不一致」类问题无处藏身 |
-| **vitest** | 引擎层纯函数可脱离 React 单测。当前 32 个测试文件 / 479 个用例，含主线 12 关离线可解性常驻门 |
+| **vitest** | 引擎层纯函数可脱离 React 单测。当前 33 个测试文件 / 481 个用例，含主线 12 关离线可解性常驻门 |
 
 ### 架构图
 
@@ -201,7 +201,7 @@ src/
 
 - **单一真相源**：一切游戏状态在 `core/store/gameStore.ts` 的唯一 store 中；`segment`/`combat` 等旧形状读点是单向投影，永远只在该状态写入的同一 `set()` 里重算，不是第二真相源。
 - **守卫先于索引**：全项目唯一网格索引点是 `core/gridMove.ts` 的 `cellAt`/`isInside`，越界是显式 `{ ok: false }`；配合 `tsconfig.app.json` 的 `strict` + `noUncheckedIndexedAccess`，靠 JS 越界返回 undefined 兜底的写法在类型层就不可能。
-- **引擎纯函数**：`engine/` 四个引擎零 React 依赖，action → 纯函数 → 新状态，vitest 直接覆盖（当前 479 用例）。
+- **引擎纯函数**：`engine/` 四个引擎零 React 依赖，action → 纯函数 → 新状态，vitest 直接覆盖（当前 481 用例）。
 - **演出与状态分离**：音效/震屏/粒子一律经 `core/events/bus` 广播，不进状态机。
 
 ---
@@ -227,7 +227,7 @@ npm run preview    # 预览 dist/ 构建产物
 
 | 命令 | 结果 |
 | --- | --- |
-| `npm run test` | ✅ 通过：**32 个测试文件 / 479 个用例全绿**（68s），含主线 12 关「零法则可解」离线校验门与逐格回放验证 |
+| `npm run test` | ✅ 通过：**33 个测试文件 / 481 个用例全绿**（91s），含主线 12 关「零法则可解」离线校验门与逐格回放验证 |
 | `npm run build` | ✅ 通过：`tsc -b && vite build` 成功（5.75s），产物含三套 BGM、20 个音效与全部贴图 |
 | `npm install` | 未实跑（本机 `node_modules` 已存在）；为标准安装命令 |
 | `npm run dev` | 未实跑（常驻开发服务器，不便在文档流程中启动）；脚本已定义于 `package.json` |
@@ -349,7 +349,7 @@ npm run preview    # 预览 dist/ 构建产物
 
 ## 本轮修复对照（12 项）
 
-> 上轮验收发现的 9 个必修缺口 + 3 组顺手修，本轮由引擎接线 / 3D 视觉 / 面板三位工程师分区修复。这些不是原作 bug，而是新作引擎能力「已实现但不可达」的接线缺口与 UI 补齐。修复后门禁通过：`npm run test` 32 文件 / 479 用例全绿（本 README 撰写时实测）。
+> 上轮验收发现的 9 个必修缺口 + 3 组顺手修，本轮由引擎接线 / 3D 视觉 / 面板三位工程师分区修复。这些不是原作 bug，而是新作引擎能力「已实现但不可达」的接线缺口与 UI 补齐。修复后门禁通过：`npm run test` 33 文件 / 481 用例全绿（本 README 撰写时实测）。
 
 | # | 修复项 | 缺口（修复前） | 本作落实 |
 | --- | --- | --- | --- |
