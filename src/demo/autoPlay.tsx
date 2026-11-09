@@ -13,7 +13,10 @@
  *     谜题回答 5,5,1）；遭遇战自动装备武器并攻击；结算面板自动进下一关；
  *  3. 演示期使用"满武器 + 高攻高血"的临时角色，保证剧情战不打断观看；
  *     演示结束（或停止）后恢复进入演示前的玩家/抽卡/进度状态，不污染存档；
- *  4. 顶栏实时显示当前关卡与推数进度，可随时点「停止」（回到标题）。
+ *  4. 顶栏实时显示当前关卡与推数进度，可随时点「停止」（回到标题）；
+ *  5. 失败自恢复（F2）：走位被挡即重规划不盲走；停滞 60s（看门狗）或推箱
+ *     落空 → 本关重置重试（连败计数跨重试保留，上限 DEMO_MAX_LEVEL_RESETS）；
+ *     超限且有下一关则跳关继续，无下一关才放弃 —— 永不无限重玩、不永久卡死。
  *
  * 这是纯观赏模式：不激活任何法则卡（保证 solver 的标准推箱语义与实机一致）。
  */
@@ -68,6 +71,27 @@ export function readAutoPlayConfig(search: string): AutoPlayConfig {
     enabled: params.get('autoplay') === '1',
     speed: Number.isFinite(raw) ? Math.min(5, Math.max(0.5, raw)) : 1,
   };
+}
+
+/* ------------------------- 重试节拍（F2 根治参数） ------------------------ */
+
+/** 演示停滞看门狗：超过该毫秒数无任何可判定进展 → 本关重置重试 */
+export const DEMO_STALL_MS = 60_000;
+/** 同一关连续重置上限：超过即判定本关无法自动通关（跳关或放弃） */
+export const DEMO_MAX_LEVEL_RESETS = 4;
+
+export type LevelRetryPlan = 'reset' | 'skip' | 'giveup';
+
+/**
+ * 连败决策（纯函数，F2）：同一关自动重置不超过上限 → 原地重试；超过上限
+ * 且主线还有下一关 → 跳关恢复（演示不永久卡死、不无限循环）；没有下一关
+ * → 有界放弃。此前 resetLevel 的 resets>4 判断是死代码 —— resetLevel 把
+ * levelId 置空后下一拍 initLevel 总会把 resets 清零，上限永远到不了，
+ * 演示会无限「重玩-失败」循环。
+ */
+export function levelRetryPlan(resets: number, hasNextLevel: boolean): LevelRetryPlan {
+  if (resets <= DEMO_MAX_LEVEL_RESETS) return 'reset';
+  return hasNextLevel ? 'skip' : 'giveup';
 }
 
 /** 演示角色：满武器 + 高攻高血（只在演示期间存在，结束后恢复原状态） */
@@ -141,6 +165,10 @@ export function AutoPlayLayer() {
     let pushStep: SolveStep | null = null;
     let resets = 0;
     let waiting = 0;
+    /** 走位连续被挡计数（F2：被挡不再盲走，连续走不动即判规划失效） */
+    let legBlocked = 0;
+    /** 上次初始化的关卡 id：换关才清零 resets，同关重试保留连败计数（F2） */
+    let initializedLevelId: string | null = null;
     /** 主城剧情巡游进度 */
     let tourIndex = 0;
     let tourDone = false;
@@ -170,17 +198,39 @@ export function AutoPlayLayer() {
 
     const resetLevel = (s: GameStore): void => {
       resets += 1;
-      if (resets > 4) {
+      const next = nextLevelAfter(levelId ?? '');
+      const plan = levelRetryPlan(resets, next !== undefined);
+      const clearPlan = (): void => {
+        legDirs = [];
+        pushStep = null;
+        waiting = 0;
+        legBlocked = 0;
+      };
+      if (plan === 'skip' && next !== undefined) {
+        // 连败超限：跳过本关继续演示（失败可恢复，不永久卡死 —— F2）
+        clearPlan();
+        levelId = null;
+        lastProgress = Date.now();
+        setStatus(`本关自动推进失败，跳过 → ${next.name}`);
+        s.startLevel(next.id);
+        return;
+      }
+      if (plan === 'giveup' || (plan === 'skip' && next === undefined)) {
         finish(`本关自动推进失败：${levelId ?? '未知关卡'}`);
         return;
       }
-      legDirs = [];
-      pushStep = null;
+      clearPlan();
       s.replaySegment(); // 回到关卡初始状态，下一 tick 重新求解
+      // levelId 置空 → 下一 tick initLevel 重新求解；resets 故意不清零：
+      // 连败计数跨重试保留，levelRetryPlan 才有真实的退出条件（F2）
       levelId = null;
     };
 
     const initLevel = (id: string): void => {
+      if (initializedLevelId !== id) {
+        initializedLevelId = id; // 换关才清连败计数；同关重试保留（F2）
+        resets = 0;
+      }
       levelId = id;
       lastProgress = Date.now();
       geometry = null;
@@ -188,7 +238,7 @@ export function AutoPlayLayer() {
       stepIndex = 0;
       legDirs = [];
       pushStep = null;
-      resets = 0;
+      legBlocked = 0;
       waiting = 0;
       tourIndex = 0;
       tourDone = id !== HUB_LEVEL_ID;
@@ -255,7 +305,13 @@ export function AutoPlayLayer() {
       // 每行停留约 1 秒，剧情可读（不受 speed 影响）
       if (now - lastDialogueAt < 1000) return;
       lastDialogueAt = now;
+      const beforeNode = runtime.nodeId;
+      const beforeLine = runtime.lineIndex;
       s.advanceDialogue();
+      // 剧情真实翻页才算进展（F2）：长对话不再误触停滞看门狗；
+      // advanceDialogue 无效（卡死节点）时不刷新，仍由看门狗重试兜底
+      const after = useGameStore.getState().storyRuntime;
+      if (after.nodeId !== beforeNode || after.lineIndex !== beforeLine) lastProgress = now;
     };
 
     const driveCombat = (s: GameStore): void => {
@@ -337,14 +393,26 @@ export function AutoPlayLayer() {
         if (driveTour(s, puzzle.entities, player)) return;
       }
 
-      // 1) 先走位到发力位
+      // 1) 先走位到发力位（F2：被挡不盲走 —— 消费掉被挡的走位会让玩家与
+      //    规划脱节，后续推全部落空；改为作废剩余走位按当前位置重规划）
       if (legDirs.length > 0) {
         const dir = legDirs[0];
-        if (dir === undefined) return;
+        if (dir === undefined) {
+          legDirs = [];
+          return;
+        }
         legDirs = legDirs.slice(1);
         const before = s.segment?.steps ?? -1;
         s.move(dir);
-        if ((useGameStore.getState().segment?.steps ?? -1) !== before) lastProgress = Date.now();
+        if ((useGameStore.getState().segment?.steps ?? -1) !== before) {
+          lastProgress = Date.now();
+          legBlocked = 0;
+          return;
+        }
+        // 走位被挡（规划后的实体位形已变）：连续 2 次仍走不动 → 本步规划失效，重置本关
+        legBlocked += 1;
+        legDirs = [];
+        if (legBlocked > 2) resetLevel(s);
         return;
       }
 
@@ -366,6 +434,7 @@ export function AutoPlayLayer() {
         }
         pushStep = null;
         stepIndex += 1;
+        legBlocked = 0;
         lastProgress = Date.now();
         setStatus(`${LEVELS.find((l) => l.id === levelId)?.name ?? levelId} · ${stepIndex}/${steps.length} 推`);
         return;
@@ -397,8 +466,11 @@ export function AutoPlayLayer() {
     const tick = (): void => {
       const s = useGameStore.getState();
       const now = Date.now();
-      if (now - lastProgress > 60_000) {
-        finish(`演示卡住（阶段 ${s.phase}）`);
+      if (now - lastProgress > DEMO_STALL_MS) {
+        // 停滞看门狗（F2）：不再「60s 无进展即永久放弃」，改为重置本关重试；
+        // resets 预算（levelRetryPlan）兜底，连败超限才跳关/放弃
+        lastProgress = now;
+        resetLevel(s);
         return;
       }
       // 对话/战斗打断后，当前这一步的剩余走位作废，回到 playing 时按位置重规划
@@ -475,7 +547,10 @@ export function AutoPlayLayer() {
     <div
       style={{
         position: 'fixed',
-        top: 10,
+        // L5 根治：顶栏原来与 HUD 左上组同处 top≈12 一带，窄视口（<~900px）
+        // 居中定位会压住星石胶囊/撤销/重玩的可点击区。下移到 HUD 顶行
+        // （top 12 + 高约 58 ≈ 70px）之下，演示模式与 HUD 互不遮挡。
+        top: 72,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 9999,

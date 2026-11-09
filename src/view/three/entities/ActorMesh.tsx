@@ -16,7 +16,7 @@ import type { Dir } from '../../../core/types';
 import {
   ACTOR_SKIN_CELL,
   BOSS_SCALE,
-  FACING_YAW,
+  facingRenderYaw,
   type PlaneTheme,
   type WorldVec3,
 } from '../theme';
@@ -364,7 +364,9 @@ export function ActorMesh({ skin: skinId, kind, position, facing = 'down', theme
   const emissiveIntensity = kind === 'boss' ? 0.32 : kind === 'altar' ? 0.4 : 0.12;
 
   return (
-    <group position={[position[0], position[1], position[2]]} rotation={[0, FACING_YAW[facing], 0]} scale={[scale, scale, scale]}>
+    // 渲染走 facingRenderYaw 的 3/4 收敛：left/right 转满 ±90° 会把单片体素
+    // 模型压成近 1px 竖条（I4），±45° 保留约 71% 正面剪影
+    <group position={[position[0], position[1], position[2]]} rotation={[0, facingRenderYaw(facing), 0]} scale={[scale, scale, scale]}>
       <mesh geometry={geometry}>
         <meshStandardMaterial vertexColors roughness={0.72} metalness={0.12} emissive={accentColor} emissiveIntensity={emissiveIntensity} />
       </mesh>

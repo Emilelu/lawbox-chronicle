@@ -99,13 +99,15 @@ export function CameraRig({ focusWorld, pose, poseId }: CameraRigProps) {
     }
 
     // 2) 自动位姿：球坐标指数收敛（方位角走最短弧）
+    //    distance/polar 为 null = 保持当前值（delta 0）——explore 回正位姿
+    //    只收敛方位角，不抢用户的缩放与俯仰（I2）
     const desired = desiredRef.current;
     if (poseActiveRef.current && desired !== null) {
       tmpOffset.current.copy(camera.position).sub(controls.target);
       spherical.current.setFromVector3(tmpOffset.current);
       const k = 1 - Math.exp(-6 * delta);
-      let distDelta = desired.distance - spherical.current.radius;
-      let phiDelta = desired.polar - spherical.current.phi;
+      const distDelta = desired.distance !== null ? desired.distance - spherical.current.radius : 0;
+      const phiDelta = desired.polar !== null ? desired.polar - spherical.current.phi : 0;
       let thetaDelta = 0;
       if (desired.azimuth !== null) {
         thetaDelta = MathUtils.euclideanModulo(desired.azimuth - spherical.current.theta + Math.PI, Math.PI * 2) - Math.PI;

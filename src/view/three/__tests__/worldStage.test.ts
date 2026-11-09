@@ -11,6 +11,7 @@ import { Euler, Vector3 } from 'three';
 import {
   AREA_WORLD_OFFSETS,
   CAMERA_ZOOM_LIMITS,
+  FACING_RENDER_YAW_LIMIT,
   FACING_YAW,
   POLAR_MAX,
   POLAR_MIN,
@@ -19,10 +20,12 @@ import {
   WALL_SHADE_COUNT,
   cellWorldCenter,
   clampNpcCell,
+  computeExploreResetPose,
   computePose,
   deriveGates,
   deriveTileField,
   easeOutCubic,
+  facingRenderYaw,
   gridCenterWorld,
   hash2,
   mixHex,
@@ -240,11 +243,12 @@ describe('theme · 镜头位姿', () => {
   it('过关拉升远景：victory 距离显著大于 explore，注视点回 arenaCenter', () => {
     const victory = computePose('victory', ctx);
     const explore = computePose('explore', ctx);
-    expect(victory.distance).toBeGreaterThan(explore.distance * 1.8);
+    expect(explore.distance).not.toBeNull(); // explore 常规位姿给出具体距离（回正位姿才传 null）
+    expect(victory.distance).toBeGreaterThan((explore.distance ?? 0) * 1.8);
     expect(victory.target).toEqual([0, 0, 0]);
   });
 
-  it('对话注视说话者头部；战斗取玩家-敌人中点并转侧视角', () => {
+  it('对话注视说话者头部；战斗取玩家-敌人中点且方位角归 0（I1：推挤方向=画面方向）', () => {
     const dialogue = computePose('dialogue', ctx);
     expect(dialogue.target[0]).toBeCloseTo(4, 10);
     expect(dialogue.target[1]).toBeCloseTo(0.55, 10);
@@ -253,7 +257,38 @@ describe('theme · 镜头位姿', () => {
     const combat = computePose('combat', ctx);
     expect(combat.target[0]).toBeCloseTo(2.5, 10);
     expect(combat.target[2]).toBeCloseTo(3.5, 10);
-    expect(combat.azimuth).toBeCloseTo(Math.PI / 2, 10); // 侧面视角
+    // 战斗期与谜题期同方位（azimuth=0，相机在 +Z 侧）：W=画面上。
+    // 曾是 π/2 的侧视运镜，导致布阵期 WASD 与画面整体相差 90°（I1）。
+    expect(combat.azimuth).toBe(0);
+  });
+
+  it('explore 回正位姿只收敛方位角，距离/俯仰保持当前值（I2）', () => {
+    const pose = computeExploreResetPose(ctx);
+    expect(pose.distance).toBeNull(); // 不抢用户的缩放
+    expect(pose.polar).toBeNull(); // 不抢用户的俯仰
+    expect(pose.azimuth).toBe(0); // 方位角回正到网格正方向（与按键语义一致）
+    // 注视点沿用 explore 惯例：玩家头顶 0.4
+    expect(pose.target[0]).toBeCloseTo(1, 10);
+    expect(pose.target[1]).toBeCloseTo(0.4, 10);
+    expect(pose.target[2]).toBeCloseTo(2, 10);
+  });
+});
+
+describe('theme · 朝向渲染收敛（I4：侧视不再缩成竖条）', () => {
+  it('facingRenderYaw：up/down 保持正/背视，left/right 收敛为 ±45° 3/4 视角', () => {
+    expect(facingRenderYaw('down')).toBe(0);
+    expect(facingRenderYaw('up')).toBe(Math.PI);
+    expect(facingRenderYaw('left')).toBe(-FACING_RENDER_YAW_LIMIT);
+    expect(facingRenderYaw('right')).toBe(FACING_RENDER_YAW_LIMIT);
+    expect(FACING_RENDER_YAW_LIMIT).toBeCloseTo(Math.PI / 4, 12);
+  });
+
+  it('语义真值 FACING_YAW 不变：±90° 方向语义保留，收敛只发生在渲染层', () => {
+    expect(FACING_YAW.left).toBe(-Math.PI / 2);
+    expect(FACING_YAW.right).toBe(Math.PI / 2);
+    // 3/4 视角下正面剪影宽度保留 cos(45°)≈71%，侧视不再只剩一列侧棱
+    expect(Math.cos(Math.abs(facingRenderYaw('right')))).toBeCloseTo(Math.SQRT1_2, 12);
+    expect(Math.cos(Math.abs(facingRenderYaw('right')))).toBeGreaterThan(0.7);
   });
 });
 

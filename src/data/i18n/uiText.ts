@@ -1169,3 +1169,145 @@ export function formatPercent(rate: number): string {
   const rounded = Math.round(pct * 100) / 100;
   return `${rounded}%`;
 }
+
+/* ========================== 关卡名/副标题（F4） ============================= */
+
+/**
+ * 关卡文案 i18n（F4）：areas.ts 的 name/subtitle 是关卡数据的唯一事实源，但其
+ * 硬编码中文在英文等语种下不翻译。本表按 levelId 提供七语种覆写；未收录的
+ * levelId（如无尽回廊的程序生成层）由 levelName/levelSubtitle 回落关卡数据
+ * 原文。Record 编译期强制每个 levelId × 每个 LocaleId 齐备（与上方 UI 字典
+ * 同一道防线），UI_TEXT_KEYS 的键集测试不感知本表。
+ */
+interface LevelTextEntry {
+  readonly name: string;
+  readonly subtitle: string;
+}
+
+const LEVEL_TEXT_SOURCE = {
+  'level-sb-01': {
+    'zh-Hans': { name: '初醒箱庭', subtitle: '主城·教学段 —— 把箱子推上旗位基座，四位导航天使会先来见你' },
+    'zh-Hant': { name: '初醒箱庭', subtitle: '主城·教學段 —— 把箱子推上旗位基座，四位導航天使會先來見你' },
+    en: { name: 'First-Awaken Garden', subtitle: 'Hub · tutorial — push the chests onto the flag plinths; the four guiding angels will come to meet you first' },
+    ja: { name: '目覚めの箱庭', subtitle: '主城・チュートリアル —— 箱を旗の台座へ押し上げよう。四人の導きの天使が先に会いに来る' },
+    ru: { name: 'Пробуждённый сад', subtitle: 'Столица · обучение — толкайте сундуки на пьедесталы флагов; четыре ангела-проводника придут встретить вас первыми' },
+    de: { name: 'Garten des Erwachens', subtitle: 'Zentrale · Lektion — schiebe die Kisten auf die Fahnenpodeste; die vier Leitengel kommen zuerst zu dir' },
+    fr: { name: 'Jardin de l’Éveil', subtitle: 'Capitale · didacticiel — poussez les coffres sur les socles des drapeaux ; les quatre anges guides viendront vous voir en premier' },
+  },
+  'level-sb-02': {
+    'zh-Hans': { name: '双廊回环', subtitle: '外域一 —— 回廊交错的对称箱庭，旗位已筑起基座' },
+    'zh-Hant': { name: '雙廊回環', subtitle: '外域一 —— 迴廊交錯的對稱箱庭，旗位已築起基座' },
+    en: { name: 'Twin-Corridor Loop', subtitle: 'Domain 1 — a symmetric garden of crossing corridors; every flag stands on a plinth' },
+    ja: { name: '双廊の環', subtitle: '外域一 —— 回廊が交差する対称の箱庭。旗の位置には台座が築かれている' },
+    ru: { name: 'Петля двойных коридоров', subtitle: 'Внешний домен I — симметричный сад пересекающихся коридоров; у флагов возведены пьедесталы' },
+    de: { name: 'Doppelkorridor-Schleife', subtitle: 'Domäne 1 — ein symmetrischer Garten kreuzender Gänge; die Fahnen stehen auf Podesten' },
+    fr: { name: 'Boucle des deux galeries', subtitle: 'Domaine 1 — un jardin symétrique de galeries croisées ; chaque drapeau est sur un socle' },
+  },
+  'level-sb-03': {
+    'zh-Hans': { name: '碎星十字', subtitle: '外域二 —— 无外框的开放雪原，旗位基座散落如星' },
+    'zh-Hant': { name: '碎星十字', subtitle: '外域二 —— 無外框的開放雪原，旗位基座散落如星' },
+    en: { name: 'Broken-Star Cross', subtitle: 'Domain 2 — an open snowfield without outer walls; flag plinths scattered like stars' },
+    ja: { name: '砕星の十字', subtitle: '外域二 —— 外壁のない開けた雪原。旗の台座は星のように散らばる' },
+    ru: { name: 'Крест битых звёзд', subtitle: 'Внешний домен II — открытое снежное поле без внешних стен; пьедесталы флагов рассыпаны словно звёзды' },
+    de: { name: 'Kreuz der zerbrochenen Sterne', subtitle: 'Domäne 2 — ein offenes Schneefeld ohne Außenwände; Fahnenpodeste verstreut wie Sterne' },
+    fr: { name: 'Croix des étoiles brisées', subtitle: 'Domaine 2 — une plaine enneigée ouverte sans murs extérieurs ; socles de drapeaux épars comme des étoiles' },
+  },
+  'level-sb-04': {
+    'zh-Hans': { name: '星陨间奏', subtitle: '外域三 —— 终段箱庭（四星归位版），通关后「星愿祭坛」将开启四星池' },
+    'zh-Hant': { name: '星隕間奏', subtitle: '外域三 —— 終段箱庭（四星歸位版），通關後「星願祭壇」將開啟四星池' },
+    en: { name: 'Starfall Interlude', subtitle: 'Domain 3 — the final garden (four-star edition); clearing it unlocks the 4★ pool at the Star-Wish Altar' },
+    ja: { name: '星降りの間奏', subtitle: '外域三 —— 終盤の箱庭（四星整列版）。クリアで「星願の祭壇」に 4★ ピックが開放される' },
+    ru: { name: 'Интерлюдия звёздопада', subtitle: 'Внешний домен III — финальный сад (версия «четырёх звёзд»); после прохождения у Алтаря Звёздной Мечты откроется пул 4★' },
+    de: { name: 'Sternfall-Zwischenspiel', subtitle: 'Domäne 3 — der Schluss-Garten (Vier-Sterne-Fassung); nach dem Abschluss öffnet der Sternwunsch-Altar den 4★-Pool' },
+    fr: { name: 'Interlude des étoiles filantes', subtitle: 'Domaine 3 — le jardin final (édition quatre étoiles) ; une fois terminé, l’Autel du Vœu d’Étoile ouvre le pool 4★' },
+  },
+  'level-lb-05': {
+    'zh-Hans': { name: '阶下回音', subtitle: '主城·立体教学 —— 箱子也能推上台阶基座（Δh≤1 可爬升）' },
+    'zh-Hant': { name: '階下回音', subtitle: '主城·立體教學 —— 箱子也能推上台階基座（Δh≤1 可爬升）' },
+    en: { name: 'Echo Below the Steps', subtitle: 'Hub · vertical tutorial — chests can be pushed onto step plinths too (climbable when Δh ≤ 1)' },
+    ja: { name: '階下の残響', subtitle: '主城・立体チュートリアル —— 箱は段差の台座にも押し上げられる（登れるのは Δh≤1）' },
+    ru: { name: 'Эхо под ступенями', subtitle: 'Столица · вертикальное обучение — сундуки можно толкать и на ступенчатые пьедесталы (подъём при Δh ≤ 1)' },
+    de: { name: 'Echo unter den Stufen', subtitle: 'Zentrale · Vertikal-Lektion — Kisten lassen sich auch auf Stufenpodeste schieben (steigbar bei Δh ≤ 1)' },
+    fr: { name: 'Écho sous les marches', subtitle: 'Capitale · didacticiel vertical — les coffres se poussent aussi sur les socles en escalier (grimpe si Δh ≤ 1)' },
+  },
+  'level-lb-06': {
+    'zh-Hans': { name: '双石门', subtitle: '主城 —— 双箱双龛的对称练习；通关获「镜像拉箱」' },
+    'zh-Hant': { name: '雙石門', subtitle: '主城 —— 雙箱雙龕的對稱練習；通關獲「鏡像拉箱」' },
+    en: { name: 'Twin Stone Gates', subtitle: 'Hub — a symmetric drill of two chests and two niches; clear it for Mirror Pull' },
+    ja: { name: '双石の門', subtitle: '主城 —— 二箱二壁龕の対称練習。クリア報酬は「鏡像引き」' },
+    ru: { name: 'Врата двойного камня', subtitle: 'Столица — симметричное упражнение: два сундука и две ниши; за прохождение — «Зеркальная тяга»' },
+    de: { name: 'Zwillingssteintore', subtitle: 'Zentrale — symmetrische Übung mit zwei Kisten und zwei Nischen; Abschluss bringt «Spiegelzug»' },
+    fr: { name: 'Portes de pierre jumelles', subtitle: 'Capitale — exercice symétrique de deux coffres et deux niches ; terminé pour « Tirage miroir »' },
+  },
+  'level-lb-07': {
+    'zh-Hans': { name: '登阶长廊', subtitle: '外域一 —— 长廊双箱各登一阶；通关获「位面通行」' },
+    'zh-Hant': { name: '登階長廊', subtitle: '外域一 —— 長廊雙箱各登一階；通關獲「位面通行」' },
+    en: { name: 'Step Long Gallery', subtitle: 'Domain 1 — two chests each climb one step along the long gallery; clear it for Plane Pass' },
+    ja: { name: '階登りの長廊', subtitle: '外域一 —— 長い廊下で二箱がそれぞれ一段昇る。クリア報酬は「位相通行」' },
+    ru: { name: 'Длинная галерея ступеней', subtitle: 'Внешний домен I — два сундука поднимаются каждый на свою ступень; за прохождение — «Проход Плана»' },
+    de: { name: 'Stufenlange Galerie', subtitle: 'Domäne 1 — zwei Kisten steigen im langen Gang je eine Stufe; Abschluss bringt «Ebenenpass»' },
+    fr: { name: 'Longue galerie en marches', subtitle: 'Domaine 1 — deux coffres montent chacun une marche dans la longue galerie ; terminé pour « Passe de Plan »' },
+  },
+  'level-lb-08': {
+    'zh-Hans': { name: '井底星榻', subtitle: '外域一 —— 箱落教学：把箱子推下 h2 环台，坠入井底压碎守旗敌人；通关获「相位穿行」' },
+    'zh-Hant': { name: '井底星榻', subtitle: '外域一 —— 箱落教學：把箱子推下 h2 環台，墜入井底壓碎守旗敵人；通關獲「相位穿行」' },
+    en: { name: 'Star Bed at the Well Bottom', subtitle: 'Domain 1 — chest-drop lesson: push a chest off the h2 ring into the well to crush the flag guard; clear it for Phase Walk' },
+    ja: { name: '井戸底の星寝台', subtitle: '外域一 —— 箱落下の教學：h2 の環状台から箱を落とし、井戸底で旗守りの敵を砕く。クリア報酬は「位相移動」' },
+    ru: { name: 'Звёздное ложе на дне колодца', subtitle: 'Внешний домен I — урок падения сундука: столкните его с кольца h2 в колодец и раздавите стража флага; за прохождение — «Фазовый шаг»' },
+    de: { name: 'Sternbett am Brunnengrund', subtitle: 'Domäne 1 — Kistenfall-Lektion: schiebe eine Kiste vom h2-Ring in den Brunnen und zermalme den Flaggenwächter; Abschluss bringt «Phasengang»' },
+    fr: { name: 'Lit d’étoile au fond du puits', subtitle: 'Domaine 1 — leçon de chute de coffre : poussez un coffre de l’anneau h2 dans le puits pour écraser le garde du drapeau ; terminé pour « Marche de phase »' },
+  },
+  'level-lb-09': {
+    'zh-Hans': { name: '表里回廊', subtitle: '外域二 —— 阴阳位面：阴面墙皮之下藏着一条捷径（F 切位面）；通关获「位面之眼」' },
+    'zh-Hant': { name: '表裡迴廊', subtitle: '外域二 —— 陰陽位面：陰面牆皮之下藏著一條捷徑（F 切位面）；通關獲「位面之眼」' },
+    en: { name: 'Corridor of Two Faces', subtitle: 'Domain 2 — Yin-Yang planes: a shortcut hides beneath the yin-side wall skin (F to shift); clear it for Plane Eye' },
+    ja: { name: '表裡の回廊', subtitle: '外域二 —— 陰陽位相：陰面の壁皮の下に近道が隠れている（F で位相切替）。クリア報酬は「位相の眼」' },
+    ru: { name: 'Галерея двух сторон', subtitle: 'Внешний домен II — планы Инь-Ян: под обшивкой инь-стороны скрыт обходной путь (F — смена плана); за прохождение — «Око Плана»' },
+    de: { name: 'Galerie der zwei Seiten', subtitle: 'Domäne 2 — Yin-Yang-Ebenen: unter der Wandhaut der Yin-Seite verbirgt sich eine Abkürzung (F zum Wechsel); Abschluss bringt «Auge der Ebene»' },
+    fr: { name: 'Galerie des deux faces', subtitle: 'Domaine 2 — plans Yin-Yang : un raccourci se cache sous le revêtement du côté Yin (F pour basculer) ; terminé pour « Œil de Plan »' },
+  },
+  'level-lb-10': {
+    'zh-Hans': { name: '三阶圣所', subtitle: '外域二 —— 三箱三龛，推动顺序就是谜题本身；通关获「箱落引爆」' },
+    'zh-Hant': { name: '三階聖所', subtitle: '外域二 —— 三箱三龕，推動順序就是謎題本身；通關獲「箱落引爆」' },
+    en: { name: 'Sanctum of Three Steps', subtitle: 'Domain 2 — three chests, three niches; the pushing order is the puzzle itself; clear it for Chest Detonate' },
+    ja: { name: '三階の聖所', subtitle: '外域二 —— 三箱三壁龕、押す順番そのものが謎。クリア報酬は「落下起爆」' },
+    ru: { name: 'Святилище трёх ступеней', subtitle: 'Внешний домен II — три сундука, три ниши; порядок толчков и есть головоломка; за прохождение — «Детонация сундуков»' },
+    de: { name: 'Heiligtum der drei Stufen', subtitle: 'Domäne 2 — drei Kisten, drei Nischen; die Schubreihenfolge ist das Rätsel selbst; Abschluss bringt «Kisten-Detonation»' },
+    fr: { name: 'Sanctuaire des trois marches', subtitle: 'Domaine 2 — trois coffres, trois niches ; l’ordre des poussées est l’énigme même ; terminé pour « Détonation de coffre »' },
+  },
+  'level-lb-11': {
+    'zh-Hans': { name: '合宇之厅', subtitle: '外域三 —— 四箱归一列，大厅中央的星阶等你排布；通关获「击退+2」' },
+    'zh-Hant': { name: '合宇之廳', subtitle: '外域三 —— 四箱歸一列，大廳中央的星階等你排布；通關獲「擊退+2」' },
+    en: { name: 'Hall of the Conjoined Cosmos', subtitle: 'Domain 3 — line up four chests as one; the star steps at the hall’s center await your arrangement; clear it for Knockback +2' },
+    ja: { name: '合宇の広間', subtitle: '外域三 —— 四箱を一列に。広間中央の星階が整列を待つ。クリア報酬は「ノックバック+2」' },
+    ru: { name: 'Зал соединённых миров', subtitle: 'Внешний домен III — выстройте четыре сундука в ряд; звёздные ступени в центре зала ждут вашей расстановки; за прохождение — «Отбрасывание +2»' },
+    de: { name: 'Halle des vereinten Kosmos', subtitle: 'Domäne 3 — vier Kisten in eine Reihe; die Sternstufen in der Mitte des Saals warten auf deine Ordnung; Abschluss bringt «Rückstoß +2»' },
+    fr: { name: 'Hall du cosmos réuni', subtitle: 'Domaine 3 — alignez quatre coffres en une rangée ; les marches d’étoiles au centre attendent votre disposition ; terminé pour « Repousser +2 »' },
+  },
+  'level-lb-12': {
+    'zh-Hans': { name: '星陨王座', subtitle: '外域三 —— 终段：四方箱体归位 2×2 圣坛，尖刺苔藓爬满王座大厅；通关获「爆炸+1」' },
+    'zh-Hant': { name: '星隕王座', subtitle: '外域三 —— 終段：四方箱體歸位 2×2 聖壇，尖刺苔蘚爬滿王座大廳；通關獲「爆炸+1」' },
+    en: { name: 'Starfall Throne', subtitle: 'Domain 3 — finale: four chests return to the 2×2 altar while spiked moss crawls over the throne hall; clear it for Blast +1' },
+    ja: { name: '星降りの玉座', subtitle: '外域三 —— 終幕：四方の箱を 2×2 の聖壇へ整列せよ。尖った苔が玉座の大広間を覆う。クリア報酬は「爆発+1」' },
+    ru: { name: 'Трон звёздопада', subtitle: 'Внешний домен III — финал: четыре сундука занимают алтарь 2×2, а шипастый мох ползёт по тронному залу; за прохождение — «Взрыв +1»' },
+    de: { name: 'Thron des Sternfalls', subtitle: 'Domäne 3 — Finale: vier Kisten kehren auf den 2×2-Altar zurück, während dorniges Moos den Thronsaal überwuchert; Abschluss bringt «Explosion +1»' },
+    fr: { name: 'Trône des étoiles filantes', subtitle: 'Domaine 3 — final : quatre coffres regagnent l’autel 2×2 tandis que la mousse épineuse envahit la salle du trône ; terminé pour « Explosion +1 »' },
+  },
+} as const satisfies Readonly<Record<string, Readonly<Record<LocaleId, LevelTextEntry>>>>;
+
+export type LevelTextId = keyof typeof LEVEL_TEXT_SOURCE;
+
+export const LEVEL_TEXT: Readonly<Record<LevelTextId, Readonly<Record<LocaleId, LevelTextEntry>>>> =
+  LEVEL_TEXT_SOURCE;
+
+/** 关卡名 i18n（F4）：先查本表按语种覆写，未收录的 levelId 回落关卡数据原文 */
+export function levelName(locale: LocaleId, level: { readonly id: string; readonly name: string }): string {
+  const text = (LEVEL_TEXT as Readonly<Record<string, Readonly<Record<LocaleId, LevelTextEntry>>>>)[level.id];
+  return text?.[locale]?.name ?? level.name;
+}
+
+/** 关卡副标题 i18n（F4）：同 levelName */
+export function levelSubtitle(locale: LocaleId, level: { readonly id: string; readonly subtitle: string }): string {
+  const text = (LEVEL_TEXT as Readonly<Record<string, Readonly<Record<LocaleId, LevelTextEntry>>>>)[level.id];
+  return text?.[locale]?.subtitle ?? level.subtitle;
+}

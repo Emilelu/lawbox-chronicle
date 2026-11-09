@@ -15,8 +15,8 @@ import { motion } from 'framer-motion';
 import { useGameStore } from '../../core/store/gameStore';
 import { starStoneReward } from '../../core/formula';
 import { CARDS, LEVELS, findLevel } from '../../data';
-import type { LevelDef } from '../../core/types';
-import { stripBr, tUi } from '../../data/i18n/uiText';
+import type { LevelDef, LocaleId } from '../../core/types';
+import { levelName as levelNameI18n, stripBr, tUi } from '../../data/i18n/uiText';
 import { rarityColor } from './GachaOverlay';
 
 /* ------------------------------ 纯逻辑导出 -------------------------------- */
@@ -38,10 +38,12 @@ export interface ResultSummary {
 /**
  * 结算摘要（纯函数）：result + 关卡查找器 → 展示模型。
  * 关卡缺失（坏档/未知 levelId）返回 null，由组件走兜底文案。
+ * F4：关卡名按 locale 经 uiText.levelName 解析（缺省简中，历史调用零改动）。
  */
 export function summarizeResult(
   result: { readonly levelId: string; readonly stars: 1 | 2 | 3; readonly steps: number },
   findLevelById: (id: string) => LevelDef | undefined,
+  locale: LocaleId = 'zh-Hans',
 ): ResultSummary | null {
   const level = findLevelById(result.levelId);
   if (level === undefined) return null;
@@ -49,7 +51,7 @@ export function summarizeResult(
   const lawCard = lawCardId !== undefined ? CARDS.find((c) => c.id === lawCardId) : undefined;
   return {
     levelId: level.id,
-    levelName: level.name,
+    levelName: levelNameI18n(locale, level),
     stars: result.stars,
     steps: result.steps,
     parThreeStar: level.parSteps[0],
@@ -68,7 +70,7 @@ export function ResultModal() {
   if (result === null) return null;
 
   const store = useGameStore.getState;
-  const summary = summarizeResult(result, findLevel);
+  const summary = summarizeResult(result, findLevel, locale);
   // 通关即解锁下一关（cheatRegistry 的进度订阅同源置位 reached:<next>）；
   // 结算面板直接提供「下一关」，省去回选关面板的一步
   const nextLevel = (() => {
@@ -155,7 +157,7 @@ export function ResultModal() {
                 <button
                   className="btn-neon"
                   onClick={() => store().startLevel(nextLevel.id)}
-                  title={`${tUi(locale, 'ui.nextLevel')}：${nextLevel.name}`}
+                  title={`${tUi(locale, 'ui.nextLevel')}：${levelNameI18n(locale, nextLevel)}`}
                 >
                   ▸ {tUi(locale, 'ui.nextLevel')}
                 </button>

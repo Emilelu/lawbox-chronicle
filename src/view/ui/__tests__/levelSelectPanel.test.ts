@@ -40,4 +40,19 @@ describe('levelRows · 选关进度', () => {
     const row = levelRows(useGameStore.getState()).find((r) => r.level.id === firstId);
     expect(row?.cleared).toBe(true);
   });
+
+  it('F3：只有 cleared 旗标的旧档（如自动演示直通关底）也视为已到达、可重入', () => {
+    const lastId = LEVELS[LEVELS.length - 1]!.id;
+    // 干净存档：末关既未到达也未通关（基线）
+    const before = levelRows(useGameStore.getState()).find((r) => r.level.id === lastId);
+    expect(before?.reached).toBe(false);
+    expect(before?.cleared).toBe(false);
+    // 只写 cleared:<id>（无 reached:<id>、无段位）—— 老口径下出现「✓ cleared + 未到达」矛盾态
+    useGameStore.setState((s) => ({
+      story: { ...s.story, flags: { ...s.story.flags, [`cleared:${lastId}`]: true } },
+    }));
+    const row = levelRows(useGameStore.getState()).find((r) => r.level.id === lastId);
+    expect(row?.cleared).toBe(true);
+    expect(row?.reached).toBe(true);
+  });
 });

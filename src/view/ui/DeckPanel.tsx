@@ -198,15 +198,17 @@ export function DeckPanel() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.97 }}
-      animate={{ opacity: 1, scale: 1 }}
+      /* L3：居中位移并入 motion 值 —— CSS transform 会被 motion 的 scale 动画
+         整体覆盖（面板向屏幕中心右下溢出，✕ 关闭按钮落到视口外），详见
+         LevelSelectPanel 同款注释 */
+      initial={{ opacity: 0, scale: 0.97, x: '-50%', y: '-50%' }}
+      animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
       transition={{ duration: 0.2 }}
       className="glass"
       style={{
         position: 'fixed',
         top: '50%',
         left: '50%',
-        transform: 'translate(-50%, -50%)',
         zIndex: 40,
         width: 'min(720px, 94vw)',
         maxHeight: '84vh',

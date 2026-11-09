@@ -38,7 +38,7 @@ import type {
 } from '../types';
 import { DIAG_VECTORS, DIR_VECTORS, SPIKE_CELL } from '../types';
 import { DEFAULT_RULE_SET } from '../lawRegistry';
-import { bus } from '../events/bus';
+import { bus, type FxEvent } from '../events/bus';
 import { createRng } from '../rng';
 import { starRating, starStoneReward, clampHp } from '../formula';
 import { findEnemy, findLevel } from '../../data';
@@ -267,6 +267,40 @@ function segmentOf(puzzle: PuzzleState, levelId: string): GameState['segment'] {
     history: puzzle.history,
     planeShifted: puzzle.planeShifted,
   };
+}
+
+/* ======================== 战斗演出转译（纯函数） ============================ */
+
+/** 暴击震屏强度（量级对照 publishPuzzleFx 压碎 0.7 / 引爆 0.6 的既有先例） */
+export const CRIT_SHAKE_INTENSITY = 0.5;
+
+/**
+ * 战斗回合 → 演出事件（纯函数，vitest 可断言，R2）。
+ * ---------------------------------------------------------------------------
+ * 玩家攻击/掷爆回合 → 敌方位 anim/spark 粒子爆发（Vfx 已实现订阅渲染）：
+ *  - at：布阵战场的敌人实体格；纯公式战无战场时为 (0,0) 占位
+ *    （视图层约定 WorldCanvas.vfxToWorld：combat 期 spark 一律映射到敌方舞台位）；
+ *  - blocked：本次伤害被敌方护盾全额吸收（0 点入血且盾被扣减）→ block 护盾尘；
+ * 暴击（日志 hit.crit）→ anim/screenShake 震屏（CameraRig 暴击震屏消费）。
+ * 引擎 turn.ts 保持纯函数不发布事件；此处按日志差分转译
+ * （对照 publishPuzzleFx 既有先例）。非攻击行动（selectWeapon/defend/shove…）
+ * 与日志无新增的回合不产出事件。
+ */
+export function battleTurnFxEvents(prev: BattleState, next: BattleState, action: BattleAction): readonly FxEvent[] {
+  // 只有玩家攻击类行动产生命中演出
+  if (action.type !== 'attack' && action.type !== 'item') return [];
+  // 日志为追加语义（LOG_LIMIT 裁剪的极端长战漏一拍演出，不影响状态正确性）
+  if (next.log.length <= prev.log.length) return [];
+  const fresh = next.log.slice(prev.log.length);
+  const hit = fresh.find((entry) => entry.actor === 'player');
+  if (hit === undefined) return [];
+  const enemyCell = next.formation?.entities.find((e) => e.id === next.enemyId);
+  const at = enemyCell !== undefined ? { x: enemyCell.x, y: enemyCell.y } : { x: 0, y: 0 };
+  // 敌方护盾本次被扣减且 0 点入血 → 判定「被挡下」（Vfx 的 block 粒子语义）
+  const shieldLost = Math.max(0, prev.enemyShield - next.enemyShield);
+  const events: FxEvent[] = [{ type: 'anim/spark', at, blocked: hit.damage === 0 && shieldLost > 0 }];
+  if (hit.crit) events.push({ type: 'anim/screenShake', intensity: CRIT_SHAKE_INTENSITY });
+  return events;
 }
 
 /* ================================ 创建 ==================================== */
@@ -608,13 +642,14 @@ export const useGameStore = create<GameStore>()(
         if (enemy.boss) bus.publish({ type: 'anim/bossTitle', enemyId, title: enemy.name });
       };
 
-      /** 战斗推进：入队 → 引擎内部清空队列（resolveTurn）→ 投影 + 终局处理 */
+      /** 战斗推进：入队 → 引擎内部清空队列（resolveTurn）→ 演出转译 → 投影 + 终局处理 */
       const runBattleAction = (action: BattleAction): void => {
         const state = get();
         const battle = battleOf();
         if (battle === null || isBattleOver(battle.phase)) return;
         const rng = createRng(`battle:${battle.enemyId}:${battleSeq}:${battle.turn}:${battle.queue.length}`);
         const next = resolveTurn(battle, action, rng);
+        for (const event of battleTurnFxEvents(battle, next, action)) bus.publish(event);
         set({ battle: next, combat: toCoreCombatState(next), player: { ...state.player, hp: clampHp(next.playerHp, state.player.maxHp) } });
         if (isBattleOver(next.phase)) settleBattleEnd(next);
       };

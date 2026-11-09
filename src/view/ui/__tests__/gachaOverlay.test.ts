@@ -8,7 +8,22 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { canPull, flipDelays, pityProgress, rarityColor, rarityStars } from '../GachaOverlay';
+import { canPull, flipDelays, pityProgress, rarityColor, rarityStars, shouldEnterReveal } from '../GachaOverlay';
+import type { GachaPullResult } from '../../../core/types';
+
+/** 构造最小合法的抽卡结果（pityTriggered 仅占位） */
+function sampleResult(pullCount: number): GachaPullResult {
+  return {
+    pulls: Array.from({ length: pullCount }, (_, i) => ({
+      uid: `uid-${i}`,
+      cardId: 'card-law-feather-chest',
+      rarity: 2,
+      isNew: false,
+    })),
+    boostedTenPull: false,
+    pityTriggered: 'none',
+  };
+}
 
 describe('flipDelays · 翻牌演出节奏表', () => {
   it('十连：10 拍，首拍 420ms，相邻间隔 340ms，全部落在 300-800ms 演出区间', () => {
@@ -79,5 +94,24 @@ describe('rarity 展示', () => {
   it('rarityColor 三档配色（4★金 / 3★紫 / 2★灰）', () => {
     expect(rarityColor(4)).not.toBe(rarityColor(3));
     expect(rarityColor(3)).not.toBe(rarityColor(2));
+  });
+});
+
+describe('shouldEnterReveal · F1 翻牌面准入（重开面板可回到投币主页）', () => {
+  it('新结果进翻牌面；看过的结果重开不再进翻牌面', () => {
+    const result = sampleResult(1);
+    expect(shouldEnterReveal(result, false)).toBe(true);
+    expect(shouldEnterReveal(result, true)).toBe(false);
+  });
+
+  it('lastResult 为 null（未抽过 / 持久化空）永远走投币主页', () => {
+    expect(shouldEnterReveal(null, false)).toBe(false);
+    expect(shouldEnterReveal(null, true)).toBe(false);
+  });
+
+  it('十连结果同样只展示一次', () => {
+    const result = sampleResult(10);
+    expect(shouldEnterReveal(result, false)).toBe(true);
+    expect(shouldEnterReveal(result, true)).toBe(false);
   });
 });

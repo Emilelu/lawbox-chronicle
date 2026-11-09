@@ -12,6 +12,9 @@
  *   - S14 根治：这里没有任何 try/catch 吞异常；异常直接抛给
  *     ErrorBoundary 上屏告警（老 SanBPushChest「这根本就不是问题!」终结）。
  *   - K3：exit/未知输入永远走 META 终端回显，绝不被解释成移动。
+ *   - I3：全屏浮层（卡组/抽卡/设置/手册）打开时世界冻结 —— 移动/推挤、
+ *     撤销/重玩/位面切换、法则动作与 E 交互统一过 activePanel 门禁，
+ *     与 META 终端「终端开着时世界冻结」同一语义（Esc 关浮层后恢复）。
  */
 
 import { useEffect } from 'react';
@@ -167,6 +170,7 @@ export function dispatchBinding(binding: KeyBinding): void {
   const store = useGameStore.getState();
   if (binding.kind === 'move') {
     if (isMetaTerminalOpen()) return; // 终端开着时世界冻结，防误走
+    if (store.activePanel !== 'none') return; // 全屏浮层（卡组/抽卡/设置/手册）打开时世界同样冻结，防盲走（I3）
     if (store.phase === 'dialogue') return; // 对话中移动键无效（推进走 Enter/Space/E）
     if (store.segment === null) return; // 标题页等无段位：移动是无操作
     if (store.phase === 'combat') {
@@ -190,7 +194,15 @@ export function dispatchBinding(binding: KeyBinding): void {
     case 'undo':
     case 'replaySegment':
     case 'shiftPlane':
+      if (isMetaTerminalOpen()) return;
+      if (store.activePanel !== 'none') return; // 浮层后面不盲改世界状态（I3，与终端同语义）
+      if (store.phase === 'playing' || store.phase === 'result' || store.phase === 'combat') {
+        store.dispatch(binding.action);
+      }
+      return;
     case 'toggleFormation':
+      // Tab 双语义：战斗中=确认布阵；无战斗=打开卡组面板。不做浮层门禁 ——
+      // 卡组面板开着时 Tab 语义本就是「再开卡组」，保持原行为不收窄。
       if (isMetaTerminalOpen()) return;
       if (store.phase === 'playing' || store.phase === 'result' || store.phase === 'combat') {
         store.dispatch(binding.action);
@@ -201,10 +213,12 @@ export function dispatchBinding(binding: KeyBinding): void {
     case 'phase':
       // 法则动作只在游玩相生效（未持对应法则卡时 store 侧 toast 明示）
       if (isMetaTerminalOpen()) return;
+      if (store.activePanel !== 'none') return; // 浮层打开时不改世界（I3）
       if (store.phase === 'playing') store.dispatch(binding.action);
       return;
     case 'interact':
       if (isMetaTerminalOpen()) return;
+      if (store.activePanel !== 'none') return; // 浮层打开时不触发世界交互（I3）
       if (store.phase === 'dialogue') store.dispatch({ type: 'advanceDialogue' });
       else if (store.phase === 'playing') store.dispatch(binding.action);
       return;

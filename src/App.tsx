@@ -13,6 +13,8 @@
  *   - <MetaTerminal />：通关后按 ` 呼出的 META 终端；
  *   - <BGMController />：howler 生命周期唯一 React 挂载点（替换骨架
  *     mountAudioEngine —— 双音频栈会同时订阅 bus，必须二选一）；
+ *   - <PlaneInvertOverlay /> / <BossTitleOverlay />：帷幕演出层（位面反色 /
+ *     BOSS 入场刻字），各自订阅 store 投影或 bus 事件，均不拦截输入；
  *   - archive 两个收集器（stats/logbook）随模块加载自装（import 副作用）。
  */
 
@@ -26,6 +28,7 @@ import { MetaTerminal } from './input/MetaTerminal';
 import { ErrorBoundary } from './input/ErrorBoundary';
 import { useKeyActions } from './input/useKeyActions';
 import { PlaneInvertOverlay } from './view/ui/PlaneInvertOverlay';
+import { BossTitleOverlay } from './view/ui/BossTitleOverlay';
 import { AutoPlayLayer } from './demo/autoPlay';
 // 收集器随模块加载自动安装（bus 计数 / store 镜像 / 成就重评）
 import './archive/statsCollector';
@@ -49,6 +52,7 @@ export default function App() {
       <MetaTerminal />
       <BGMController />
       <PlaneInvertOverlay />
+      <BossTitleOverlay />
       {/* 自动演示：URL ?autoplay=1 时启用（默认不渲染任何内容） */}
       <AutoPlayLayer />
     </ErrorBoundary>

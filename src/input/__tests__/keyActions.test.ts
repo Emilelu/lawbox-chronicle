@@ -213,4 +213,46 @@ describe('useKeyActions 全链路（jsdom 键盘事件 → store）', () => {
     lift('KeyS');
     expect(playerPos().y).toBe(before.y + 1); // 还原
   });
+
+  it('全屏浮层（抽卡面板）打开时移动冻结，关闭后恢复（I3）', () => {
+    const store = useGameStore.getState();
+    store.startLevel('level-sb-01');
+    const spawn = playerPos();
+    store.openPanel('gacha'); // 星愿祭坛/星石胶囊同款全屏浮层
+    press('KeyS');
+    lift('KeyS');
+    press('ArrowDown');
+    lift('ArrowDown');
+    expect(playerPos()).toEqual(spawn); // 浮层后面盲走一格的 I3 场景在此锁死
+    expect(useGameStore.getState().activePanel).toBe('gacha'); // 浮层没被移动键误关
+    store.closeOverlay();
+    press('KeyS');
+    lift('KeyS');
+    expect(playerPos().y).toBe(spawn.y + 1); // Esc 关浮层后世界解冻
+  });
+
+  it('全屏浮层打开时撤销/位面切换/法则动作/交互全部冻结（I3）', () => {
+    const store = useGameStore.getState();
+    store.startLevel('level-sb-01');
+    press('KeyS');
+    lift('KeyS'); // 先走一步，制造可撤销的历史
+    const stepsAfterMove = useGameStore.getState().segment?.steps;
+    store.openPanel('deck');
+    press('KeyZ'); // 撤销
+    lift('KeyZ');
+    press('KeyF'); // 位面切换
+    lift('KeyF');
+    press('KeyC'); // 相位穿行（法则动作）
+    lift('KeyC');
+    press('KeyE'); // 世界交互
+    lift('KeyE');
+    expect(useGameStore.getState().segment?.steps).toBe(stepsAfterMove); // 撤销未生效
+    expect(useGameStore.getState().activePanel).toBe('deck'); // 浮层未被 E/F 顶掉
+    expect(useGameStore.getState().segment?.planeShifted).toBe(false);
+    // 关闭浮层后 Z 恢复生效：步数回滚
+    store.closeOverlay();
+    press('KeyZ');
+    lift('KeyZ');
+    expect(useGameStore.getState().segment?.steps).toBe((stepsAfterMove ?? 1) - 1);
+  });
 });

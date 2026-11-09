@@ -1,8 +1,10 @@
 /**
  * 帷幕界面层 · LevelSelectPanel —— 选关面板（P-ui④：兑现原作承诺的「选关界面」）。
  * ---------------------------------------------------------------------------
- * 进度读取参考 cheatRegistry.ts:41-56 的 reached:/cleared: 口径：hasReachedLevel /
- * hasClearedLevel 是同一对纯函数，本组件直接消费，不另造第二套进度真相。
+ * 进度读取参考 cheatRegistry.ts 的 reached:/cleared: 口径：hasReachedLevel /
+ * hasClearedLevel 是同一对纯函数，本组件直接消费，不另造第二套进度真相；
+ * F3 起「通关即到达」并入 hasReachedLevel（cleared 旗标不再与「未到达」矛盾）。
+ * 关卡名/副标题经 uiText.levelName/levelSubtitle 按语种解析（F4）。
  * 从面板可直接进入「已到达」的关卡（startLevel），未到达的关卡置灰不可点。
  * 入口挂 HUD 右上按钮组（🗺）。
  */
@@ -14,7 +16,7 @@ import { useGameStore } from '../../core/store/gameStore';
 import { hasClearedLevel, hasReachedLevel } from '../../input/cheatRegistry';
 import { LEVELS } from '../../data/levels';
 import type { GameState, LevelDef } from '../../core/types';
-import { tUi } from '../../data/i18n/uiText';
+import { levelName as levelNameI18n, levelSubtitle as levelSubtitleI18n, tUi } from '../../data/i18n/uiText';
 import { bus } from '../../core/events/bus';
 
 /* ============================== 面板开关分片 =============================== */
@@ -77,15 +79,17 @@ export function LevelSelectPanel() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.97 }}
-      animate={{ opacity: 1, scale: 1 }}
+      /* L3：framer-motion 接管 transform 后，style 里的 translate(-50%,-50%) 会被
+         scale 动画整体覆盖，面板左上角锚定屏幕中心向右下溢出视口（✕ 落在视口外）。
+         居中位移必须并入 motion 值（x/y 百分比），由 motion 合成完整 transform */
+      initial={{ opacity: 0, scale: 0.97, x: '-50%', y: '-50%' }}
+      animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
       transition={{ duration: 0.2 }}
       className="glass"
       style={{
         position: 'fixed',
         top: '50%',
         left: '50%',
-        transform: 'translate(-50%, -50%)',
         zIndex: 44,
         width: 'min(640px, 94vw)',
         maxHeight: '84vh',
@@ -122,8 +126,8 @@ export function LevelSelectPanel() {
               opacity: row.reached ? 1 : 0.5,
             }}
           >
-            <span style={{ fontWeight: 700 }}>{row.level.name}</span>
-            <span className="chip" style={{ fontSize: 10.5, padding: '1px 8px' }}>{row.level.subtitle}</span>
+            <span style={{ fontWeight: 700 }}>{levelNameI18n(locale, row.level)}</span>
+            <span className="chip" style={{ fontSize: 10.5, padding: '1px 8px' }}>{levelSubtitleI18n(locale, row.level)}</span>
             <span style={{ flex: 1 }} />
             {row.cleared && (
               <span className="chip" style={{ fontSize: 10.5, color: 'var(--neon-cyan)', borderColor: 'rgba(0,229,255,0.5)' }}>

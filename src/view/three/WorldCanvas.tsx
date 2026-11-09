@@ -15,7 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import type { ShaderMaterial } from 'three';
 import { BackSide, Color, ShaderMaterial as ShaderMaterialClass } from 'three';
 import type { Vec2 } from '../../core/types';
@@ -41,6 +41,7 @@ import {
   HEIGHT_STEP,
   cellWorldCenter,
   clampNpcCell,
+  computeExploreResetPose,
   computePose,
   gridCenterWorld,
   heightOf,
@@ -225,6 +226,12 @@ function SceneContent({ pinnedInfo, onPin }: {
     return [arenaCenter[0] + COMBAT_STAGE.enemyOffset.x, arenaCenter[1], arenaCenter[2] + COMBAT_STAGE.enemyOffset.y];
   }, [mainEnemy, toWorld, arenaCenter]);
 
+  // 对话进行中的剧本 id（R1 前置）：store 触发侧 markTriggerSeen 先于
+  // startStoryScript 执行，触发瞬间说话者就会因 seen 过滤从渲染列表消失，
+  // 「运镜对准说话者」对 NPC 说话者永不生效 —— 对话期间该剧本的 npc 规则
+  // 免 seen 过滤，保证说话者模型留在世界里。
+  const dialogueScriptId = phase === 'dialogue' ? storyRuntime.scriptId : null;
+
   // ---- 未触发的剧情 NPC 规则 → 世界内造型皮肤实体 ----
   // 集成期：数据源从骨架 STORY_EVENTS 切到 story-weaver 触发表（ALL_TRIGGER_RULES
   // 的 npc 规则）——坐标经主地图 → 网格换算（worldToGrid），可见性与解释器
@@ -236,7 +243,10 @@ function SceneContent({ pinnedInfo, onPin }: {
     };
     return ALL_TRIGGER_RULES.filter((rule) => {
       if (rule.when.kind !== 'npc') return false;
-      if (rule.once !== false && seenEventIds.includes(rule.id)) return false;
+      if (rule.once !== false && seenEventIds.includes(rule.id)) {
+        // R1：这条规则正在开讲（对话剧本命中）→ 保留说话者渲染；其余时刻照常隐藏
+        if (rule.scriptId !== dialogueScriptId) return false;
+      }
       if (rule.requireFlag !== undefined && !flagOn(rule.requireFlag)) return false;
       if (rule.requireFlags !== undefined && !rule.requireFlags.every(flagOn)) return false;
       if (rule.unlessFlag !== undefined && flagOn(rule.unlessFlag)) return false;
@@ -259,7 +269,7 @@ function SceneContent({ pinnedInfo, onPin }: {
         skin,
       };
     });
-  }, [seenEventIds, storyFlags, terrain, toWorld]);
+  }, [seenEventIds, storyFlags, dialogueScriptId, terrain, toWorld]);
 
   // ---- 对话注视点：对准当前说话者 NPC（骨架 activeEventId 已退位） ----
   const dialogueLines = phase === 'dialogue' ? currentLines(ALL_SCRIPTS, storyRuntime) : [];
@@ -297,7 +307,7 @@ function SceneContent({ pinnedInfo, onPin }: {
     return cells;
   }, [phase, battleHazards, staticSpikeCells]);
 
-  // ---- 相机位姿：explore 不发请求（用户全权），其余模式收敛式运镜 ----
+  // ---- 相机位姿：explore 常态不发请求（用户全权），其余模式收敛式运镜 ----
   const cameraMode: CameraMode =
     result !== null
       ? 'victory'
@@ -308,14 +318,28 @@ function SceneContent({ pinnedInfo, onPin }: {
           : phase === 'combat'
             ? 'combat'
             : 'explore';
+  // explore 回正（I2 根治）：战斗/对话/胜利运镜把方位角转走后，切回 playing
+  // 的那一拍发一次「只回正方位角」的位姿（computeExploreResetPose），此后仍
+  // 交还用户全权 —— 不发这次收敛，被转走的方位角会残留到整关谜题期。
+  const [exploreResetPose, setExploreResetPose] = useState<CameraPose | null>(null);
+  const prevCameraModeRef = useRef<CameraMode>('explore');
+  useEffect(() => {
+    if (prevCameraModeRef.current === cameraMode) return;
+    const backToExplore = cameraMode === 'explore';
+    prevCameraModeRef.current = cameraMode;
+    if (!backToExplore) return;
+    setExploreResetPose(
+      computeExploreResetPose({ playerPos: playerWorld, focusPos: playerWorld, arenaCenter }),
+    );
+  }, [cameraMode, playerWorld, arenaCenter]);
   const pose = useMemo<CameraPose | null>(() => {
-    if (cameraMode === 'explore') return null;
+    if (cameraMode === 'explore') return exploreResetPose;
     return computePose(cameraMode, {
       playerPos: playerWorld,
       focusPos: cameraMode === 'combat' || cameraMode === 'boss' ? enemyWorld : dialogueFocus,
       arenaCenter,
     });
-  }, [cameraMode, playerWorld, enemyWorld, dialogueFocus, arenaCenter]);
+  }, [cameraMode, exploreResetPose, playerWorld, enemyWorld, dialogueFocus, arenaCenter]);
   const [poseId, setPoseId] = useState(0);
   useEffect(() => {
     setPoseId((id) => id + 1);
@@ -471,6 +495,18 @@ export interface WorldCanvasProps {
 }
 
 /**
+ * demand 渲染兜底（F2 黑屏根治）：订阅整个 gameStore，任何状态变更（包括
+ * 自动演示 finish→restore 这类画布外 setState）都强制重绘一帧。fiber 的
+ * 自动 invalidate 只发生在「React 提交改动了 three 实例属性」时 —— 纯
+ * 数据恢复型提交可能什么都不改，画布会停留在旧帧甚至黑屏。
+ */
+function StoreInvalidator() {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => useGameStore.subscribe(() => invalidate()), [invalidate]);
+  return null;
+}
+
+/**
  * 全屏 R3F 画布底座。segment 为空时仍渲染灯光/天空（可作标题页底座），
  * 有段位时渲染完整竞技场与实体。实体信息卡选中态是画布级本地 state
  * （不写 store）；点实体弹卡、点空白处/竞技场关闭。
@@ -482,11 +518,18 @@ export function WorldCanvas({ className, style }: WorldCanvasProps) {
     <div className={className} style={{ position: 'absolute', inset: 0, ...style }}>
       <Canvas
         frameloop="demand" // 静置零渲染；状态变化/交互才重绘 —— S18 根治
+        // L2 根治：useMeasure 默认量 getBoundingClientRect（CSS zoom 下的
+        // 「视觉像素」），整页 zoom>1 时会把 1366 视觉像素当布局像素写进
+        // 画布 → 过大被窗口裁切；zoom<1 过小露黑边。offsetSize 改用
+        // offsetWidth/offsetHeight（布局像素，与 2D HUD 同一套坐标系），
+        // 画布随容器 911×512 这类真实布局尺寸同步缩放。
+        resize={{ offsetSize: true }}
         dpr={[1, 1.75]}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         camera={{ fov: 50, near: 0.1, far: 180, position: [0, 8.5, 9.5] }}
         onPointerMissed={() => setPinnedInfo(null)}
       >
+        <StoreInvalidator />
         <SceneContent pinnedInfo={pinnedInfo} onPin={setPinnedInfo} />
       </Canvas>
     </div>

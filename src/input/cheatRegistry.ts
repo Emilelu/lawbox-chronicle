@@ -38,9 +38,15 @@ import {
 
 /* ============================ 解锁谓词（S9/S10） =========================== */
 
-/** 「到达某关」= 旗标 reached:<id> 为真，或当前段位已排到该关或之后，或上一关已通关 */
+/**
+ * 「到达某关」= 旗标 reached:<id> 为真，或当前段位已排到该关或之后，或上一关
+ * 已通关，或本关已通关（F3：通关即到达 —— 旧存档可能只有 cleared:<id> 而没有
+ * reached:<id>（如自动演示直通关底），reached 不并入 cleared 会让选关面板
+ * 同时亮「✓ cleared」与「未到达」chip 且无进入按钮，自相矛盾）。
+ */
 export function hasReachedLevel(state: GameState, levelId: string): boolean {
   if (state.story.flags[`reached:${levelId}`] === true) return true;
+  if (state.story.flags[`cleared:${levelId}`] === true) return true; // F3：通关即到达，可重入
   const targetIndex = LEVELS.findIndex((l) => l.id === levelId);
   if (targetIndex < 0) return false;
   const segment = state.segment;

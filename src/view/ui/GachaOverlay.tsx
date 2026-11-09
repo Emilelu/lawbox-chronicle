@@ -65,6 +65,16 @@ export function rarityStars(rarity: Rarity): string {
   return '★'.repeat(rarity);
 }
 
+/**
+ * F1：翻牌面准入判定。lastResult 是持久化分片（刷新后仍在），若「有结果就渲染
+ * 翻牌面」，重开面板将永远停在旧结果上，单抽/十连主页不可达（同一存档无法二次
+ * 抽卡）。正确口径：只有「本次投币刚开出、尚未看过」的结果才进翻牌面；看过的
+ * 结果重开一律回投币主页。
+ */
+export function shouldEnterReveal(lastResult: GachaPullResult | null, alreadySeen: boolean): boolean {
+  return lastResult !== null && !alreadySeen;
+}
+
 function cardById(cardId: string): CardDef | undefined {
   return CARDS.find((c) => c.id === cardId);
 }
@@ -84,22 +94,23 @@ export function GachaOverlay() {
 
   const [revealed, setRevealed] = useState(0);
   const [burstIndex, setBurstIndex] = useState<number | null>(null);
+  // F1：本次投币正在展示的结果（仅新结果进入翻牌面时置位）；组件卸载即消失，
+  // 重开面板对「看过的旧 lastResult」回落投币主页，单抽/十连入口不再被锁死
+  const [revealResult, setRevealResult] = useState<GachaPullResult | null>(null);
 
   const visible = activePanel === 'gacha' || (phase === 'gacha' && activePanel === 'none');
 
   const store = useGameStore.getState;
-  const pulls = lastResult?.pulls ?? [];
+  const pulls = revealResult?.pulls ?? [];
   const allRevealed = pulls.length > 0 && revealed >= pulls.length;
 
-  // 翻牌调度：新结果逐张起翻；看过的结果直接全开（不重播演出）。
+  // 翻牌调度：新结果逐张起翻；看过的结果不进翻牌面（F1，重开回投币主页）。
   // 注意：effect 必须无条件调用（Rules of Hooks），隐藏时在内部短路。
   useEffect(() => {
     if (!visible || lastResult === null) return;
-    if (seenResults.has(lastResult)) {
-      setRevealed(lastResult.pulls.length);
-      return;
-    }
+    if (!shouldEnterReveal(lastResult, seenResults.has(lastResult))) return;
     seenResults.add(lastResult);
+    setRevealResult(lastResult);
     setRevealed(0);
     const timers = flipDelays(lastResult.pulls.length).map((delay, i) =>
       setTimeout(() => setRevealed((n) => Math.max(n, i + 1)), delay),
@@ -111,14 +122,14 @@ export function GachaOverlay() {
 
   // 稀有度光柱/星爆：翻开 3★ 时紫柱一闪，4★ 时金柱 + KiraKira 星爆
   useEffect(() => {
-    if (!visible || lastResult === null || revealed === 0) return;
+    if (!visible || revealResult === null || revealed === 0) return;
     const idx = revealed - 1;
-    const pull = lastResult.pulls[idx];
+    const pull = revealResult.pulls[idx];
     if (pull === undefined || pull.rarity < 3) return;
     setBurstIndex(idx);
     const timer = setTimeout(() => setBurstIndex(null), pull.rarity === 4 ? 1600 : 900);
     return () => clearTimeout(timer);
-  }, [visible, revealed, lastResult]);
+  }, [visible, revealed, revealResult]);
 
   if (!visible) return null;
 
@@ -368,7 +379,8 @@ export function GachaOverlay() {
         overflowY: 'auto',
       }}
     >
-      {pulls.length > 0 ? revealScreen : coinScreen}
+      {/* F1：新结果进翻牌面；重开面板对看过的旧结果回落投币主页（保住单抽/十连入口） */}
+      {revealResult !== null ? revealScreen : coinScreen}
     </motion.div>
   );
 }

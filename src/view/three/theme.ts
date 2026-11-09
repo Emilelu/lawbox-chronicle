@@ -129,6 +129,22 @@ export const FACING_YAW: Readonly<Record<Dir, number>> = Object.freeze({
 /** 玩家皮肤号（对应 SanBPushChest roles/role1..role5 的重铸色板） */
 export const PLAYER_SKIN_COUNT = 5;
 
+/**
+ * 侧视 3/4 收敛角（I4 根治）：角色/玩家体素模型由单片 ASCII 掩码拉伸而来
+ * （每体素深度仅 0.72 × skinCell），朝向 left/right 按语义转满 ±90° 时正面
+ * 只剩一列侧棱，角色渲染成近 1px 竖条。渲染层把左右朝向收敛到 ±45° 的
+ * 3/4 视角 —— 剪影保留 cos45°≈71% 的正面宽度，方向仍可辨；up/down 不受
+ * 影响（背/正视）。FACING_YAW 保持方向语义真值，仅绘制走本函数。
+ */
+export const FACING_RENDER_YAW_LIMIT = Math.PI / 4;
+
+/** 渲染用朝向角：FACING_YAW 的 3/4 收敛版，PlayerAvatar/ActorMesh 专用 */
+export function facingRenderYaw(dir: Dir): number {
+  if (dir === 'left') return -FACING_RENDER_YAW_LIMIT;
+  if (dir === 'right') return FACING_RENDER_YAW_LIMIT;
+  return FACING_YAW[dir];
+}
+
 /* =============================== 滑动 lerp ================================ */
 
 /** 推箱滑动时长（uiRedesign 动效规格：0.15s） */
@@ -508,10 +524,10 @@ export type CameraMode = 'explore' | 'dialogue' | 'combat' | 'victory' | 'boss';
 export interface CameraPose {
   /** 注视点（世界坐标） */
   readonly target: WorldVec3;
-  /** 相机距离（世界单位） */
-  readonly distance: number;
-  /** 极角（弧度，自 +Y 轴量起）——俯仰 = 90° − 极角 */
-  readonly polar: number;
+  /** 相机距离（世界单位）；null = 保持相机当前距离（该项不收敛） */
+  readonly distance: number | null;
+  /** 极角（弧度，自 +Y 轴量起）——俯仰 = 90° − 极角；null = 保持当前俯仰 */
+  readonly polar: number | null;
   /** 方位角（弧度）；null = 保持用户当前方位 */
   readonly azimuth: number | null;
 }
@@ -538,7 +554,9 @@ export function degToRad(deg: number): number {
 const POSE_PRESETS = {
   explore: { distance: 8.5, elevationDeg: 55, azimuth: null },
   dialogue: { distance: 4.6, elevationDeg: 52, azimuth: null },
-  combat: { distance: 8.2, elevationDeg: 40, azimuth: Math.PI / 2 },
+  // combat 方位角必须归 0（I1 根治）：此前 π/2 的侧视运镜让布阵期 WASD/方向键
+  // 与画面整体相差 90°（W=画面右）。归 0 后相机与谜题期同方位，推挤方向 = 画面方向。
+  combat: { distance: 8.2, elevationDeg: 40, azimuth: 0 },
   victory: { distance: 18, elevationDeg: 62, azimuth: null },
   boss: { distance: 6.2, elevationDeg: 50, azimuth: null },
 } as const;
@@ -572,6 +590,19 @@ export function computePose(mode: CameraMode, ctx: PoseContext): CameraPose {
     polar: degToRad(90 - preset.elevationDeg),
     azimuth: preset.azimuth,
   };
+}
+
+/**
+ * explore 回正位姿（I2 根治）：combat/dialogue/victory/boss 运镜结束后相位
+ * 切回 playing 时，explore 常态不发位姿请求（用户全权），被运镜转走的方位角
+ * 会永久残留 —— 按键方向与画面错位到整关。此位姿只把方位角收敛回 0（相机
+ * 回到 +Z 侧，画面「上」= 网格 -Y，与移动键语义一致），距离与俯仰传 null
+ * = 保留用户当前值，回正不抢用户已调好的缩放/视角。由 WorldCanvas 在
+ * 「切回 explore」的那一拍发出，CameraRig 收敛一次后照常交还用户。
+ */
+export function computeExploreResetPose(ctx: PoseContext): CameraPose {
+  const base = computePose('explore', ctx);
+  return { ...base, distance: null, polar: null, azimuth: 0 };
 }
 
 /* ================================= VFX ==================================== */

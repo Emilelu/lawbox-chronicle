@@ -15,9 +15,9 @@ import type { Group } from 'three';
 import type { Dir } from '../../../core/types';
 import { bus } from '../../../core/events/bus';
 import {
-  FACING_YAW,
   PLAYER_SKIN_CELL,
   SLIDE_SECONDS,
+  facingRenderYaw,
   slidePosition,
   type PlaneTheme,
   type WorldVec3,
@@ -187,7 +187,8 @@ export function PlayerAvatar({ entityId, position, facing: facingProp, skinId = 
   });
 
   return (
-    <group ref={groupRef} position={[position[0], position[1], position[2]]} rotation={[0, FACING_YAW[facing], 0]}>
+    // 渲染走 facingRenderYaw 的 3/4 收敛：左右移动不再侧对相机缩成竖条（I4）
+    <group ref={groupRef} position={[position[0], position[1], position[2]]} rotation={[0, facingRenderYaw(facing), 0]}>
       <mesh geometry={geometry}>
         <meshStandardMaterial
           vertexColors

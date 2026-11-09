@@ -11,7 +11,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { LOCALES } from '../../../core/types';
-import { UI_TEXT, UI_TEXT_KEYS, formatPercent, isUiTextKey, stripBr, tUi, type UiTextKey } from '../uiText';
+import { LEVELS } from '../../../data/levels';
+import { LEVEL_TEXT, UI_TEXT, UI_TEXT_KEYS, formatPercent, isUiTextKey, levelName, levelSubtitle, stripBr, tUi, type UiTextKey } from '../uiText';
 
 describe('uiText · 七语种键集对齐', () => {
   it('每个语种的键集与简中键源完全相等（无缺键/无多键）', () => {
@@ -83,5 +84,35 @@ describe('uiText · 展示工具', () => {
     expect(formatPercent(0.2605)).toBe('26.05%');
     expect(formatPercent(0.3)).toBe('30%');
     expect(formatPercent(0.5)).toBe('50%');
+  });
+});
+
+describe('uiText · 关卡名/副标题 i18n（F4）', () => {
+  it('全部主线关卡七语种条目齐备，简中与 areas.ts 原文逐字一致', () => {
+    for (const level of LEVELS) {
+      const entry = LEVEL_TEXT[level.id as keyof typeof LEVEL_TEXT];
+      expect(entry, `缺少关卡文案表条目：${level.id}`).toBeDefined();
+      for (const locale of LOCALES) {
+        expect(entry![locale]!.name, `${level.id} · ${locale} name`).toBeTruthy();
+        expect(entry![locale]!.subtitle, `${level.id} · ${locale} subtitle`).toBeTruthy();
+      }
+      expect(entry!['zh-Hans']!.name).toBe(level.name);
+      expect(entry!['zh-Hans']!.subtitle).toBe(level.subtitle);
+    }
+  });
+
+  it('en 下关卡名/副标题不再是硬编码中文（HUD/选关/结算消费同一解析）', () => {
+    const level = LEVELS[0]!;
+    expect(level.name).toBe('初醒箱庭'); // 数据原文仍是中文唯一事实源
+    expect(levelName('en', level)).toBe('First-Awaken Garden');
+    expect(levelName('en', level)).not.toContain('箱庭');
+    expect(levelSubtitle('en', level)).not.toBe(level.subtitle);
+    expect(levelSubtitle('en', level)).not.toContain('主城·教学段');
+  });
+
+  it('未收录的 levelId（无尽程序层/坏档）回落关卡数据原文，绝不 undefined', () => {
+    expect(levelName('ja', { id: 'level-ghost', name: '幻影层' })).toBe('幻影层');
+    expect(levelSubtitle('de', { id: 'level-ghost', subtitle: '无主之地' })).toBe('无主之地');
+    expect(levelName('zh-Hans', { id: '', name: '' })).toBe('');
   });
 });

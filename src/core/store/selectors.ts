@@ -12,6 +12,7 @@ import { findLevel } from '../../data/levels';
 import { findWeapon } from '../../data/weapons';
 import { GACHA_CONFIG, CARDS } from '../../data/gacha';
 import { LAW_PATCHES, type LawPatchDef } from '../lawRegistry';
+import { levelName as levelNameI18n, levelSubtitle as levelSubtitleI18n } from '../../data/i18n/uiText';
 
 /** 实体占位表（id→entity），每调用现算 */
 export function selectOccupancy(state: GameState): Map<string, GridEntity> {
@@ -61,8 +62,9 @@ export function selectHudModel(state: GameState): HudModel {
   const weaponBonus = weapon?.attack ?? 0;
   return {
     levelId: state.segment?.levelId ?? null,
-    levelName: level?.name ?? '—',
-    areaName: level?.subtitle ?? '—',
+    // F4：关卡名/副标题按当前语种解析（未收录 levelId 回落关卡数据原文）
+    levelName: level !== undefined ? levelNameI18n(state.locale, level) : '—',
+    areaName: level !== undefined ? levelSubtitleI18n(state.locale, level) : '—',
     steps: state.segment !== null ? Math.ceil(state.segment.steps) : 0,
     starStones: state.gacha.starStones,
     hp: state.player.hp,

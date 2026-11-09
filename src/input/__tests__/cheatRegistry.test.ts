@@ -113,6 +113,19 @@ describe('S10 —— 选关解锁 = 显式谓词「到达第 2 关」', () => {
     expect(hasReachedLevel(state, 'level-sb-04')).toBe(false);
     expect(hasReachedLevel(state, 'level-not-exist')).toBe(false);
   });
+
+  it('F3：本关已通关（只有 cleared 旗标）即视为已到达，不再与「未到达」矛盾', () => {
+    // 干净存档基线：末关既未到达也未通关
+    expect(hasReachedLevel(useGameStore.getState(), 'level-lb-12')).toBe(false);
+    expect(hasClearedLevel(useGameStore.getState(), 'level-lb-12')).toBe(false);
+    // 旧存档只写入 cleared:<id>（如自动演示直通关底，reached:<id> 缺失）
+    useGameStore.setState((s) => ({
+      story: { ...s.story, flags: { ...s.story.flags, 'cleared:level-lb-12': true } },
+    }));
+    const state = useGameStore.getState();
+    expect(hasClearedLevel(state, 'level-lb-12')).toBe(true);
+    expect(hasReachedLevel(state, 'level-lb-12')).toBe(true);
+  });
 });
 
 describe('hasClearedLevel / isGameCleared', () => {

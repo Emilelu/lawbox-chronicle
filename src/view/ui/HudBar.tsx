@@ -14,9 +14,10 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGameStore } from '../../core/store/gameStore';
 import { selectHudModel } from '../../core/store/selectors';
-import { LOCALES } from '../../core/types';
+import { LOCALES, type LocaleId } from '../../core/types';
 import { LOCALE_NAMES, t } from '../../data/i18n';
 import { isUiTextKey, tUi } from '../../data/i18n/uiText';
+import { resolveAchievementToast } from '../../archive/logbook';
 import { bus } from '../../core/events/bus';
 import roleAvatar from '../../assets/imgs/roles/role.png';
 import { LawQuickBar } from './LawQuickBar';
@@ -34,6 +35,19 @@ import { LevelSelectPanel, useLevelSelectStore } from './LevelSelectPanel';
 interface ToastItem {
   readonly id: number;
   readonly key: string;
+}
+
+/**
+ * toast 文案解析（R5）：成就 toast 的 messageKey（lore:ach:<id>）不是 uiText 键，
+ * 先经 logbook 的 resolveAchievementToast 反查成就定义取成就名；其余键走
+ * uiText 键控字典，最后回落 data/i18n 旧字典（再回落 key 字面量 —— 作弊回执等
+ * 「key 即原文」的 messageKey 因此原样显示，属预期）。
+ */
+export function resolveToastText(locale: LocaleId, messageKey: string): string {
+  const achievement = resolveAchievementToast(messageKey);
+  if (achievement !== undefined) return achievement.title;
+  if (isUiTextKey(messageKey)) return tUi(locale, messageKey);
+  return t(locale, messageKey); // 旧字典（toast.skeletonReady 等），最终回落 key 字面量
 }
 
 /** bus ui/toast → 顶部居中短消息；messageKey 先查本模块键控字典，再回落 data/i18n 旧字典 */
@@ -62,10 +76,7 @@ export function ToastStack() {
     };
   }, []);
 
-  const resolve = (key: string): string => {
-    if (isUiTextKey(key)) return tUi(locale, key);
-    return t(locale, key); // 旧字典（toast.skeletonReady 等），最终回落 key 字面量
-  };
+  const resolve = (key: string): string => resolveToastText(locale, key);
 
   return (
     <div
@@ -149,6 +160,10 @@ export function HudBar() {
   return (
     <>
       {/* ---- 左上状态胶囊 ---- */}
+      {/* L1：右上按钮组固定宽 328px（7×40 圆钮 + 6×8 间距）+ 左右边距 24px，
+          视口 <844px 时两组必然重叠（800×600 实测 gap=-43.9）。把左上组 maxWidth
+          压到 calc(100vw - 352px)（= 右上组左缘 100vw-340 再让出左边距 12），
+          窄视口下撤销/重玩行经 flexWrap 自动折成第二行，两组互不遮挡 */}
       <div
         style={{
           position: 'fixed',
@@ -157,6 +172,8 @@ export function HudBar() {
           zIndex: 20,
           display: 'flex',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          maxWidth: 'calc(100vw - 352px)',
           gap: 10,
           pointerEvents: 'none',
         }}
@@ -204,7 +221,9 @@ export function HudBar() {
           )}
         </div>
 
-        {/* 星石胶囊：快捷抽卡入口（点按不经过祭坛运镜，直接翻牌） */}
+        {/* 星石胶囊：快捷抽卡入口（点按不经过祭坛运镜，直接翻牌）。
+            L4：左上容器整体 pointerEvents:'none'，必须像兄弟胶囊一样显式恢复
+            'auto'，否则点击穿透到 3D 画布，快捷抽卡入口成死按钮 */}
         <button
           className="glass"
           onClick={() => store().openPanel('gacha')}
@@ -215,6 +234,7 @@ export function HudBar() {
             gap: 6,
             padding: '8px 14px',
             cursor: 'pointer',
+            pointerEvents: 'auto',
             color: 'var(--neon-gold)',
             fontSize: 14,
             letterSpacing: '0.06em',
