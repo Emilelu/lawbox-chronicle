@@ -94,8 +94,10 @@ export function GachaOverlay() {
 
   const [revealed, setRevealed] = useState(0);
   const [burstIndex, setBurstIndex] = useState<number | null>(null);
-  // F1：本次投币正在展示的结果（仅新结果进入翻牌面时置位）；组件卸载即消失，
-  // 重开面板对「看过的旧 lastResult」回落投币主页，单抽/十连入口不再被锁死
+  // F1：本次投币正在展示的结果（仅新结果进入翻牌面时置位）。注意本组件在
+  // UiOverlaySuite 中常驻挂载（不可见时仅返回 null，不卸载）——「组件卸载即
+  // 状态消失」并不成立，关闭清空由下方 effect 显式执行：重开面板对「看过的
+  // 旧 lastResult」回落投币主页，单抽/十连入口不再被锁死
   const [revealResult, setRevealResult] = useState<GachaPullResult | null>(null);
 
   const visible = activePanel === 'gacha' || (phase === 'gacha' && activePanel === 'none');
@@ -119,6 +121,16 @@ export function GachaOverlay() {
       for (const timer of timers) clearTimeout(timer);
     };
   }, [visible, lastResult]);
+
+  // F1：面板关闭即清空翻牌会话态。上方准入 effect 只拦「看过的结果再次进入」，
+  // 不会清既有 revealResult —— 组件不卸载时重开面板会残留上一次的翻牌面，
+  // 投币主页（单抽/十连入口）依旧不可达。这里显式复位，补齐「关闭即消失」。
+  useEffect(() => {
+    if (visible) return;
+    setRevealResult(null);
+    setRevealed(0);
+    setBurstIndex(null);
+  }, [visible]);
 
   // 稀有度光柱/星爆：翻开 3★ 时紫柱一闪，4★ 时金柱 + KiraKira 星爆
   useEffect(() => {

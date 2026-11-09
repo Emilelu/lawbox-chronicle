@@ -116,7 +116,7 @@ function makeMobScript(p: MobParam): StoryScriptDef {
         endingId: `mob-${seq}-defeat`,
         closable: true,
         lines: [
-          { speakerId: 'system', text: '你被击倒了……（可关闭，回去休整后再来；「再临」法则在此特别有效）' },
+          { speakerId: 'system', text: '你被击倒了……（可关闭，昏睡一觉醒已回满 HP——「休整」在败北结算时自动完成；「再临」法则在此特别有效）' },
         ],
       },
     ],

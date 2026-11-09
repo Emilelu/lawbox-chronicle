@@ -186,6 +186,8 @@ export function dispatchBinding(binding: KeyBinding): void {
     return;
   }
   if (binding.kind === 'terminal') {
+    // 解锁门禁在 MetaTerminal 模块态单点落实（未解锁 no-op + toast，C2-L2）：
+    // 这里保持无条件转发，不另设第二真相源
     toggleMetaTerminal();
     return;
   }

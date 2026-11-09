@@ -21,6 +21,7 @@ import {
   isTypingTarget,
   useKeyActions,
 } from '../useKeyActions';
+import { isMetaTerminalOpen, setMetaTerminalOpen } from '../MetaTerminal';
 import { resetCheatVisualState } from '../cheatRegistry';
 
 describe('KEY_CODE_TO_ACTION —— e.code → 语义', () => {
@@ -142,6 +143,7 @@ describe('useKeyActions 全链路（jsdom 键盘事件 → store）', () => {
       root = null;
     }
     container.remove();
+    setMetaTerminalOpen(false); // 终端是模块态：兜底关闭，不跨测试泄漏（关闭永远放行）
     vi.useRealTimers();
   });
 
@@ -203,15 +205,32 @@ describe('useKeyActions 全链路（jsdom 键盘事件 → store）', () => {
 
   it('终端打开时移动冻结（Backquote 打开，再按关闭）', () => {
     useGameStore.getState().startLevel('level-sb-01');
+    // C2-L2 后热键有解锁门禁：先写解锁旗标（BOSS 结局明示解锁的同款路径）
+    useGameStore.setState((s) => ({
+      story: { ...s.story, flags: { ...s.story.flags, 'meta:terminal-unlocked': true } },
+    }));
     press('Backquote');
+    expect(isMetaTerminalOpen()).toBe(true); // 已解锁：终端真的打开
     const before = playerPos();
     press('KeyS');
     lift('KeyS');
     expect(playerPos()).toEqual(before); // 冻结
     press('Backquote');
+    expect(isMetaTerminalOpen()).toBe(false);
     press('KeyS');
     lift('KeyS');
     expect(playerPos().y).toBe(before.y + 1); // 还原
+  });
+
+  it('C2-L2：终端未解锁时按 Backquote 无效果，玩法键不被吞（隐形终端回归）', () => {
+    useGameStore.getState().startLevel('level-sb-01'); // 新存档未通关、无解锁旗标
+    press('Backquote');
+    lift('Backquote');
+    expect(isMetaTerminalOpen()).toBe(false); // 没有随之产生的「隐形终端」
+    const before = playerPos();
+    press('KeyS');
+    lift('KeyS');
+    expect(playerPos().y).toBe(before.y + 1); // 移动照常生效，输入不再被静默吞掉
   });
 
   it('全屏浮层（抽卡面板）打开时移动冻结，关闭后恢复（I3）', () => {

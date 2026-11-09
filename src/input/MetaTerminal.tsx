@@ -10,13 +10,17 @@
  * K3 根治：exit / 未知输入永远在终端里显式回显，绝不被解释成移动指令；
  * 游戏世界也没有「退出流」（B1），exit 只关闭终端本身。
  *
- * 解锁契约：通关全部主线关卡后可用（game-cleared 谓词，见 cheatRegistry）。
- * 开放条件未满足时组件渲染 null；热键 Backquote 试图打开会静默无效——
- * 想让玩家提前看到入口提示，由设置/规则手册页签经 openMetaTerminal() 调用。
+ * 解锁契约：通关全部主线关卡（isGameCleared），或 BOSS 结局明示解锁
+ * （showEnding.unlocksMetaTerminal → 旗标 meta:terminal-unlocked）。
+ * 契约在模块态单点落实（C2-L2）：未解锁时 setMetaTerminalOpen(true) 一律
+ * no-op 并 toast 提示，关闭永远放行——热键 Backquote 绝不会把模块态置成
+ * 「开着却渲染 null」的隐形终端，吞掉移动/交互等全部玩法键。
  */
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { bus } from '../core/events/bus';
+import type { GameState } from '../core/types';
 import { useGameStore } from '../core/store/gameStore';
 import { GARBAGE_KILLER } from '../data/story/hiddenGame';
 import { executeCheat, isGameCleared, listCheatCommandStatuses } from './cheatRegistry';
@@ -90,8 +94,22 @@ export function isMetaTerminalOpen(): boolean {
   return terminalOpen;
 }
 
+/** 解锁谓词（纯函数，vitest 直测）。
+ *  两条解锁路：全主线通关（isGameCleared）或 BOSS 结局明示解锁
+ *  （showEnding.unlocksMetaTerminal → 旗标 meta:terminal-unlocked）。 */
+export function isMetaTerminalUnlocked(state: GameState): boolean {
+  return isGameCleared(state) || state.story.flags['meta:terminal-unlocked'] === true;
+}
+
 export function setMetaTerminalOpen(open: boolean): void {
   if (terminalOpen === open) return;
+  // 解锁门禁（C2-L2）：只拦开启、不拦关闭。未解锁时试图打开一律 no-op 并
+  // toast 说明（与 executeCheat 的拒绝反馈同款）——否则模块态先置位、组件又
+  // 因 !unlocked 渲染 null，玩家会得到一个吞掉全部玩法键的「隐形终端」。
+  if (open && !isMetaTerminalUnlocked(useGameStore.getState())) {
+    bus.publish({ type: 'ui/toast', messageKey: 'META 终端在通关全部主线关卡后解锁' });
+    return;
+  }
   terminalOpen = open;
   for (const listener of openListeners) listener();
 }
@@ -110,11 +128,9 @@ function useTerminalOpen(): boolean {
   );
 }
 
-/** 通关谓词 hook（真结局入口的可见性）。
- *  两条解锁路：全主线通关（isGameCleared）或 BOSS 结局明示解锁
- *  （showEnding.unlocksMetaTerminal → 旗标 meta:terminal-unlocked）。 */
+/** 通关谓词 hook（真结局入口的可见性），复用上面的纯函数谓词。 */
 export function useMetaTerminalUnlocked(): boolean {
-  return useGameStore((s) => isGameCleared(s) || s.story.flags['meta:terminal-unlocked'] === true);
+  return useGameStore(isMetaTerminalUnlocked);
 }
 
 /* ================================ 终端 UI ================================= */

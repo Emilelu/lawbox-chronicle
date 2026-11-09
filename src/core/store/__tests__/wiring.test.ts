@@ -16,6 +16,7 @@ import {
   CRIT_SHAKE_INTENSITY,
   effectiveTerrain,
   importLevel,
+  postBattlePlayerHp,
   selectBattleFormationGrid,
   selectBattleHazards,
   selectBattleState,
@@ -420,6 +421,48 @@ describe('实机战斗反馈链路（R2 复现路径：郭老师徒手 0 伤害�
     store().advanceDialogue();
     const events = captureDuring(() => store().selectWeapon('weapon-dagger'));
     expect(events.some((e) => e.type === 'anim/spark' || e.type === 'anim/screenShake')).toBe(false);
+  });
+});
+
+/* ==================== 战败休整回血（L1 · store 层） ==================== */
+
+describe('postBattlePlayerHp · 战斗结算 HP 映射（L1 纯函数）', () => {
+  it('败北 → 休整回满 maxHp（战败保底）；胜利/逃跑 → 保留战场终值并 clamp', () => {
+    expect(postBattlePlayerHp('defeat', 0, 100)).toBe(100);
+    expect(postBattlePlayerHp('victory', 42, 100)).toBe(42);
+    expect(postBattlePlayerHp('fled', 13, 100)).toBe(13);
+    expect(postBattlePlayerHp('victory', 120, 100)).toBe(100); // 终值越界照旧收敛
+  });
+});
+
+describe('战败休整回血（L1 · 端到端）', () => {
+  it('败北结算 → 玩家 HP 回满（不再 0 血软锁），胜利旗未置位（可再来）', () => {
+    store().startLevel('level-sb-01');
+    teleportPlayer(11, 8); // 蔡徐坤主地图 (4,2) → 网格 (11,8)
+    // 1 血裸装：徒手 0 伤，蔡徐坤反击 12 点必败（secondChance 缺省 false）
+    useGameStore.setState({ player: { ...store().player, hp: 1, baseAttack: 0, defense: 0, weapons: [] } });
+    store().interact();
+    store().advanceDialogue();
+    store().advanceDialogue();
+    expect(selectBattleState(store())?.enemyId).toBe('enemy-caixukun');
+    store().dispatch({ type: 'toggleFormation' }); // 确认布阵 → battle 相
+    let guard = 0;
+    while (selectBattleState(store()) !== null && guard < 40) {
+      store().combatAct('attack');
+      guard += 1;
+    }
+    expect(selectBattleState(store())).toBeNull(); // 败北结算已收场
+    expect(store().player.hp).toBe(store().player.maxHp); // L1：休整回满
+    expect(store().story.flags['story:defeated:enemy-caixukun']).toBeUndefined();
+  });
+
+  it('倒地存档（hp 0）进关即休整回满；非倒地进关不回血（beginLevel 兜底语义）', () => {
+    useGameStore.setState({ player: { ...store().player, hp: 0 } }); // 模拟修复前的持久化 0 血
+    store().startLevel('level-sb-01');
+    expect(store().player.hp).toBe(store().player.maxHp);
+    useGameStore.setState({ player: { ...store().player, hp: 30 } });
+    store().startLevel('level-sb-01');
+    expect(store().player.hp).toBe(30); // hp > 0 时进关绝不回血
   });
 });
 

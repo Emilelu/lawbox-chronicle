@@ -303,6 +303,25 @@ export function battleTurnFxEvents(prev: BattleState, next: BattleState, action:
   return events;
 }
 
+/* ======================== 战斗结算 HP 映射（纯函数） ======================== */
+
+/**
+ * 战斗结算后的玩家 HP（纯函数，L1）：败北 = 兑现「回去休整后再来」的承诺——
+ * HP 恢复到 maxHp（战败保底），杜绝「0 血再战必在首次反击即死」的主线软锁
+ * （小怪胜利旗是作者谜题三前置旗、进而解锁 BOSS 第二幕的必要条件）；
+ * 胜利/逃跑保留战场终值（经 clampHp 收敛到 [0, maxHp]）。
+ * 注意 K1/K16 的「伤害恒 max(0,·)/防御永不回血」约束只作用于战斗公式层
+ * （effects.computeDamage/applyHp 的局内通道），局外休整结算不属其管辖。
+ */
+export function postBattlePlayerHp(
+  outcome: 'victory' | 'defeat' | 'fled' | 'ongoing',
+  hpFinal: number,
+  maxHp: number,
+): number {
+  if (outcome === 'defeat') return maxHp;
+  return clampHp(hpFinal, maxHp);
+}
+
 /* ================================ 创建 ==================================== */
 
 export const useGameStore = create<GameStore>()(
@@ -657,7 +676,11 @@ export const useGameStore = create<GameStore>()(
       const settleBattleEnd = (battle: BattleState): void => {
         const report = settleBattle(battle);
         const state = get();
-        let player = { ...state.player, hp: clampHp(report.playerHpFinal, report.playerMaxHp) };
+        // L1：败北走 postBattlePlayerHp 的休整回满（战败保底），其余 outcome 保留终值
+        let player = {
+          ...state.player,
+          hp: postBattlePlayerHp(report.outcome, report.playerHpFinal, report.playerMaxHp),
+        };
 
         if (report.outcome === 'victory') {
           // 掉落武器入包（自动装备 —— 原版语义）
@@ -713,12 +736,18 @@ export const useGameStore = create<GameStore>()(
         }
         const rules = puzzleRulesOf();
         const puzzle = createPuzzleState(parsed.geometry, rules);
+        // L1 兜底：修复前的存档可能把 hp 0 持久化（HP 不随关卡重置）。进关即视为
+        // 「休整」完成——倒地状态下回满，保证 HP 永不跨局持久为 0（重玩/重进/
+        // 重开任一途径都能从 0 血恢复）；非倒地（hp > 0）不做任何回血。
+        const restedPlayer =
+          state.player.hp <= 0 ? { ...state.player, hp: state.player.maxHp } : state.player;
         set({
           phase: 'playing',
           activePanel: 'none',
           result: null,
           combat: null,
           battle: null,
+          player: restedPlayer,
           puzzle,
           segment: segmentOf(puzzle, levelId),
           storyRuntime: state.storyRuntime.phase === 'idle' ? state.storyRuntime : { ...IDLE_STORY_RUNTIME, flags: { ...state.storyRuntime.flags } },
