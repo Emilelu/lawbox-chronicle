@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>《法则箱庭异闻录》全方位游戏文档</title>
+<style>
+  :root { --bg:#0a0e1e; --panel:#121830; --ink:#e6e9f5; --dim:#8b93b8; --cyan:#00e5ff; --gold:#ffcf5c; --violet:#7c5cff; --rose:#ff5c9e; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif; line-height:1.7; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 80px; }
+  header { text-align:center; padding: 36px 0 8px; }
+  h1 { font-size: clamp(28px, 5vw, 44px); letter-spacing: .14em; margin: 8px 0 4px; color: var(--cyan); text-shadow: 0 0 18px rgba(0,229,255,.35); }
+  .tagline { color: var(--dim); letter-spacing: .3em; font-size: 13px; }
+  .badges { margin-top: 12px; }
+  .badges span { display:inline-block; border:1px solid rgba(124,92,255,.5); border-radius:999px; padding:2px 12px; font-size:12px; margin:4px; color:var(--dim); }
+  h2 { font-size: 22px; margin: 42px 0 12px; padding-left: 12px; border-left: 4px solid var(--violet); letter-spacing: .1em; }
+  h3 { font-size: 17px; margin: 20px 0 6px; color: var(--gold); }
+  h3 small { color: var(--dim); font-size: 12px; font-weight: 400; margin-left: 8px; }
+  p, li { font-size: 14.5px; }
+  a { color: var(--cyan); }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13.5px; }
+  th, td { border: 1px solid rgba(139,147,184,.25); padding: 6px 10px; text-align: left; }
+  th { background: rgba(124,92,255,.15); color: var(--cyan); }
+  tr:nth-child(even) td { background: rgba(255,255,255,.02); }
+  ul, ol { margin: 8px 0; padding-left: 22px; }
+  .chip { display:inline-block; border:1px solid rgba(139,147,184,.4); border-radius:999px; padding:1px 10px; font-size:12px; margin:2px 2px; }
+  .chip.gold { color: var(--gold); border-color: rgba(255,207,92,.5); }
+  .chip.cyan { color: var(--cyan); border-color: rgba(0,229,255,.5); }
+  .level { background: var(--panel); border: 1px solid rgba(124,92,255,.35); border-radius: 12px; padding: 14px 18px; margin: 14px 0; }
+  details { border: 1px dashed rgba(139,147,184,.4); border-radius: 8px; padding: 8px 12px; margin: 10px 0; }
+  summary { cursor: pointer; color: var(--gold); font-size: 13.5px; }
+  .arrow { color: var(--cyan); font-size: 15px; }
+  .fall { color: var(--rose); }
+  .gate { border:1px dashed rgba(255,207,92,.5); border-radius:8px; padding:6px 10px; font-size:13px; }
+  .note { color: var(--dim); font-size: 12px; }
+  .warn { color: var(--rose); font-size: 12.5px; }
+  code, kbd { background: rgba(0,229,255,.08); border: 1px solid rgba(0,229,255,.25); border-radius: 5px; padding: 0 6px; font-size: 12.5px; }
+  nav { display:flex; flex-wrap:wrap; gap:8px; margin: 14px 0; }
+  nav a { font-size: 13px; text-decoration: none; border: 1px solid rgba(139,147,184,.35); border-radius: 999px; padding: 3px 12px; }
+  .top { text-align:right; margin-top: -8px; }
+  .top a { font-size: 12px; color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="chip cyan">推箱 × 回合战斗 × 法则抽卡</div>
+  <h1>法则箱庭异闻录</h1>
+  <p class="tagline">LAWBOX CHRONICLE · 三款远古小游戏融合重制</p>
+  <div class="badges">
+    <span>React 18 + TypeScript strict</span><span>Vite 5</span><span>three.js / React-Three-Fiber 3D</span>
+    <span>zustand</span><span>framer-motion</span><span>howler.js</span><span>vitest 553 用例</span>
+  </div>
+</header>
+
+<nav>
+  <a href="#overview">游戏概览</a><a href="#controls">操作键位</a><a href="#systems">核心系统</a>
+  <a href="#cards">卡池与卡牌</a><a href="#units">武器与敌人</a><a href="#levels">十二关攻略</a>
+  <a href="#eggs">彩蛋与隐藏内容</a><a href="#run">运行与构建</a><a href="#license">来源与许可</a>
+</nav>
+
+<h2 id="overview">游戏概览</h2>
+<p>《法则箱庭异闻录》把三款远古小游戏融成了一款全新的机制级融合游戏：</p>
+<ul>
+  <li><b>《鬼畜大冒险》</b>（Java 文字冒险）——剧情、角色、遭遇战、作者谜题与 BOSS 战，升级为 3D 场景里可移动探索、对话框演出的完整主线；</li>
+  <li><b>《三B推箱子》</b>（HTML+CSS+JS）——推箱关卡玩法升级为立体高度层 3D，箱子可推落高台砸压守卫；</li>
+  <li><b>《邦邦抽卡模拟器》</b>（Java）——抽卡系统成为玩法闭环：推箱赚星石 → 抽卡出「法则卡」→ 法则实时改写推箱规则与战斗数值。</li>
+</ul>
+<p>玩法循环：<b>推箱过关 → 星级结算星石 → 星愿祭坛抽卡 → 法则卡改写规则 → 更短的推路 / 更强的战斗 → 挑战更高星与隐藏内容</b>。三个老项目的全部 43 个已知 bug 与 24 项未完成功能在重制时逐一处理，并新增立体高度、阴阳位面、相位穿行、法则卡改写、无尽回廊、档案收集等 8 类新玩法。</p>
+
+<h2 id="controls">操作键位</h2>
+<p>键位唯一来源 <code>src/input/useKeyActions.ts</code>；触屏端有十字键 + 滑动手势，语义与键盘一致。</p>
+<table><thead><tr><th>按键</th><th>作用</th></tr></thead><tbody><tr><td><kbd>W / ↑</kbd></td><td>向上移动 / 推箱</td></tr><tr><td><kbd>S / ↓</kbd></td><td>向下移动 / 推箱</td></tr><tr><td><kbd>A / ←</kbd></td><td>向左移动 / 推箱</td></tr><tr><td><kbd>D / →</kbd></td><td>向右移动 / 推箱</td></tr><tr><td><kbd>Y / U / B / N</kbd></td><td>斜向推挤（需法则卡「斜向推挤」）</td></tr><tr><td><kbd>Shift + 方向</kbd></td><td>镜像拉箱：后退一格箱子跟进（需「镜像拉箱」）</td></tr><tr><td><kbd>C</kbd></td><td>相位穿行：消耗充能穿过一格障碍（需「相位穿行」）</td></tr><tr><td><kbd>F</kbd></td><td>阴阳位面切换（需「位面通行」；「位面之眼」可任意位置切）</td></tr><tr><td><kbd>E</kbd></td><td>交互：星愿祭坛抽卡 / 剧情物件</td></tr><tr><td><kbd>Tab</kbd></td><td>战斗布阵确认；平时打开卡组面板</td></tr><tr><td><kbd>Z</kbd></td><td>撤销上一步（含被消除的箱子）</td></tr><tr><td><kbd>Q</kbd></td><td>重玩本段</td></tr><tr><td><kbd>M</kbd></td><td>静音开关</td></tr><tr><td><kbd>Enter / Space</kbd></td><td>推进对话</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭浮层（终局也不锁死）</td></tr><tr><td><kbd>`（反引号）</kbd></td><td>META 终端（通关全部主线后解锁）</td></tr></tbody></table>
+
+<h2 id="systems">核心系统</h2>
+<h3>推箱（立体高度层）</h3>
+<ul>
+  <li>把所有箱子推上旗位基座（■）即过关；步数决定星级（每关 3★ / 2★ 两档步数线）。</li>
+  <li>立体关卡存在<b>高度层</b>：爬升有上限（CLIMB_LIMIT），把箱子推下高台会<b>坠落砸压</b>下方的守卫或目标——地形本身是武器。</li>
+  <li><b>尖刺格</b>：战斗布阵期可把敌人推进尖刺按比例扣血。</li>
+  <li><b>阴阳位面</b>：按 <kbd>F</kbd> 切换表里世界，阴面有另一套地形与浮空石板（需「位面通行」法则卡）。</li>
+  <li><b>撤销（Z）</b>可回滚任意步，含被消除的箱子；<b>死锁检测</b>会在无解局面时提示。</li>
+</ul>
+<h3>回合战斗（布阵推挤）</h3>
+<ul>
+  <li>踩到敌人触发遭遇战：先<b>布阵</b>——怪物方块化（重量∝HP）摆上 3D 战场网格，可用方向键/屏幕键<b>推挤</b>。</li>
+  <li>推下深渊、推进尖刺按比例扣血甚至秒杀小怪；BOSS 免疫推挤（附护盾与弱点机制），必须走公式战。</li>
+  <li>伤害 = 攻 − 防（下限 0），武器提供攻击加成，部分武器有特殊效果（击退 / 多次使用）。</li>
+</ul>
+<h3>抽卡与法则卡</h3>
+<ul>
+  <li>星石来源：关卡星级结算 / 挑战层 / 剧情。定价：单抽 100◈、十连 900◈。</li>
+  <li>概率：4★ 6% / 3★ 26% / 2★ 68%（逐卡独立 roll，概率公示面板可查）。</li>
+  <li>三层保底：①十连末位必 3★+；②累计 50 抽必出 4★；③累计 40 抽未获未持有法则卡 → 定向补齐。</li>
+  <li>重复法则卡自动转 <b>20 碎片</b>；<b>60 碎片</b>可在卡组·商店页签直购任一未持有法则卡——零软锁。</li>
+  <li><b>法则卡</b>是核心融合玩法：激活后实时改写推箱物理与战斗参数（羽箱减重、推程+1、镜像拉箱、斜向推挤、相位穿行、箱落引爆、位面之眼……）。</li>
+  <li>怀旧对照池：完整复刻原邦邦抽卡模拟器的概率缺陷，作为「概率展品」与正式池并列，档案页可一键跑对照十连并查看双池实测出货曲线。</li>
+</ul>
+<h3>收集与存档</h3>
+<ul>
+  <li>档案面板：卡牌图鉴（首获/次数）、成就、双池出货实测曲线、逐抽记录。</li>
+  <li>存档为 localStorage 三分片（进度/偏好、档案、抽卡统计），刷新与关浏览器都不丢；标题页可重置。</li>
+</ul>
+
+<h2 id="cards">卡池与卡牌</h2>
+<table><thead><tr><th>稀有度</th><th>名称</th><th>效果 / 说明</th></tr></thead><tbody><tr><td>4★</td><td>法则·轻步</td><td>步数消耗 ×0.5。步履不停，星辰退让。</td></tr><tr><td>4★</td><td>法则·重力井</td><td>允许把敌人推挤出界。坠落，也是一种审判。</td></tr><tr><td>4★</td><td>法则·位面通行</td><td>解锁 F 位面切换。世界的里侧向你敞开。</td></tr><tr><td>4★</td><td>法则·再临</td><td>战败免死一次。故事拒绝在此画上句号。</td></tr><tr><td>4★</td><td>法则·镜像拉箱</td><td>解锁 Shift+方向 拉箱：箱子如镜像随行，退后即拉近。</td></tr><tr><td>4★</td><td>法则·相位穿行</td><td>解锁 C 键穿行：消耗 1 充能，沿原方向穿过一格障碍。</td></tr><tr><td>4★</td><td>法则·箱落引爆</td><td>箱落时可引爆一次，清除落点四邻的可破坏实体。</td></tr><tr><td>4★</td><td>法则·位面之眼</td><td>阴阳两面尽收眼底：任意位置皆可按 F 切换位面。</td></tr><tr><td>4★</td><td>影流之主</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr><tr><td>4★</td><td>作者</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr><tr><td>3★</td><td>法则·长臂</td><td>推挤距离 +1。指尖所及，即是法则边界。</td></tr><tr><td>3★</td><td>法则·狂化</td><td>玩家攻击 ×1.5。代价是舞蹈。</td></tr><tr><td>3★</td><td>法则·铁壁</td><td>敌方攻击 ×0.75。不动如山。</td></tr><tr><td>3★</td><td>法则·斜向推挤</td><td>解锁对角线推箱，斜角也逃不出掌心。</td></tr><tr><td>3★</td><td>法则·箱可推离</td><td>就位的箱子也能被推下基座落差（平推离旗始终可行）。</td></tr><tr><td>3★</td><td>法则·击退+2</td><td>布阵推挤的击退格数 +2，怪物方块飞得更远。</td></tr><tr><td>3★</td><td>法则·爆炸+1</td><td>箱落引爆次数 +1，连环爆破撕裂战场。</td></tr><tr><td>3★</td><td>导航天使①</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr><tr><td>3★</td><td>导航天使②</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr><tr><td>3★</td><td>导航天使③</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr><tr><td>3★</td><td>导航天使④</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr><tr><td>3★</td><td>冬泳怪鸽</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr><tr><td>2★</td><td>法则·羽箱</td><td>箱子质量 -1。轻若鸿毛，一推即走。</td></tr><tr><td>2★</td><td>法则·铅箱</td><td>箱子质量 +1。沉如铅封，推挤更痛。</td></tr><tr><td>2★</td><td>蔡徐坤</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr><tr><td>2★</td><td>郭老师</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr><tr><td>2★</td><td>星屑徽章</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr><tr><td>2★</td><td>星光护符</td><td>携带后为战斗提供增益 buff（详见卡面）</td></tr></tbody></table>
+<p class="note">法则卡一卡一补丁：激活即注入对应规则补丁；卡面稀有度与补丁稀有度一致，卡池概率与原作参数保真并有审计断言。</p>
+
+<h2 id="units">武器与敌人</h2>
+<h3>武器</h3>
+<table><thead><tr><th>名称</th><th>攻击加成</th><th>说明</th></tr></thead><tbody><tr><td>匕首</td><td>20</td><td>一把普普通通的匕首，可以让攻击力提升 20！</td></tr><tr><td>篮球</td><td>50</td><td>看起来是一个普通的篮球，但是可以让攻击力提升 50！</td></tr><tr><td>迷吼tiao</td><td>80</td><td>外观酷似猕猴桃的炸弹，可以多次使用，可以让攻击力提升 80！</td></tr><tr><td>张牙舞爪大宝剑</td><td>188</td><td>外形像狼牙的大宝剑！可以让攻击力提升 188！</td></tr><tr><td>爷爷的拐杖</td><td>233</td><td>爷爷祖传下来的拐杖！可以击退敌人 2 格，可以让攻击力提升 233！</td></tr></tbody></table>
+<h3>敌人</h3>
+<table><thead><tr><th>名称</th><th>HP</th><th>攻击</th><th>防御</th><th>类型</th><th>备注</th></tr></thead><tbody><tr><td>蔡徐坤</td><td>28</td><td>12</td><td>6</td><td>小怪</td><td>掉落：—</td></tr><tr><td>郭老师</td><td>98</td><td>24</td><td>12</td><td>小怪</td><td>掉落：—</td></tr><tr><td>冬泳怪鸽</td><td>149</td><td>32</td><td>16</td><td>小怪</td><td>掉落：—</td></tr><tr><td>影流之主</td><td>2333</td><td>233</td><td>233</td><td>BOSS</td><td>掉落：—</td></tr></tbody></table>
+
+<h2 id="levels">十二关攻略</h2>
+<p>以下攻略由游戏内置求解器离线求得并逐格回放验证，与游戏内「💡 攻略」面板同一份数据。每关先给机制提示，推法默认折叠防剧透。</p>
+
+  <section class="level" id="level-sb-01">
+    <h3>初醒箱庭 <small>主城·教学段 —— 把箱子推上旗位基座，四位导航天使会先来见你</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 148 步</span>
+      <span class="chip">★★ ≤ 222 步</span>
+      <span class="chip cyan">奖励 ◈ 300 + 法则卡「法则·羽箱」</span>
+    </p>
+    <ul><li>把 2 个箱子全部推上 2 处旗位基座（■）即通关</li><li>场上有 4 处尖刺格：战斗布阵期可把敌人推进尖刺扣血</li><li>立体高度层：最高海拔 1 格——把箱子推下高台会坠落砸压下方目标；爬升有上限，落差才是通路</li><li>本关有星愿祭坛：走近按 E 打开抽卡</li></ul>
+    
+    <details><summary>展开参考推法（22 推 · 剧透）</summary><ol><li><b class="arrow">↓</b> 把箱子 (6,6) 推到 (6,7)</li><li><b class="arrow">→</b> 把箱子 (6,7) 推到 (7,7)</li><li><b class="arrow">↑</b> 把箱子 (6,4) 推到 (6,3)</li><li><b class="arrow">↑</b> 把箱子 (6,3) 推到 (6,2)</li><li><b class="arrow">↑</b> 把箱子 (6,2) 推到 (6,1)</li><li><b class="arrow">←</b> 把箱子 (6,1) 推到 (5,1)</li><li><b class="arrow">←</b> 把箱子 (5,1) 推到 (4,1)</li><li><b class="arrow">←</b> 把箱子 (4,1) 推到 (3,1)</li><li><b class="arrow">←</b> 把箱子 (3,1) 推到 (2,1)</li><li><b class="arrow">→</b> 把箱子 (7,7) 推到 (8,7)</li><li><b class="arrow">→</b> 把箱子 (8,7) 推到 (9,7)</li><li><b class="arrow">→</b> 把箱子 (9,7) 推到 (10,7)</li><li><b class="arrow">→</b> 把箱子 (10,7) 推到 (11,7)</li><li><b class="arrow">→</b> 把箱子 (11,7) 推到 (12,7)</li><li><b class="arrow">→</b> 把箱子 (12,7) 推到 (13,7)</li><li><b class="arrow">↓</b> 把箱子 (13,7) 推到 (13,8)</li><li><b class="arrow">↓</b> 把箱子 (13,8) 推到 (13,9)</li><li><b class="arrow">↓</b> 把箱子 (13,9) 推到 (13,10)</li><li><b class="arrow">↓</b> 把箱子 (13,10) 推到 (13,11)</li><li><b class="arrow">→</b> 把箱子 (13,11) 推到 (14,11)</li><li><b class="arrow">↓</b> 把箱子 (14,11) 推到 (14,12)</li><li><b class="arrow">←</b> 把箱子 (2,1) 推到 (1,1)</li></ol>
+    <p class="note">参考解法共 22 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-sb-02">
+    <h3>双廊回环 <small>外域一 —— 回廊交错的对称箱庭，旗位已筑起基座</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 158 步</span>
+      <span class="chip">★★ ≤ 236 步</span>
+      <span class="chip cyan">奖励 ◈ 500</span>
+    </p>
+    <ul><li>把 4 个箱子全部推上 4 处旗位基座（■）即通关</li><li>立体高度层：最高海拔 1 格——把箱子推下高台会坠落砸压下方目标；爬升有上限，落差才是通路</li></ul>
+    <p class="gate">🎫 入场需持有法则卡「法则·羽箱」——缺卡会在入场时自动补发剧情，不会软锁</p>
+    <details><summary>展开参考推法（30 推 · 剧透）</summary><ol><li><b class="arrow">↑</b> 把箱子 (6,4) 推到 (6,3)</li><li><b class="arrow">←</b> 把箱子 (6,3) 推到 (5,3)</li><li><b class="arrow">↑</b> 把箱子 (5,3) 推到 (5,2)</li><li><b class="arrow">↑</b> 把箱子 (5,2) 推到 (5,1)</li><li><b class="arrow">←</b> 把箱子 (5,1) 推到 (4,1)</li><li><b class="arrow">←</b> 把箱子 (4,1) 推到 (3,1)</li><li><b class="arrow">←</b> 把箱子 (3,1) 推到 (2,1)</li><li><b class="arrow">←</b> 把箱子 (2,1) 推到 (1,1)</li><li><b class="arrow">↑</b> 把箱子 (11,3) 推到 (11,2)</li><li><b class="arrow">↑</b> 把箱子 (11,2) 推到 (11,1)</li><li><b class="arrow">→</b> 把箱子 (8,8) 推到 (9,8)</li><li><b class="arrow">→</b> 把箱子 (9,8) 推到 (10,8)</li><li><b class="arrow">→</b> 把箱子 (10,8) 推到 (11,8)</li><li><b class="arrow">↓</b> 把箱子 (6,6) 推到 (6,7)</li><li><b class="arrow">↓</b> 把箱子 (6,7) 推到 (6,8)</li><li><b class="arrow">←</b> 把箱子 (6,8) 推到 (5,8)</li><li><b class="arrow">↓</b> 把箱子 (5,8) 推到 (5,9)</li><li><b class="arrow">↓</b> 把箱子 (5,9) 推到 (5,10)</li><li><b class="arrow">←</b> 把箱子 (5,10) 推到 (4,10)</li><li><b class="arrow">↓</b> 把箱子 (4,10) 推到 (4,11)</li><li><b class="arrow">←</b> 把箱子 (4,11) 推到 (3,11)</li><li><b class="arrow">←</b> 把箱子 (3,11) 推到 (2,11)</li><li><b class="arrow">←</b> 把箱子 (2,11) 推到 (1,11)</li><li><b class="arrow">→</b> 把箱子 (11,8) 推到 (12,8)</li><li><b class="arrow">→</b> 把箱子 (12,8) 推到 (13,8)</li><li><b class="arrow">→</b> 把箱子 (13,8) 推到 (14,8)</li><li><b class="arrow">↓</b> 把箱子 (14,8) 推到 (14,9)</li><li><b class="arrow">↓</b> 把箱子 (14,9) 推到 (14,10)</li><li><b class="arrow">↓</b> 把箱子 (14,10) 推到 (14,11)</li><li><b class="arrow">↓</b> 把箱子 (14,11) 推到 (14,12)</li></ol>
+    <p class="note">参考解法共 30 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-sb-03">
+    <h3>碎星十字 <small>外域二 —— 无外框的开放雪原，旗位基座散落如星</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 226 步</span>
+      <span class="chip">★★ ≤ 339 步</span>
+      <span class="chip cyan">奖励 ◈ 800 + 法则卡「法则·长臂」</span>
+    </p>
+    <ul><li>把 7 个箱子全部推上 7 处旗位基座（■）即通关</li><li>立体高度层：最高海拔 1 格——把箱子推下高台会坠落砸压下方目标；爬升有上限，落差才是通路</li></ul>
+    <p class="gate">🎫 入场需持有法则卡「法则·长臂」——缺卡会在入场时自动补发剧情，不会软锁</p>
+    <details><summary>展开参考推法（34 推 · 剧透）</summary><ol><li><b class="arrow">←</b> 把箱子 (4,1) 推到 (3,1)</li><li><b class="arrow">←</b> 把箱子 (7,3) 推到 (6,3)</li><li><b class="arrow">↑</b> 把箱子 (11,4) 推到 (11,3)</li><li><b class="arrow">↑</b> 把箱子 (11,3) 推到 (11,2)</li><li><b class="arrow">↑</b> 把箱子 (11,2) 推到 (11,1)</li><li><b class="arrow">→</b> 把箱子 (4,12) 推到 (5,12)</li><li><b class="arrow">→</b> 把箱子 (5,12) 推到 (6,12)</li><li><b class="arrow">→</b> 把箱子 (6,12) 推到 (7,12)</li><li><b class="arrow">→</b> 把箱子 (9,9) 推到 (10,9)</li><li><b class="arrow">→</b> 把箱子 (10,9) 推到 (11,9)</li><li><b class="arrow">↓</b> 把箱子 (11,9) 推到 (11,10)</li><li><b class="arrow">→</b> 把箱子 (11,10) 推到 (12,10)</li><li><b class="arrow">→</b> 把箱子 (5,5) 推到 (6,5)</li><li><b class="arrow">↑</b> 把箱子 (6,5) 推到 (6,4)</li><li><b class="arrow">↓</b> 把箱子 (3,1) 推到 (3,2)</li><li><b class="arrow">←</b> 把箱子 (6,3) 推到 (5,3)</li><li><b class="arrow">↑</b> 把箱子 (6,4) 推到 (6,3)</li><li><b class="arrow">↑</b> 把箱子 (5,3) 推到 (5,2)</li><li><b class="arrow">←</b> 把箱子 (5,2) 推到 (4,2)</li><li><b class="arrow">↓</b> 把箱子 (10,1) 推到 (10,2)</li><li><b class="arrow">→</b> 把箱子 (10,2) 推到 (11,2)</li><li><b class="arrow">←</b> 把箱子 (11,1) 推到 (10,1)</li><li><b class="arrow">→</b> 把箱子 (11,2) 推到 (12,2)</li><li><b class="arrow">↑</b> 把箱子 (12,2) 推到 (12,1)</li><li><b class="arrow">→</b> 把箱子 (12,1) 推到 (13,1)</li><li><b class="arrow">→</b> 把箱子 (13,1) 推到 (14,1)</li><li><b class="arrow">↑</b> 把箱子 (14,1) 推到 (14,0)</li><li><b class="arrow">→</b> 把箱子 (10,1) 推到 (11,1)</li><li><b class="arrow">↑</b> 把箱子 (4,2) 推到 (4,1)</li><li><b class="arrow">↑</b> 把箱子 (4,1) 推到 (4,0)</li><li><b class="arrow">←</b> 把箱子 (4,0) 推到 (3,0)</li><li><b class="arrow">←</b> 把箱子 (3,0) 推到 (2,0)</li><li><b class="arrow">←</b> 把箱子 (2,0) 推到 (1,0)</li><li><b class="arrow">←</b> 把箱子 (1,0) 推到 (0,0)</li></ol>
+    <p class="note">参考解法共 34 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-sb-04">
+    <h3>星陨间奏 <small>外域三 —— 终段箱庭（四星归位版），通关后「星愿祭坛」将开启四星池</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 62 步</span>
+      <span class="chip">★★ ≤ 92 步</span>
+      <span class="chip cyan">奖励 ◈ 1200</span>
+    </p>
+    <ul><li>把 4 个箱子全部推上 4 处旗位基座（■）即通关</li><li>立体高度层：最高海拔 1 格——把箱子推下高台会坠落砸压下方目标；爬升有上限，落差才是通路</li></ul>
+    
+    <details><summary>展开参考推法（8 推 · 剧透）</summary><ol><li><b class="arrow">↑</b> 把箱子 (6,2) 推到 (6,1)</li><li><b class="arrow">↑</b> 把箱子 (6,1) 推到 (6,0)</li><li><b class="arrow">←</b> 把箱子 (4,1) 推到 (3,1)</li><li><b class="arrow">←</b> 把箱子 (7,6) 推到 (6,6)</li><li><b class="arrow">↓</b> 把箱子 (6,6) 推到 (6,7)</li><li><b class="arrow">→</b> 把箱子 (10,1) 推到 (11,1)</li><li><b class="arrow">↓</b> 把箱子 (3,1) 推到 (3,2)</li><li><b class="arrow">→</b> 把箱子 (6,0) 推到 (7,0)</li></ol>
+    <p class="note">参考解法共 8 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-lb-05">
+    <h3>阶下回音 <small>主城·立体教学 —— 箱子也能推上台阶基座（Δh≤1 可爬升）</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 11 步</span>
+      <span class="chip">★★ ≤ 17 步</span>
+      <span class="chip cyan">奖励 ◈ 200</span>
+    </p>
+    <ul><li>把 1 个箱子全部推上 1 处旗位基座（■）即通关</li><li>立体高度层：最高海拔 1 格——把箱子推下高台会坠落砸压下方目标；爬升有上限，落差才是通路</li></ul>
+    
+    <details><summary>展开参考推法（5 推 · 剧透）</summary><ol><li><b class="arrow">→</b> 把箱子 (3,2) 推到 (4,2)</li><li><b class="arrow">→</b> 把箱子 (4,2) 推到 (5,2)</li><li><b class="arrow">↓</b> 把箱子 (5,2) 推到 (5,3)</li><li><b class="arrow">↓</b> 把箱子 (5,3) 推到 (5,4)</li><li><b class="arrow">↓</b> 把箱子 (5,4) 推到 (5,5)</li></ol>
+    <p class="note">参考解法共 5 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-lb-06">
+    <h3>双石门 <small>主城 —— 双箱双龛的对称练习；通关获「镜像拉箱」</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 22 步</span>
+      <span class="chip">★★ ≤ 33 步</span>
+      <span class="chip cyan">奖励 ◈ 250 + 法则卡「法则·镜像拉箱」</span>
+    </p>
+    <ul><li>把 2 个箱子全部推上 2 处旗位基座（■）即通关</li><li>立体高度层：最高海拔 1 格——把箱子推下高台会坠落砸压下方目标；爬升有上限，落差才是通路</li></ul>
+    
+    <details><summary>展开参考推法（6 推 · 剧透）</summary><ol><li><b class="arrow">→</b> 把箱子 (4,2) 推到 (5,2)</li><li><b class="arrow">↓</b> 把箱子 (5,2) 推到 (5,3)</li><li><b class="arrow">↓</b> 把箱子 (5,3) 推到 (5,4)</li><li><b class="arrow">→</b> 把箱子 (2,2) 推到 (3,2)</li><li><b class="arrow">↓</b> 把箱子 (3,2) 推到 (3,3)</li><li><b class="arrow">↓</b> 把箱子 (3,3) 推到 (3,4)</li></ol>
+    <p class="note">参考解法共 6 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-lb-07">
+    <h3>登阶长廊 <small>外域一 —— 长廊双箱各登一阶；通关获「位面通行」</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 38 步</span>
+      <span class="chip">★★ ≤ 56 步</span>
+      <span class="chip cyan">奖励 ◈ 400 + 法则卡「法则·位面通行」</span>
+    </p>
+    <ul><li>把 2 个箱子全部推上 2 处旗位基座（■）即通关</li><li>立体高度层：最高海拔 1 格——把箱子推下高台会坠落砸压下方目标；爬升有上限，落差才是通路</li></ul>
+    
+    <details><summary>展开参考推法（7 推 · 剧透）</summary><ol><li><b class="arrow">↑</b> 把箱子 (6,7) 推到 (6,6)</li><li><b class="arrow">↑</b> 把箱子 (6,6) 推到 (6,5)</li><li><b class="arrow">→</b> 把箱子 (6,5) 推到 (7,5)</li><li><b class="arrow">→</b> 把箱子 (2,2) 推到 (3,2)</li><li><b class="arrow">↓</b> 把箱子 (3,2) 推到 (3,3)</li><li><b class="arrow">↓</b> 把箱子 (3,3) 推到 (3,4)</li><li><b class="arrow">↓</b> 把箱子 (3,4) 推到 (3,5)</li></ol>
+    <p class="note">参考解法共 7 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-lb-08">
+    <h3>井底星榻 <small>外域一 —— 箱落教学：把箱子推下 h2 环台，坠入井底压碎守旗敌人；通关获「相位穿行」</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 14 步</span>
+      <span class="chip">★★ ≤ 20 步</span>
+      <span class="chip cyan">奖励 ◈ 450 + 法则卡「法则·相位穿行」</span>
+    </p>
+    <ul><li>把 1 个箱子全部推上 1 处旗位基座（■）即通关</li><li>场上有 2 处尖刺格：战斗布阵期可把敌人推进尖刺扣血</li><li>立体高度层：最高海拔 2 格——把箱子推下高台会坠落砸压下方目标（守旗敌人可这样清除）；爬升有上限，落差才是通路</li><li>守卫 1 名：战斗布阵期可推挤（重量∝HP），谜题期可被箱落压碎</li></ul>
+    
+    <details><summary>展开参考推法（6 推 · 剧透）</summary><ol><li><b class="arrow">→</b> 把箱子 (2,2) 推到 (3,2)</li><li><b class="arrow">↓</b> 把箱子 (3,2) 推到 (3,3)</li><li><b class="arrow">↓</b> 把箱子 (3,3) 推到 (3,4)</li><li><b class="arrow">↓</b> 把箱子 (3,4) 推到 (3,5)</li><li><b class="arrow">→</b> 把箱子 (3,5) 推到 (4,5)</li><li><b class="arrow">→</b> 把箱子 (4,5) 推到 (5,5) <b class="fall">（坠落）</b></li></ol>
+    <p class="note">参考解法共 6 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-lb-09">
+    <h3>表里回廊 <small>外域二 —— 阴阳位面：阴面墙皮之下藏着一条捷径（F 切位面）；通关获「位面之眼」</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 29 步</span>
+      <span class="chip">★★ ≤ 44 步</span>
+      <span class="chip cyan">奖励 ◈ 500 + 法则卡「法则·位面之眼」</span>
+    </p>
+    <ul><li>把 2 个箱子全部推上 2 处旗位基座（■）即通关</li><li>阴阳位面：按 F 切换表里世界（需「位面通行」法则卡解锁），阴面藏着另一套通路与浮空石板</li></ul>
+    
+    <details><summary>展开参考推法（5 推 · 剧透）</summary><ol><li><b class="arrow">→</b> 把箱子 (7,5) 推到 (8,5)</li><li><b class="arrow">↓</b> 把箱子 (8,5) 推到 (8,6)</li><li><b class="arrow">↓</b> 把箱子 (8,6) 推到 (8,7)</li><li><b class="arrow">↓</b> 把箱子 (2,5) 推到 (2,6)</li><li><b class="arrow">↓</b> 把箱子 (2,6) 推到 (2,7)</li></ol>
+    <p class="note">参考解法共 5 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-lb-10">
+    <h3>三阶圣所 <small>外域二 —— 三箱三龛，推动顺序就是谜题本身；通关获「箱落引爆」</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 62 步</span>
+      <span class="chip">★★ ≤ 92 步</span>
+      <span class="chip cyan">奖励 ◈ 600 + 法则卡「法则·箱落引爆」</span>
+    </p>
+    <ul><li>把 3 个箱子全部推上 3 处旗位基座（■）即通关</li><li>立体高度层：最高海拔 1 格——把箱子推下高台会坠落砸压下方目标；爬升有上限，落差才是通路</li></ul>
+    
+    <details><summary>展开参考推法（20 推 · 剧透）</summary><ol><li><b class="arrow">→</b> 把箱子 (2,2) 推到 (3,2)</li><li><b class="arrow">→</b> 把箱子 (3,2) 推到 (4,2)</li><li><b class="arrow">↓</b> 把箱子 (4,2) 推到 (4,3)</li><li><b class="arrow">↓</b> 把箱子 (4,3) 推到 (4,4)</li><li><b class="arrow">↓</b> 把箱子 (4,4) 推到 (4,5)</li><li><b class="arrow">↓</b> 把箱子 (4,5) 推到 (4,6)</li><li><b class="arrow">←</b> 把箱子 (4,6) 推到 (3,6)</li><li><b class="arrow">↓</b> 把箱子 (7,2) 推到 (7,3)</li><li><b class="arrow">↓</b> 把箱子 (7,3) 推到 (7,4)</li><li><b class="arrow">↓</b> 把箱子 (7,4) 推到 (7,5)</li><li><b class="arrow">↓</b> 把箱子 (7,5) 推到 (7,6)</li><li><b class="arrow">←</b> 把箱子 (7,6) 推到 (6,6)</li><li><b class="arrow">←</b> 把箱子 (6,6) 推到 (5,6)</li><li><b class="arrow">→</b> 把箱子 (5,2) 推到 (6,2)</li><li><b class="arrow">→</b> 把箱子 (6,2) 推到 (7,2)</li><li><b class="arrow">→</b> 把箱子 (7,2) 推到 (8,2)</li><li><b class="arrow">↓</b> 把箱子 (8,2) 推到 (8,3)</li><li><b class="arrow">↓</b> 把箱子 (8,3) 推到 (8,4)</li><li><b class="arrow">↓</b> 把箱子 (8,4) 推到 (8,5)</li><li><b class="arrow">↓</b> 把箱子 (8,5) 推到 (8,6)</li></ol>
+    <p class="note">参考解法共 20 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-lb-11">
+    <h3>合宇之厅 <small>外域三 —— 四箱归一列，大厅中央的星阶等你排布；通关获「击退+2」</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 89 步</span>
+      <span class="chip">★★ ≤ 134 步</span>
+      <span class="chip cyan">奖励 ◈ 700 + 法则卡「法则·击退+2」</span>
+    </p>
+    <ul><li>把 4 个箱子全部推上 4 处旗位基座（■）即通关</li><li>立体高度层：最高海拔 1 格——把箱子推下高台会坠落砸压下方目标；爬升有上限，落差才是通路</li></ul>
+    
+    <details><summary>展开参考推法（20 推 · 剧透）</summary><ol><li><b class="arrow">←</b> 把箱子 (10,2) 推到 (9,2)</li><li><b class="arrow">←</b> 把箱子 (9,2) 推到 (8,2)</li><li><b class="arrow">←</b> 把箱子 (8,2) 推到 (7,2)</li><li><b class="arrow">←</b> 把箱子 (7,2) 推到 (6,2)</li><li><b class="arrow">←</b> 把箱子 (10,5) 推到 (9,5)</li><li><b class="arrow">←</b> 把箱子 (9,5) 推到 (8,5)</li><li><b class="arrow">←</b> 把箱子 (8,5) 推到 (7,5)</li><li><b class="arrow">←</b> 把箱子 (7,5) 推到 (6,5)</li><li><b class="arrow">→</b> 把箱子 (2,5) 推到 (3,5)</li><li><b class="arrow">→</b> 把箱子 (3,5) 推到 (4,5)</li><li><b class="arrow">→</b> 把箱子 (4,5) 推到 (5,5)</li><li><b class="arrow">↓</b> 把箱子 (6,5) 推到 (6,6)</li><li><b class="arrow">→</b> 把箱子 (5,5) 推到 (6,5)</li><li><b class="arrow">↓</b> 把箱子 (6,2) 推到 (6,3)</li><li><b class="arrow">→</b> 把箱子 (2,2) 推到 (3,2)</li><li><b class="arrow">→</b> 把箱子 (3,2) 推到 (4,2)</li><li><b class="arrow">→</b> 把箱子 (4,2) 推到 (5,2)</li><li><b class="arrow">↓</b> 把箱子 (6,3) 推到 (6,4)</li><li><b class="arrow">→</b> 把箱子 (5,2) 推到 (6,2)</li><li><b class="arrow">↓</b> 把箱子 (6,2) 推到 (6,3)</li></ol>
+    <p class="note">参考解法共 20 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+  <section class="level" id="level-lb-12">
+    <h3>星陨王座 <small>外域三 —— 终段：四方箱体归位 2×2 圣坛，尖刺苔藓爬满王座大厅；通关获「爆炸+1」</small></h3>
+    <p class="chips">
+      <span class="chip gold">★★★ ≤ 90 步</span>
+      <span class="chip">★★ ≤ 135 步</span>
+      <span class="chip cyan">奖励 ◈ 900 + 法则卡「法则·爆炸+1」</span>
+    </p>
+    <ul><li>把 4 个箱子全部推上 4 处旗位基座（■）即通关</li><li>场上有 4 处尖刺格：战斗布阵期可把敌人推进尖刺扣血</li><li>立体高度层：最高海拔 1 格——把箱子推下高台会坠落砸压下方目标（守旗敌人可这样清除）；爬升有上限，落差才是通路</li><li>守卫 2 名：战斗布阵期可推挤（重量∝HP），谜题期可被箱落压碎</li></ul>
+    
+    <details><summary>展开参考推法（20 推 · 剧透）</summary><ol><li><b class="arrow">←</b> 把箱子 (10,3) 推到 (9,3)</li><li><b class="arrow">←</b> 把箱子 (9,3) 推到 (8,3)</li><li><b class="arrow">←</b> 把箱子 (8,3) 推到 (7,3)</li><li><b class="arrow">←</b> 把箱子 (7,3) 推到 (6,3)</li><li><b class="arrow">↑</b> 把箱子 (2,7) 推到 (2,6)</li><li><b class="arrow">←</b> 把箱子 (10,7) 推到 (9,7)</li><li><b class="arrow">←</b> 把箱子 (9,7) 推到 (8,7)</li><li><b class="arrow">←</b> 把箱子 (8,7) 推到 (7,7)</li><li><b class="arrow">↑</b> 把箱子 (7,7) 推到 (7,6)</li><li><b class="arrow">←</b> 把箱子 (7,6) 推到 (6,6)</li><li><b class="arrow">→</b> 把箱子 (2,6) 推到 (3,6)</li><li><b class="arrow">→</b> 把箱子 (3,6) 推到 (4,6)</li><li><b class="arrow">→</b> 把箱子 (4,6) 推到 (5,6)</li><li><b class="arrow">↓</b> 把箱子 (6,3) 推到 (6,4)</li><li><b class="arrow">↓</b> 把箱子 (6,4) 推到 (6,5)</li><li><b class="arrow">→</b> 把箱子 (2,3) 推到 (3,3)</li><li><b class="arrow">→</b> 把箱子 (3,3) 推到 (4,3)</li><li><b class="arrow">→</b> 把箱子 (4,3) 推到 (5,3)</li><li><b class="arrow">↓</b> 把箱子 (5,3) 推到 (5,4)</li><li><b class="arrow">↓</b> 把箱子 (5,4) 推到 (5,5)</li></ol>
+    <p class="note">参考解法共 20 推，由内置求解器求得并逐格回放验证，照做步数必在 3☆ 线内。方向 ↑↓←→ 对应网格上/下/左/右；激活法则卡（羽箱/推程+1 等）会改变物理，路线可更短。</p></details>
+  </section>
+
+<h2 id="eggs">彩蛋与隐藏内容</h2>
+<ul>
+  <li><b>四导航天使</b>：主城第一步无论朝哪都会遇到一位（原版「其余瞬间去世」保留为「残留的羽毛」彩蛋）。</li>
+  <li><b>越界四方向</b>：主城边缘向外走——北=时空裂缝进隐藏关；东=神秘法阵传送（可进无尽回廊）；南/西=反转为高难挑战层「深渊坠道」「E N D 之壁」。</li>
+  <li><b>无尽回廊</b>：程序生成关卡，逆向拉箱构造保证可解，生成后仍经求解器+逐格回放双闸门校验。</li>
+  <li><b>作者谜题</b>：集齐三小怪击杀后到作者处答题（答案 x−y=(D−1)−z 的原作谜题），答对 BOSS 攻击归零并获得弱点钥匙——原作答错即死的设定改成了阶梯提示+重试。</li>
+  <li><b>三种作弊入口</b>（设置开启作弊 / 标题页连点 20 次）：K 消箱、V 墙皮重掷、] [ 选关跳转、META 终端指令等——所有入口共用同一张命令表与解锁门，热键无特权。</li>
+  <li><b>隐藏关与真结局</b>（剧透）：<details><summary>展开</summary>北越界进入隐藏关，复刻原作 EasterEgg：/kill--SetName、w/w/s/s、adad、BABA、/give 三武装、Base64 提示……最终以 <code>/kill--%^%&amp;62*^*&amp;^@&amp;*</code> 拒绝剧本，达成真结局「拒绝剧本的人」并解锁 META 终端常驻。</details></li>
+</ul>
+
+<h2 id="run">运行与构建</h2>
+<pre style="background:var(--panel);border:1px solid rgba(124,92,255,.35);border-radius:10px;padding:14px 18px;font-size:13px;">
+npm install        # 安装依赖
+npm run dev        # 开发服务器（默认 :5173）
+npm run demo       # 自动通关演示（起服务并打开 /?autoplay=1）
+npm run build      # tsc -b &amp;&amp; vite build（纯静态产物 dist/）
+npm run test       # vitest run（37 文件 / 553 用例）
+npm run preview    # 预览构建产物
+</pre>
+<p>自动演示：内置求解器逐关自动推箱 + 剧情巡游（天使/小怪/作者/BOSS/彩蛋），可加 <code>&amp;speed=2</code> 调速（0.5~5）；顶栏随时可停，演示使用临时角色，结束自动恢复你的存档。</p>
+
+<h2 id="license">来源与许可</h2>
+<ul>
+  <li><b>KichikuAdventure</b>（Java 文字冒险，GPL-3.0）——剧情/角色/数值/BGM（.mid 经 FluidSynth + GeneralUser GS 转码）；</li>
+  <li><b>SanBPushChest</b>（HTML 推箱子，GPL-3.0）——关卡与 32 张贴图、20 个音效；</li>
+  <li><b>BandoriLotteryEmulator</b>（Java 抽卡，概率模型完整复刻）——bgm.mp3 取自 BanG Dream 官方专辑，<b class="warn">上架前必须替换或取得授权</b>。</li>
+</ul>
+<p class="note">本文档由 <code>scripts/genGameDocs.ts</code> 从游戏数据自动生成（与游戏内攻略面板同源）；数据变更后重跑 <code>npx vite-node scripts/genGameDocs.ts</code> 即可刷新。</p>
+
+<p class="top"><a href="#overview">▲ 回到顶部</a></p>
+</div>
+</body>
+</html>

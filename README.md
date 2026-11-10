@@ -218,6 +218,9 @@ npm run test:watch # vitest watch
 npm run preview    # 预览 dist/ 构建产物
 ```
 
+> 📖 **全方位游戏文档**（游戏介绍 / 系统 / 键位 / 卡池卡牌 / 十二关图文攻略 / 彩蛋）：
+> 打开 [docs/game-guide.html](docs/game-guide.html)（自包含单文件，双击即看；由 `npx vite-node scripts/genGameDocs.ts` 从游戏数据生成）。
+
 > **想看自动通关**：`npm run demo` 会自动起服务并打开演示页（等价于 `npm run dev` 后访问
 > `http://localhost:5173/?autoplay=1`，可加 `&speed=2` 加速，0.5~5）。
 > 主城会先完整走一遍剧情巡游：导航天使与“残留的羽毛”、三只小怪、作者谜题、影流之主 BOSS、东侧越界彩蛋，

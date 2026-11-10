@@ -28,6 +28,7 @@ import { SettingsDrawer } from './SettingsDrawer';
 import { GachaOverlay } from './GachaOverlay';
 import { ResultModal } from './ResultModal';
 import { ArchivePanel, useArchivePanelStore } from './ArchivePanel';
+import { LevelGuidePanel, useGuidePanelStore } from './LevelGuidePanel';
 import { LevelSelectPanel, useLevelSelectStore } from './LevelSelectPanel';
 
 /* ------------------------------ toast 栈 --------------------------------- */
@@ -253,6 +254,16 @@ export function HudBar() {
             ⟲ {tUi(locale, 'hud.replay')}
           </button>
         </div>
+
+        {/* 当前关卡攻略（与选关面板每行「💡 攻略」同源同数据） */}
+        <button
+          className="chip"
+          style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+          onClick={() => useGuidePanelStore.getState().openFor(useGameStore.getState().segment?.levelId ?? 'level-sb-01')}
+          title="当前关卡攻略"
+        >
+          💡 攻略
+        </button>
       </div>
 
       {/* ---- 右上圆形按钮组：卡组 / 规则手册 / 设置 / 静音 / 语言 ---- */}
@@ -322,6 +333,7 @@ export function UiOverlaySuite() {
       <ResultModal />
       <ArchivePanel />
       <LevelSelectPanel />
+      <LevelGuidePanel />
       <ToastStack />
     </>
   );

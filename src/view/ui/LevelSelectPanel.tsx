@@ -18,6 +18,7 @@ import { LEVELS } from '../../data/levels';
 import type { GameState, LevelDef } from '../../core/types';
 import { levelName as levelNameI18n, levelSubtitle as levelSubtitleI18n, tUi } from '../../data/i18n/uiText';
 import { bus } from '../../core/events/bus';
+import { useGuidePanelStore } from './LevelGuidePanel';
 
 /* ============================== 面板开关分片 =============================== */
 
@@ -144,6 +145,14 @@ export function LevelSelectPanel() {
             ) : (
               <span className="chip" style={{ fontSize: 10.5 }}>未到达</span>
             )}
+            <button
+              className="chip"
+              style={{ cursor: 'pointer', fontSize: 10.5, padding: '1px 8px' }}
+              onClick={() => useGuidePanelStore.getState().openFor(row.level.id)}
+              title="查看本关攻略（机制提示与参考推法）"
+            >
+              💡 攻略
+            </button>
           </div>
         ))}
       </div>
