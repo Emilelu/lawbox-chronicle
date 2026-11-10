@@ -2,6 +2,7 @@
  * 欢迎页 —— 工程骨架的视觉方向宣言。
  * 全屏 R3F Canvas（浮空的「法则箱」+ 星野 + 轨道视角）打底，
  * framer-motion 驱动 2D overlay 文案动效；语言切换即写 store（持久化探针）。
+ * 「最近抽卡」槽位经 pullCardLabel 显示本地化卡名，与档案·逐抽记录同口径。
  */
 
 import { Suspense, useEffect, useRef } from 'react';
@@ -11,8 +12,8 @@ import { Float, OrbitControls, Stars } from '@react-three/drei';
 import { motion } from 'framer-motion';
 import { useGameStore } from '../../core/store/gameStore';
 import { selectHudModel } from '../../core/store/selectors';
-import { LOCALES } from '../../core/types';
-import { GACHA_FLAVOR } from '../../data/gacha';
+import { LOCALES, type CardDef } from '../../core/types';
+import { CARDS, GACHA_FLAVOR } from '../../data/gacha';
 import { LEVELS } from '../../data/levels';
 import { LOCALE_NAMES, t } from '../../data/i18n';
 import { bus } from '../../core/events/bus';
@@ -78,6 +79,17 @@ function Scene() {
 }
 
 /* ----------------------------- 2D overlay -------------------------------- */
+
+/**
+ * 逐抽卡名本地化：与 ArchivePanel.pullLabel 同一口径 ——
+ * 怀旧展品（cardId 不指向卡表）按稀有度标名；正式卡查卡表取卡名，查无则回落原 id。
+ */
+export function pullCardLabel(cardId: string, rarity: number, cards: readonly CardDef[] = CARDS): string {
+  if (cardId.startsWith('nostalgia-star-')) {
+    return rarity === 4 ? '怀旧展品·4★' : rarity === 3 ? '怀旧展品·3★' : '怀旧展品·2★';
+  }
+  return cards.find((c) => c.id === cardId)?.name ?? cardId;
+}
 
 export function WelcomeScreen() {
   const locale = useGameStore((s) => s.locale);
@@ -148,7 +160,7 @@ export function WelcomeScreen() {
           >
             <span style={{ color: 'var(--neon-gold)' }}>{'★'.repeat(Math.max(...lastResult.pulls.map((p) => p.rarity)))}</span>{' '}
             <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>
-              {lastResult.pulls.map((p) => p.cardId.replace(/^card-(law|chr)-/, '')).join(' · ')}
+              {lastResult.pulls.map((p) => pullCardLabel(p.cardId, p.rarity)).join(' · ')}
               {lastResult.pityTriggered !== 'none' ? ' ｜保底发动' : ''}
             </span>
           </motion.div>

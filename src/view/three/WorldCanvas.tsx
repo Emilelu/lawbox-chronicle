@@ -37,6 +37,7 @@ import { findEnemy } from '../../data/enemies';
 import { ALL_SCRIPTS, ALL_SPEAKERS, ALL_TRIGGER_RULES } from '../../data/storyScripts';
 import { findLevel } from '../../data/levels';
 import {
+  CELL,
   COMBAT_STAGE,
   HEIGHT_STEP,
   cellWorldCenter,
@@ -227,9 +228,11 @@ function SceneContent({ pinnedInfo, onPin }: {
   }, [mainEnemy, toWorld, arenaCenter]);
 
   // 对话进行中的剧本 id（R1 前置）：store 触发侧 markTriggerSeen 先于
-  // startStoryScript 执行，触发瞬间说话者就会因 seen 过滤从渲染列表消失，
-  // 「运镜对准说话者」对 NPC 说话者永不生效 —— 对话期间该剧本的 npc 规则
-  // 免 seen 过滤，保证说话者模型留在世界里。
+  // startStoryScript 执行，触发瞬间说话者就会因 seen 过滤从渲染列表消失；
+  // 且剧本 entry 节点的 onEnterEffects 第一拍就会自置旗标（如天使剧本的
+  // unlessFlag 'story:angels-met'），旗标门同样会把说话者剔除 ——
+  // 「运镜对准说话者」对 NPC 说话者永不生效。对话期间该剧本的 npc 规则
+  // 免全部可见性门（seen 过滤 + require/unless 旗标），保证说话者模型留在世界里。
   const dialogueScriptId = phase === 'dialogue' ? storyRuntime.scriptId : null;
 
   // ---- 未触发的剧情 NPC 规则 → 世界内造型皮肤实体 ----
@@ -243,10 +246,12 @@ function SceneContent({ pinnedInfo, onPin }: {
     };
     return ALL_TRIGGER_RULES.filter((rule) => {
       if (rule.when.kind !== 'npc') return false;
-      if (rule.once !== false && seenEventIds.includes(rule.id)) {
-        // R1：这条规则正在开讲（对话剧本命中）→ 保留说话者渲染；其余时刻照常隐藏
-        if (rule.scriptId !== dialogueScriptId) return false;
-      }
+      // R1：这条规则正在开讲（对话剧本命中）→ 免全部可见性门（seen 过滤 +
+      // require/unless 旗标），强制留在世界里。只豁免 seen 不够：剧本 entry
+      // 节点 onEnterEffects 自置的旗（天使的 story:angels-met 就写在 unlessFlag
+      // 上）在触发第一拍即为真，旗标门仍会把说话者剔除出渲染列表。
+      if (rule.scriptId === dialogueScriptId) return true;
+      if (rule.once !== false && seenEventIds.includes(rule.id)) return false;
       if (rule.requireFlag !== undefined && !flagOn(rule.requireFlag)) return false;
       if (rule.requireFlags !== undefined && !rule.requireFlags.every(flagOn)) return false;
       if (rule.unlessFlag !== undefined && flagOn(rule.unlessFlag)) return false;
@@ -256,10 +261,22 @@ function SceneContent({ pinnedInfo, onPin }: {
       // 过滤器已保证 when.kind === 'npc'
       const when = rule.when as { kind: 'npc'; x: number; y: number };
       const cell = clampNpcCell(worldToGrid(when.x, when.y), terrain);
+      // R1：说话者提取扫全剧本的 dialogue 节点，取第一个有世界皮肤
+      // （SPEAKER_SKINS 命中）的说话者 —— 多节点剧本（影流之主三幕）的首个
+      // dialogue 节点可能只有 system/narration 旁白，按首个节点提取会拿到
+      // narration：既配错皮肤（gate-wisp 兜底），又让 npc-ylzz 台词行查不到
+      // 注视点而回退玩家。全剧本无皮肤说话者时退回首个 dialogue 节点的首个
+      // 非 system 说话者（保持旧行为兜底）。
       const script = ALL_SCRIPTS.find((sc) => sc.id === rule.scriptId);
+      let speakable: string | undefined;
+      for (const node of script?.nodes ?? []) {
+        if (node.kind !== 'dialogue') continue;
+        speakable = node.lines.map((l) => l.speakerId).find((id) => SPEAKER_SKINS[id] !== undefined);
+        if (speakable !== undefined) break;
+      }
       const entry = script?.nodes.find((n) => n.kind === 'dialogue');
       const speakerId =
-        entry !== undefined && entry.kind === 'dialogue' ? speakerOf(entry.lines) : 'system';
+        speakable ?? (entry !== undefined && entry.kind === 'dialogue' ? speakerOf(entry.lines) : 'system');
       const skin = SPEAKER_SKINS[speakerId] ?? 'gate-wisp';
       return {
         eventId: rule.id,
@@ -285,13 +302,28 @@ function SceneContent({ pinnedInfo, onPin }: {
     for (const altar of altarEntities) map.set('npc-star-altar', toWorld(altar.x, altar.y));
     return map;
   }, [npcActors, altarEntities, toWorld]);
+  // R1：当前说话者的渲染/注视位置。说话者与玩家同格（radius 0 踩点型触发，
+  // 如三小怪遭遇）时向 +Z 错开一格 —— 对话运镜对准的原位置即玩家位置，两
+  // 模型完全重叠互相遮挡，「看到说话者模型」在视觉上不可能；错开后渲染与
+  // 注视共用同一坐标，运镜对准的就是画面里那个说话者模型。
+  const speakerRenderPos = useMemo<WorldVec3 | null>(() => {
+    if (dialogueSpeakerId === null) return null;
+    const npc = npcActors.find((n) => n.speakerId === dialogueSpeakerId);
+    if (npc === undefined) return null;
+    const sameCell =
+      Math.abs(npc.position[0] - playerWorld[0]) < 1e-3 &&
+      Math.abs(npc.position[2] - playerWorld[2]) < 1e-3;
+    if (!sameCell) return npc.position;
+    return [npc.position[0], npc.position[1], npc.position[2] + CELL];
+  }, [dialogueSpeakerId, npcActors, playerWorld]);
   const dialogueFocus = useMemo<WorldVec3>(() => {
+    if (speakerRenderPos !== null) return speakerRenderPos;
     if (dialogueSpeakerId !== null) {
       const pos = speakerPositions.get(dialogueSpeakerId);
       if (pos !== undefined) return pos;
     }
     return playerWorld; // 说话者不在世界内（system/越界）→ 退回玩家
-  }, [dialogueSpeakerId, speakerPositions, playerWorld]);
+  }, [speakerRenderPos, dialogueSpeakerId, speakerPositions, playerWorld]);
 
   // ---- 尖刺格：战斗布阵取 battle hazards；平时取图例 5（selectHazardCells） ----
   const spikeCells = useMemo(() => {
@@ -383,7 +415,20 @@ function SceneContent({ pinnedInfo, onPin }: {
       <fogExp2 attach="fog" color={theme.fogColor} density={theme.fogDensity} />
       <SkyDome theme={theme} />
 
-      <CameraRig focusWorld={playerWorld} pose={pose} poseId={poseId} />
+      {/* R1：注视焦点——对话运镜期对准说话者（含同格错位位；y 抬升与
+          computePose dialogue 的 target+0.55 注视高度一致），其余相对准玩家。
+          CameraRig 的位姿收敛只管 distance/polar/azimuth，注视点恒走
+          focusWorld 轻量跟随；此前对话期也传 playerWorld，computePose 的
+          focusPos target 实际不被消费，「运镜对准说话者」在结构上不生效。 */}
+      <CameraRig
+        focusWorld={
+          cameraMode === 'dialogue'
+            ? [dialogueFocus[0], dialogueFocus[1] + 0.55, dialogueFocus[2]]
+            : playerWorld
+        }
+        pose={pose}
+        poseId={poseId}
+      />
 
       {/* 竞技场（点地面关闭信息卡）；战斗布阵时 grid = 战场网格、hazardCells = 尖刺 */}
       <group onPointerDown={() => onPin(null)}>
@@ -422,15 +467,21 @@ function SceneContent({ pinnedInfo, onPin }: {
         );
       })}
 
-      {/* 未读剧情 NPC */}
-      {npcActors.map((npc) => (
-        <group
-          key={npc.eventId}
-          onPointerDown={pinEntity({ name: npc.name, description: npcInfo.description }, npc.position)}
-        >
-          <ActorMesh skin={npc.skin} kind="npc" position={npc.position} theme={theme} />
-        </group>
-      ))}
+      {/* 未读剧情 NPC；对话说话者与玩家同格时渲染到错位位（speakerRenderPos） */}
+      {npcActors.map((npc) => {
+        const position =
+          npc.speakerId === dialogueSpeakerId && speakerRenderPos !== null
+            ? speakerRenderPos
+            : npc.position;
+        return (
+          <group
+            key={npc.eventId}
+            onPointerDown={pinEntity({ name: npc.name, description: npcInfo.description }, position)}
+          >
+            <ActorMesh skin={npc.skin} kind="npc" position={position} theme={theme} />
+          </group>
+        );
+      })}
 
       {/* 世界内星愿祭坛（主城 altar 实体） */}
       {altarEntities.map((altar) => {

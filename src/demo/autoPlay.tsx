@@ -16,7 +16,10 @@
  *  4. 顶栏实时显示当前关卡与推数进度，可随时点「停止」（回到标题）；
  *  5. 失败自恢复（F2）：走位被挡即重规划不盲走；停滞 60s（看门狗）或推箱
  *     落空 → 本关重置重试（连败计数跨重试保留，上限 DEMO_MAX_LEVEL_RESETS）；
- *     超限且有下一关则跳关继续，无下一关才放弃 —— 永不无限重玩、不永久卡死。
+ *     超限且有下一关则跳关继续，无下一关才放弃 —— 永不无限重玩、不永久卡死；
+ *  6. 步数预算（N2）：每关单次尝试的移动总数（巡游+走位+推）超过
+ *     parSteps[1] + DEMO_STEP_BUDGET_MARGIN 即重开本关从 0 重计，结算步数
+ *     不会因重试路径无限膨胀（重试次数由 levelRetryPlan 封顶）。
  *
  * 这是纯观赏模式：不激活任何法则卡（保证 solver 的标准推箱语义与实机一致）。
  */
@@ -42,15 +45,30 @@ interface TourStop {
   readonly target: Vec2;
   /** 到达后向该方向再走一步（用于越界彩蛋；不位移，触发 beyond 剧情） */
   readonly edgePush?: Dir;
+  /**
+   * 到站后先向该方向跨出一步再走回（同格 tile 触发专用）：羽毛类剧情是
+   * tile 触发（半径 0，只在「落格」那一刻评估），与天使① 同格的羽毛①
+   * 在天使剧情后原地不动不会触发，必须跨出再回踩制造落格动作。
+   */
+  readonly reEnter?: Dir;
 }
 
-const HUB_TOUR: readonly TourStop[] = [
+/**
+ * 主城剧情巡游路线（按实测最省步排序，N2）。十站内容一个不少，顺序约束
+ * （天使① 在最前；作者谜题必须在三小怪全灭之后；BOSS 在作者后；东侧彩蛋
+ * 收尾）全部保留 —— 羽毛与三小怪的触发彼此独立（各自 once/unlessFlag，
+ * 作者只看三怪旗），因此可按最短路穿插。实测（walkDirs BFS，含箱子/祭坛
+ * 占位）：原顺序巡游 103 步 + 解路 128 步 ≈ 231 步，超 2☆ 阈值 222；
+ * 本顺序巡游 81 步，全程 ≈ 209 步，落回 2☆ 之内。
+ */
+export const HUB_TOUR: readonly TourStop[] = [
   { label: '导航天使①', target: { x: 8, y: 6 } },
+  // 羽毛①与天使①同格 (8,6)：先跨出到 (8,7) 再回踩，制造 tile 落格（+2 步）
+  { label: '残留的羽毛·①', target: { x: 8, y: 6 }, reEnter: 'down' },
   { label: '残留的羽毛·③', target: { x: 7, y: 7 } },
-  { label: '残留的羽毛·④', target: { x: 7, y: 5 } },
-  { label: '残留的羽毛·①', target: { x: 8, y: 6 } },
   { label: '蔡徐坤', target: { x: 11, y: 8 } },
   { label: '郭老师', target: { x: 10, y: 3 } },
+  { label: '残留的羽毛·④', target: { x: 7, y: 5 } },
   { label: '冬泳怪鸽', target: { x: 3, y: 2 } },
   { label: '作者谜题', target: { x: 4, y: 10 } },
   { label: '影流之主 BOSS', target: { x: 2, y: 11 } },
@@ -92,6 +110,30 @@ export type LevelRetryPlan = 'reset' | 'skip' | 'giveup';
 export function levelRetryPlan(resets: number, hasNextLevel: boolean): LevelRetryPlan {
   if (resets <= DEMO_MAX_LEVEL_RESETS) return 'reset';
   return hasNextLevel ? 'skip' : 'giveup';
+}
+
+/* --------------------------- 步数预算（N2） ------------------------------ */
+
+/**
+ * 演示步数预算余量：2☆ 阈值之上的容忍度。实测干净全程 ≈ 标定解路 128 步 +
+ * 主城巡游 81 步（初醒箱庭 ≈ 209 ≤ par[1] 222），余量只需吸收重规划/被打断
+ * 的少量绕行（实测噪声 ~3 步）；取 30 让预算仍覆盖巡游路线的合理漂移
+ * （例如巡游站点增减十几步），同时把真正病态的尝试（反复被挡/久等重置）
+ * 挡在 2☆ 阈值 + 30 之内。
+ */
+export const DEMO_STEP_BUDGET_MARGIN = 30;
+
+/**
+ * 演示单次尝试的步数预算（纯函数，N2）：按关卡 2☆ 阈值（parSteps[1]）加
+ * 少量余量。结算星级读的是 puzzle.steps（本次尝试从 0 累计的全部移动），
+ * demo 此前对重试路径（被挡重规划、结算久等重置、对话/战斗打断后重走）
+ * 无任何约束，步数只增不减；预算超限即重开本关 —— replaySegment 会重建
+ * PuzzleState（steps 归 0），重试次数由 levelRetryPlan 封顶，因此整关的
+ * 总步数有界，不会无限累计。无标定数据的关卡（未来会话关）不设预算。
+ */
+export function demoStepBudget(parSteps: readonly [number, number] | undefined): number {
+  if (parSteps === undefined) return Number.POSITIVE_INFINITY;
+  return parSteps[1] + DEMO_STEP_BUDGET_MARGIN;
 }
 
 /** 演示角色：满武器 + 高攻高血（只在演示期间存在，结束后恢复原状态） */
@@ -169,6 +211,10 @@ export function AutoPlayLayer() {
     let legBlocked = 0;
     /** 上次初始化的关卡 id：换关才清零 resets，同关重试保留连败计数（F2） */
     let initializedLevelId: string | null = null;
+    /** 本关步数预算（N2）：单次尝试的移动总数上限，超限重开本关从 0 重计 */
+    let stepBudget = Number.POSITIVE_INFINITY;
+    /** 当前巡游站是否已执行「跨出回踩」（防重复跨出的死循环） */
+    let tourReEntered = false;
     /** 主城剧情巡游进度 */
     let tourIndex = 0;
     let tourDone = false;
@@ -241,12 +287,15 @@ export function AutoPlayLayer() {
       legBlocked = 0;
       waiting = 0;
       tourIndex = 0;
+      tourReEntered = false;
       tourDone = id !== HUB_LEVEL_ID;
       const level = LEVELS.find((l) => l.id === id);
       if (level === undefined) {
         finish(`演示结束：会话关卡 ${id} 无法自动求解`);
         return;
       }
+      // 步数预算按关卡标定重算（N2）：换关/重开都从满预算开始
+      stepBudget = demoStepBudget(level.parSteps);
       setStatus(`求解中：${level.name}`);
       const parsed = parseLevelGeometry(level);
       if (!parsed.ok) {
@@ -349,6 +398,7 @@ export function AutoPlayLayer() {
           const walk = walkDirs(geometry, { x: player.x, y: player.y }, blocked, stop.target);
           if (!walk.ok) {
             tourIndex += 1; // 走不到的站点跳过（如被箱子占位）
+            tourReEntered = false;
             return true;
           }
           legDirs = [...walk.dirs];
@@ -361,9 +411,18 @@ export function AutoPlayLayer() {
         lastProgress = Date.now();
         return true;
       }
+      // 到站：同格 tile 触发（羽毛①）先跨出一步再走回，制造落格动作；
+      // 只试一次，跨出失败（被挡/不可走）也照常放行，退化为普通到站
+      if (stop.reEnter !== undefined && !tourReEntered) {
+        tourReEntered = true;
+        s.move(stop.reEnter);
+        lastProgress = Date.now();
+        return true;
+      }
       // 到站：边缘彩蛋再向界外推一步（触发 beyond 剧情，不位移）
       if (stop.edgePush !== undefined) s.move(stop.edgePush);
       tourIndex += 1;
+      tourReEntered = false;
       lastProgress = Date.now();
       return true;
     };
@@ -384,6 +443,15 @@ export function AutoPlayLayer() {
       }
       const player = puzzle.entities.find((e) => e.kind === 'player');
       if (player === undefined) {
+        resetLevel(s);
+        return;
+      }
+
+      // 步数预算（N2）：巡游/走位/推的每次成功移动都累计 puzzle.steps，而
+      // 结算星级直接读它 —— 重试路径（被挡重规划、久等重置、对话/战斗打断
+      // 后重走）没有预算时会让步数无限膨胀。超限即重开本关：replaySegment
+      // 重建 PuzzleState 使 steps 归 0，重试次数由 levelRetryPlan 封顶。
+      if (segment.steps >= stepBudget) {
         resetLevel(s);
         return;
       }
