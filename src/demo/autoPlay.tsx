@@ -532,6 +532,12 @@ export function AutoPlayLayer() {
 
     /* ------------------------------ 主循环 -------------------------------- */
     const tick = (): void => {
+      // 后台标签页：浏览器把 setInterval 节流到 ≥1s 甚至更慢，tick 频率不代表
+      // 演示停滞——刷新看门狗基准并跳过本 tick，回到前台后自然继续
+      if (typeof document !== 'undefined' && document.hidden) {
+        lastProgress = Date.now();
+        return;
+      }
       const s = useGameStore.getState();
       const now = Date.now();
       if (now - lastProgress > DEMO_STALL_MS) {

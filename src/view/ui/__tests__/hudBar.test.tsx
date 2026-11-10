@@ -67,14 +67,23 @@ describe('L1 · 左上组的窄视口折行策略', () => {
     const mounted = mountHud();
     const leftGroup = mounted.children[0] as HTMLElement;
     expect(leftGroup.style.flexWrap).toBe('wrap');
-    // 右上组左缘 = 100vw - 340（宽 328 + 右边距 12），再让出左边距 12 → 100vw - 352
-    expect(leftGroup.style.maxWidth).toBe('calc(100vw - 352px)');
+    // 右上组左缘 = 100vw - 340（宽 328 + 右边距 12），再让出左边距 12 → 100vw - 352；
+    // 用 max(220px, …) 钳下限：视口 <352px 时 calc 为负（会被浏览器丢弃），窄屏仍保最小可用宽
+    expect(leftGroup.style.maxWidth).toBe('max(220px, calc(100vw - 352px))');
   });
 
   it('右上圆形按钮组仍为 7 枚（折行不改变右上组构成）', () => {
     const mounted = mountHud();
     const rightGroup = mounted.children[1] as HTMLElement;
     expect(rightGroup.querySelectorAll('button')).toHaveLength(7);
+  });
+
+  it('右上组窄视口换行收进视口（320px 溢出修复）', () => {
+    const mounted = mountHud();
+    const rightGroup = mounted.children[1] as HTMLElement;
+    expect(rightGroup.style.flexWrap).toBe('wrap');
+    expect(rightGroup.style.justifyContent).toBe('flex-end');
+    expect(rightGroup.style.maxWidth).toBe('calc(100vw - 24px)');
   });
 });
 

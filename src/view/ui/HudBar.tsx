@@ -173,7 +173,8 @@ export function HudBar() {
           display: 'flex',
           alignItems: 'center',
           flexWrap: 'wrap',
-          maxWidth: 'calc(100vw - 352px)',
+          // 320px 窄屏下 calc 可能为负（视口 < 352px），用 max() 钳到最小可用宽度
+          maxWidth: 'max(220px, calc(100vw - 352px))',
           gap: 10,
           pointerEvents: 'none',
         }}
@@ -255,6 +256,7 @@ export function HudBar() {
       </div>
 
       {/* ---- 右上圆形按钮组：卡组 / 规则手册 / 设置 / 静音 / 语言 ---- */}
+      {/* 320px 窄屏：固定宽 328px 会左溢 20px（实测 🃏 被裁一半），允许换行收进视口 */}
       <div
         style={{
           position: 'fixed',
@@ -262,6 +264,10 @@ export function HudBar() {
           right: 12,
           zIndex: 20,
           display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'flex-end',
+          rowGap: 6,
+          maxWidth: 'calc(100vw - 24px)',
           gap: 8,
           pointerEvents: 'auto',
         }}
