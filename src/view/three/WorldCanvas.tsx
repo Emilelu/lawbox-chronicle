@@ -6,6 +6,10 @@
  *  - store 状态变化 → React 提交 → R3F 自动 invalidate（fiber 内置行为）；
  *  - OrbitControls 拖拽/缩放 → drei 控件自带 invalidate；
  *  - 滑动/溶解/粒子等有限时长动画在未收敛帧内自行 invalidate，结束即停。
+ *  - 后台节流兜底（N5）：rAF 停摆的后台标签页里 react-use-measure 的
+ *    ResizeObserver 初次回调永不投递，画布停在 300×150 不初始化 —— 回前台
+ *    （visibilitychange→visible / focus）时若 R3F root 仍未建立，补发一次
+ *    window resize 借其 resize 兜底监听重新量取，画布即按容器尺寸初始化。
  * 场景内容：灯光 + 指数雾 + 渐变天空穹（零纹理，1 draw call）、GridArena
  * （体素竞技场）、玩家/石板/NPC/门实体、Vfx 粒子层、CameraRig 运镜。
  * THEME-3 逐关主题：主题/灯光/雾经 levelThemes.resolveLevelTheme(levelId, yin)
@@ -17,7 +21,7 @@
  * 助手（effectiveTerrain/heightOf），不写引擎、不维护第二份地图。
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { Sparkles } from '@react-three/drei';
@@ -615,6 +619,50 @@ function StoreInvalidator() {
   return null;
 }
 
+/* ================== demand 画布后台节流初始化兜底（N5） ==================== */
+
+/**
+ * R3F root 建立探针。作为 <Canvas> 的子节点挂进 React 树：R3F v8 的 Canvas
+ * 只在容器尺寸守卫（containerRect.width>0 && containerRect.height>0）通过后
+ * 才会 createRoot 并 root.render(子树)，守卫不通过时子树根本不会被渲染 ——
+ * 因此「本组件 mount」与「R3F root 已建立」一一对应。mount 即回报一次
+ * onReady；自身零渲染、零订阅、零定时器，不触碰 demand 静置零渲染约定。
+ * （导出仅供 demandCanvasWake.test 校验 mount 回执契约。）
+ */
+export function RootReadyProbe({ onReady }: { readonly onReady: () => void }) {
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+  return null;
+}
+
+/**
+ * 后台节流环境（rAF 停摆）的 demand 画布初始化兜底（N5）。
+ * react-use-measure 的 bounds 只经两条通路更新：ResizeObserver 回调（初次
+ * 通知在「update the rendering」步骤投递，rAF 停摆的后台标签页里永不触发）
+ * 与 window resize 兜底监听（普通事件任务，不依赖渲染帧）。后台打开游戏时
+ * containerRect 恒 {0,0,0,0}，R3F Canvas 的 width>0 守卫永不通过 —— canvas
+ * 停在 300×150、data-engine 缺失、root 不建立。
+ * 修法：回到前台（visibilitychange / window focus）时若 root 仍未建立，
+ * 补发一次 window resize 借 react-use-measure 的 resize 兜底监听触发重新
+ * 量取（与问题报告实测修法一致：dispatch 一次 resize 即正常初始化）。
+ * 双重前置：root 已建立 → 永久静默（量取/重绘回归 ResizeObserver 正常管线）；
+ * document 不可见 → 不发（rAF 停摆中补发无意义）。返回卸载函数：WorldCanvas
+ * 卸载时拆除监听，不跨组件生命周期泄漏。
+ */
+export function installDemandCanvasWake(isRootReady: () => boolean): () => void {
+  const wake = (): void => {
+    if (isRootReady() || document.visibilityState !== 'visible') return;
+    window.dispatchEvent(new Event('resize'));
+  };
+  document.addEventListener('visibilitychange', wake);
+  window.addEventListener('focus', wake);
+  return () => {
+    document.removeEventListener('visibilitychange', wake);
+    window.removeEventListener('focus', wake);
+  };
+}
+
 /**
  * 全屏 R3F 画布底座。segment 为空时仍渲染灯光/天空（可作标题页底座），
  * 有段位时渲染完整竞技场与实体。实体信息卡选中态是画布级本地 state
@@ -622,6 +670,14 @@ function StoreInvalidator() {
  */
 export function WorldCanvas({ className, style }: WorldCanvasProps) {
   const [pinnedInfo, setPinnedInfo] = useState<{ info: EntityInfo; position: WorldVec3 } | null>(null);
+  // N5：R3F root 建立回执（探针 mount 置位）；ref 只做同步读取，
+  // 不触发重渲染，不干扰 demand 静置约定
+  const rootReadyRef = useRef(false);
+  const markRootReady = useCallback(() => {
+    rootReadyRef.current = true;
+  }, []);
+  // N5：后台节流兜底，挂载即生效、卸载即拆除（effect 返回值即卸载函数）
+  useEffect(() => installDemandCanvasWake(() => rootReadyRef.current), []);
 
   return (
     <div className={className} style={{ position: 'absolute', inset: 0, ...style }}>
@@ -638,6 +694,9 @@ export function WorldCanvas({ className, style }: WorldCanvasProps) {
         camera={{ fov: 50, near: 0.1, far: 180, position: [0, 8.5, 9.5] }}
         onPointerMissed={() => setPinnedInfo(null)}
       >
+        {/* N5：root 建立回执 —— 只有 R3F 真正 createRoot 并 render 子树时才会
+            mount，markRootReady 置位后后台节流兜底即永久静默 */}
+        <RootReadyProbe onReady={markRootReady} />
         <StoreInvalidator />
         <SceneContent pinnedInfo={pinnedInfo} onPin={setPinnedInfo} />
       </Canvas>

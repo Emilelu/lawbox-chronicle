@@ -200,11 +200,20 @@ describe('STORY-5 ① level-scoped 命中：声明的关卡内按该关网格坐
     expect(positionalRuleLevelId(synthetic)).toBeUndefined();
   });
 
-  it('蔡徐坤 L2 网格 (12,3) radius 0：落格命中，邻格不命中', () => {
+  it('蔡徐坤 L2 网格 (12,3) radius 1（N1）：踩格/邻格命中，2 格外不命中', () => {
     const scoped = rulesScopedTo('level-sb-02');
-    const hit = queryTrigger(scoped, { x: 12, y: 3, flags: {}, seenEventIds: [] });
-    expect(hit?.id).toBe('trigger-mob-caixukun');
-    expect(queryTrigger(scoped, { x: 12, y: 2, flags: {}, seenEventIds: [] })).toBeNull();
+    // 语义升级（N1）：遭遇格被 MECH-4 守卫实体同格占位且四向单步推入不可行，
+    // r0 的「踩上即遭遇」需两步非显然推箱前置——改 radius 1 邻格即遭遇。
+    // 踩格 + 三个邻格全部命中：(13,3)=出生点南行自然接近路径、(11,3)=东廊箱
+    // 推箱让位落格（自动演示解路顺路触发）、(12,4)=南侧邻格地板。
+    for (const pos of [{ x: 12, y: 3 }, { x: 13, y: 3 }, { x: 11, y: 3 }, { x: 12, y: 4 }]) {
+      const hit = queryTrigger(scoped, { x: pos.x, y: pos.y, flags: {}, seenEventIds: [] });
+      expect(hit?.id, `(${pos.x},${pos.y}) 应命中`).toBe('trigger-mob-caixukun');
+    }
+    // 2 格外不命中：出生点 (13,1) 与南行第一格 (13,2) 距遭遇点曼哈顿 3/2，
+    // 进关与接近前半程不误触（遭遇在真正走近守卫的那一刻开演）。
+    expect(queryTrigger(scoped, { x: 13, y: 2, flags: {}, seenEventIds: [] })).toBeNull();
+    expect(queryTrigger(scoped, { x: 13, y: 1, flags: {}, seenEventIds: [] })).toBeNull();
   });
 
   it('天使① 留主城 L1 (8,6) radius 1：同关作用域内半径内命中', () => {

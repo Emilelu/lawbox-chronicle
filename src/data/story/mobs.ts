@@ -41,6 +41,11 @@ interface MobParam {
   /** 该关自身网格坐标（已对 areas.ts 原始网格逐格验证为 0=可站地板） */
   readonly x: number;
   readonly y: number;
+  /**
+   * 遭遇触发半径（曼哈顿距离，语义同 TriggerRule npc radius）：缺省 0 = 踩上
+   * 即遭遇。仅当遭遇格被实体占位、踩格不可达时才声明更大半径（见下表蔡徐坤）。
+   */
+  readonly triggerRadius?: number;
   /** 遭遇台词（原版 printDialogue 的「你遇到了一个怪物！」句式保真） */
   readonly taunt: string;
   readonly victoryNote: string;
@@ -50,6 +55,14 @@ interface MobParam {
  * 三怪分布（STORY-5，坐标已对 areas.ts 逐格验证）：
  * 蔡徐坤 L2 双廊回环 (12,3) / 郭老师 L3 碎星十字 (7,5)（暗夜关中遭遇）/ 冬泳怪鸽 L6 双石门 (3,3)。
  * HP 递增（28→98→149）与关卡曲线同向；不再派生自 enemies.originPos（图鉴字段）。
+ * N1 修法：蔡徐坤 triggerRadius 1（邻格即遭遇）。(12,3) 虽是可站地板，但被
+ * MECH-4 守卫实体同格占位，且四向单步推入均不可行（北上落位 (12,2) 是墙、
+ * 南下发力位 (12,2) 是墙、西移落位 (11,3) 是箱子出生点、东移发力位 (11,3)
+ * 是箱子）——radius 0 意味着必须先完成「(11,2) 下推箱让位 → (11,3) 东推
+ * 守卫」的两步非显然推箱才能落格触发，自然接近路径（出生点 (13,1) 南行至
+ * (13,3)）永远打不到。radius 1 让「走到守卫邻格」即遭遇，与触发器 npc
+ * 交互语义（走到 NPC 相邻格）一致；预计算解路推东廊箱（发力位 (11,4)）必经
+ * 东廊走廊，遭遇在解路途中顺路触发，自动演示因此不再缺这段剧情。
  */
 const MOB_PARAMS: readonly MobParam[] = [
   {
@@ -57,6 +70,9 @@ const MOB_PARAMS: readonly MobParam[] = [
     levelId: 'level-sb-02',
     x: 12,
     y: 3,
+    // 遭遇格被 MECH-4 守卫同格占位（areas.ts enemySpawns (12,3)），踩格触发
+    // 不可自然达成：radius 1 = 走到守卫邻格（(13,3)/(12,4)/(11,3)）即遭遇。
+    triggerRadius: 1,
     taunt: '只因你实在是太美，must 的！——蔡徐坤拦在了你的面前。',
     victoryNote: '小贴士：本游戏的“格挡”与其字面意思略有差异——在新法则之下，格挡即减免：伤害下限为 1，防御不再造成任何“回血”。（原 ev-battle-tip-block）',
   },
@@ -149,7 +165,9 @@ export const MOB_SCRIPTS: readonly StoryScriptDef[] = MOB_PARAMS.map(makeMobScri
 /* ============================== 触发规则 ================================== */
 
 /** 三怪触发：level-scoped 网格坐标（STORY-5 分布，坐标声明在 MOB_PARAMS），
- *  NPC 语义 radius 0 = 踩上即遭遇。
+ *  NPC 语义 radius 0 = 踩上即遭遇（郭老师/冬泳怪鸽所在格无实体占位，自然可达）；
+ *  蔡徐坤 radius 1 = 邻格即遭遇（N1：遭遇格被 MECH-4 守卫同格占位且四向单步
+ *  推入不可行，r0 只能靠两步非显然推箱前置触发——半径声明在 MOB_PARAMS.triggerRadius）。
  *  once:false + unlessFlag(击败旗) —— 战败/逃跑可再来（once 会把逃兵永久锁在门外，
  *  进而锁死作者谜题的三前置旗）；胜利置旗后不再触发。 */
 export const MOB_TRIGGER_RULES: readonly TriggerRule[] = MOB_PARAMS.map((p) => {
@@ -161,7 +179,7 @@ export const MOB_TRIGGER_RULES: readonly TriggerRule[] = MOB_PARAMS.map((p) => {
       kind: 'npc',
       x: p.x,
       y: p.y,
-      radius: 0,
+      radius: p.triggerRadius ?? 0,
       levelId: p.levelId,
     },
     once: false,

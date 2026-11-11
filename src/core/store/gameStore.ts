@@ -10,7 +10,10 @@
  *     继续读旧形状。combat 永远只在 battle 写入的同一 set() 里重算 —— 单向
  *     投影，不是第二真相源。
  *   - 剧情：engine/story 解释器持有 `storyRuntime`；效果（发卡/武器/旗标/
- *     开战/终局/传送）在本文件统一落账。story.flags 同时是作弊谓词与持久化旗标。
+ *     开战/终局/传送）在本文件统一落账。story.flags 同时是作弊谓词、触发评估
+ *     与持久化旗标的唯一真相；storyRuntime.flags 只是解释器会话草稿（写旗双写
+ *     落账），触发/META 评估经 triggerFlagView 以真相源为准（N3 单一真相源）：
+ *     草稿残留的旧旗不再遮蔽真相，只清 story.flags 单侧即生效。
  *   - 抽卡：engine/gacha performGacha（正式池 + 三层保底 + 碎片）写
  *     `gacha` 与 `pity`（三层独立计数器，随存档持久化）。
  *
@@ -326,6 +329,32 @@ export function postBattlePlayerHp(
   return clampHp(hpFinal, maxHp);
 }
 
+/* ======================== 触发旗标视图（N3 单一真相源） ====================== */
+
+/**
+ * 触发评估 / META 终端 / 剧本收尾合并共用的旗标视图 —— 单一真相源收敛（N3 修法）。
+ * ---------------------------------------------------------------------------
+ * story.flags 是持久化旗标的唯一真相（触发 requireFlag/unlessFlag、终端指令、
+ * 作弊谓词、WorldCanvas 均直接读它）；storyRuntime.flags 只是解释器会话草稿，
+ * 由 writeFlag 与真相源双写同步，其「独有键」仅剩 grantCard 的 card:<id> 持卡
+ * 镜像（卡片真相由 gacha.owned 承载，镜像经本函数照常并入收尾合并与评估视图）。
+ * 视图 = card 镜像在前、story.flags 后展开覆盖：草稿副本里残留的旧旗（含
+ * story+storyRuntime 双落盘时代的 defeated 旗）从此不再遮蔽真相源 —— 运维/测试
+ * 只清 story.flags 单侧，unlessFlag 抑制即解除（重踩可再触发遭遇）；收尾合并
+ * 场景下「真相源已删除的键」也不会被草稿旧旗复活。
+ * 纯函数：测试可直接断言「真相源优先 + 只放行 card 镜像」两条不变量。
+ */
+export function triggerFlagView(
+  storyFlags: Readonly<Record<string, boolean | number | string>>,
+  runtimeFlags: Readonly<Record<string, boolean | number | string>>,
+): Record<string, boolean | number | string> {
+  const cardMirrors: Record<string, boolean | number | string> = {};
+  for (const [key, value] of Object.entries(runtimeFlags)) {
+    if (key.startsWith('card:')) cardMirrors[key] = value;
+  }
+  return { ...cardMirrors, ...storyFlags };
+}
+
 /* ================================ 创建 ==================================== */
 
 export const useGameStore = create<GameStore>()(
@@ -418,6 +447,11 @@ export const useGameStore = create<GameStore>()(
         let flags = { ...state.story.flags };
         const runtimeFlags: Record<string, boolean | number | string> = { ...state.storyRuntime.flags };
 
+        /**
+         * 旗标落账（N3 双写纪律）：story.flags 是持久化真相源；storyRuntime.flags
+         * 是解释器会话草稿（gate/choice 节点直接读它评估），必须同步落一份。
+         * 触发/META 评估经 triggerFlagView 以真相源为准 —— 草稿残留不遮蔽真相。
+         */
         const writeFlag = (key: string, value: boolean | number | string): void => {
           flags = { ...flags, [key]: value };
           runtimeFlags[key] = value;
@@ -555,8 +589,13 @@ export const useGameStore = create<GameStore>()(
         const runtime = state.storyRuntime;
         const lastEnding = runtime.flags['last-ending-id'];
         set({
+          // N3：runtime→story 的收尾合并收敛为「只并入 card: 镜像」（该合并对
+          // 真相源的唯一独有贡献；setFlag 类效果已经 writeFlag 实时双写进真相）。
+          // 原并集合并无法表达「真相源已删除键」——会话草稿里的陈旧旗（如外部
+          // 只清了 story.flags 单侧的 defeated 旗）会经收尾合并复活回真相源；
+          // triggerFlagView 以真相源优先即根治，非 card 的草稿残留一律丢弃。
           storyRuntime: { ...IDLE_STORY_RUNTIME, flags: { ...state.story.flags } },
-          story: { ...state.story, flags: { ...state.story.flags, ...runtime.flags } },
+          story: { ...state.story, flags: triggerFlagView(state.story.flags, runtime.flags) },
         });
         if (lastEnding === 'outskirt-north-transit') {
           startStoryScript('script-hidden-game');
@@ -820,7 +859,7 @@ export const useGameStore = create<GameStore>()(
         if (segment === null) return;
         const levelId = segment.levelId;
         const ctxBase: TriggerCtxBase = {
-          flags: { ...state.story.flags, ...state.storyRuntime.flags },
+          flags: triggerFlagView(state.story.flags, state.storyRuntime.flags),
           seenEventIds: state.story.seenEventIds,
         };
         // level-scoped 规则用玩家原始网格坐标（gridToWorld 的逆映射，与
@@ -919,7 +958,7 @@ export const useGameStore = create<GameStore>()(
                 {
                   x: beyond.x,
                   y: beyond.y,
-                  flags: { ...state.story.flags, ...state.storyRuntime.flags },
+                  flags: triggerFlagView(state.story.flags, state.storyRuntime.flags),
                   seenEventIds: state.story.seenEventIds,
                 },
               );
@@ -1157,7 +1196,7 @@ export const useGameStore = create<GameStore>()(
           const levelId = state.segment?.levelId ?? '';
           const world = gridToWorld(player.x, player.y);
           const ctxBase: TriggerCtxBase = {
-            flags: { ...state.story.flags, ...state.storyRuntime.flags },
+            flags: triggerFlagView(state.story.flags, state.storyRuntime.flags),
             seenEventIds: state.story.seenEventIds,
           };
           // E 交互与移动触发共用同一套关级作用域过滤（STORY-5）：level-scoped 用
@@ -1323,7 +1362,7 @@ export const useGameStore = create<GameStore>()(
           const state = get();
           const outcome = runMetaTerminalCommand({
             raw,
-            flags: { ...state.story.flags, ...state.storyRuntime.flags },
+            flags: triggerFlagView(state.story.flags, state.storyRuntime.flags),
           });
           for (const eff of outcome.effects) {
             if (eff.kind === 'setFlag') {
@@ -1507,7 +1546,11 @@ export const useGameStore = create<GameStore>()(
       name: 'lawbox-chronicle:v1',
       version: 2,
       storage: createJSONStorage(() => localStorage),
-      // 段内实体/战斗/演出态是会话态，不落盘；档案只存进度与偏好
+      // 段内实体/战斗/演出态是会话态，不落盘；档案只存进度与偏好。
+      // story+storyRuntime 双落盘是既有存档契约（types.ts：story-weaver 运行时
+      // 草稿随档持久）；N3 后旗标真相唯一在 story.flags —— 触发/META 评估经
+      // triggerFlagView 以真相源为准，storyRuntime 里的陈旧旗副本不遮蔽真相，
+      // 且每次剧本开场即被 startStoryScript 以 story.flags 重播种自愈。
       partialize: (state) => ({
         locale: state.locale,
         settings: state.settings,

@@ -9,9 +9,13 @@
  *  - 注视点持续轻量跟随（等量平移相机，保留用户视角偏移）；对话/战斗/过关/
  *    BOSS 由 computePose 位姿请求驱动自动运镜，收敛后停手交还用户。
  *  - 视角档/战术俯瞰（viewStore）：V 切 first/third、T 按住俯瞰 —— 相机目标
- *    位姿在本组件内部自发请求，WorldCanvas 的 pose 管线零改动（接缝钉死）。
- *  - fov 按位姿可选字段收敛；方位角/距离差值超阈值发布进 viewStore（供输入
- *    映射与调试句柄），纯数字写、无 invalidate。
+ *    位姿在本组件内部自发请求（theme.computeSpontaneousPose 纯决策），WorldCanvas
+ *    的 pose 管线零改动（接缝钉死）。全局档模式（combat/victory/boss）下一切
+ *    自发回落都收敛该模式既定舞台位 —— FP 头位 0.55 < 全局档 distMin 3.2 是
+ *    不可达目标，曾把收敛冻死在 3.2 且 poseActive 永不释放（N2 根治）。
+ *  - fov 按位姿可选字段收敛；位姿未带 fov 时回落基准 BASE_CAMERA_FOV（N4：
+ *    FP 贴脸 fov 68 不残留进战斗/BOSS 等演出）。方位角/距离差值超阈值发布进
+ *    viewStore（供输入映射与调试句柄），纯数字写、无 invalidate。
  *  - bus 演出事件：camera/orbitTo（外部运镜请求）、anim/screenShake（暴击震屏）、
  *    anim/bossTitle（BOSS 入场轨道运镜 2.6s）。
  *  - 全部动画只在未收敛的帧 invalidate —— 静置零渲染（S18）。
@@ -38,7 +42,7 @@ import {
   SHAKE_DECAY,
   SHAKE_MAX_OFFSET,
   cameraLimitsFor,
-  computePose,
+  computeSpontaneousPose,
   widerCameraLimits,
   type CameraLimits,
   type CameraMode,
@@ -155,7 +159,11 @@ export function CameraRig({ focusWorld, pose, poseId, cameraMode: cameraModeProp
         fov: FIRST_PERSON_POSE.fov,
       };
     } else {
-      desiredRef.current = pose;
+      // fov 透传（N4）：位姿自带 fov（combat/boss 预设、FP 回正/俯瞰请求）按
+      // 请求方语义消费；位姿未带 fov 时回落第三人称基准 BASE_CAMERA_FOV ——
+      // FP 贴脸 fov 68 残留不得带进战斗/BOSS/过关演出与 explore 回正，视场角
+      // 与第三人称观感一致。第三人称下相机 fov 恒为基准 50，回落是恒等操作。
+      desiredRef.current = { ...pose, fov: pose.fov ?? BASE_CAMERA_FOV };
     }
     poseActiveRef.current = true;
     // 收敛期间放宽夹紧到并集：目标位姿必须在当前生效档 ∪ 目标档内可达
@@ -164,8 +172,11 @@ export function CameraRig({ focusWorld, pose, poseId, cameraMode: cameraModeProp
   }, [poseId, pose, invalidate, applyPropLimits]);
 
   // 视角切换 / 战术俯瞰的自发位姿请求（不依赖 WorldCanvas 的 pose 管线）。
-  // third 视角挂载与「third 松开 T」不发请求 —— explore 常态交还用户全权，
-  // 与既有第三人称行为逐字节一致。
+  // 目标位姿由 theme.computeSpontaneousPose 纯函数决策（N2 根治）：目标夹紧档
+  // 内可达 —— explore/dialogue 回 FP 头位，combat/victory/boss（全局档）回落
+  // 该模式既定舞台位（FP 头位 0.55 < 全局档 distMin 3.2 是不可达目标，曾把
+  // 收敛钉死在 3.2 且 poseActive 永不释放）。third 视角挂载与「third 松开 T」
+  // 不发请求 —— explore 常态交还用户全权，与既有第三人称行为逐字节一致。
   const prevViewRef = useRef(viewPreference);
   const prevPeekRef = useRef(peeking);
   useEffect(() => {
@@ -178,32 +189,14 @@ export function CameraRig({ focusWorld, pose, poseId, cameraMode: cameraModeProp
       focusPos: [head.x, head.y, head.z],
       arenaCenter: [head.x, head.y, head.z],
     };
-    if (peeking) {
-      // T 战术俯瞰：收敛到 explore 预设（8.5 / 35° 极角），方位角保留不拽头向，
-      // fov 回基准（从 FP 贴脸 fov 68 拉回常规视野）
-      desiredRef.current = { ...computePose('explore', ctx), azimuth: null, fov: BASE_CAMERA_FOV };
-      poseActiveRef.current = true;
-      applyPropLimits(widerCameraLimits(propLimitsRef.current, targetLimitsRef.current));
-      invalidate();
-      return;
-    }
-    if (viewPreference === 'first') {
-      // 进入/回到第一人称头位（含挂载即 FP 的首收敛）：距离/俯仰/fov 收敛，
-      // 方位角保留用户头向
-      desiredRef.current = { ...computePose('first', ctx), azimuth: null };
-      poseActiveRef.current = true;
-      applyPropLimits(widerCameraLimits(propLimitsRef.current, targetLimitsRef.current));
-      invalidate();
-      return;
-    }
-    if (viewChanged) {
-      // first→third：收敛回 explore 预设距离/俯仰，方位角保留（不拽头向），fov 回基准
-      desiredRef.current = { ...computePose('explore', ctx), azimuth: null, fov: BASE_CAMERA_FOV };
-      poseActiveRef.current = true;
-      applyPropLimits(widerCameraLimits(propLimitsRef.current, targetLimitsRef.current));
-      invalidate();
-    }
-  }, [viewPreference, peeking, invalidate, applyPropLimits]);
+    const desired = computeSpontaneousPose(viewPreference, cameraMode, peeking, ctx, viewChanged);
+    if (desired === null) return;
+    desiredRef.current = desired;
+    poseActiveRef.current = true;
+    // 收敛期间放宽夹紧到并集：目标位姿必须在当前生效档 ∪ 目标档内可达
+    applyPropLimits(widerCameraLimits(propLimitsRef.current, targetLimitsRef.current));
+    invalidate();
+  }, [viewPreference, peeking, invalidate, applyPropLimits, cameraMode]);
 
   // bus 演出事件：外部运镜请求 / 暴击震屏 / BOSS 入场轨道
   useEffect(() => {

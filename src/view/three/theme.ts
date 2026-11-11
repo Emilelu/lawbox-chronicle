@@ -586,21 +586,24 @@ interface PosePreset {
   readonly fov?: number;
 }
 
+/** 第三人称基准视场角（WorldCanvas Canvas camera 的初始 fov，fov 收敛回落目标）。
+ *  声明先于 POSE_PRESETS：combat/boss 预设直接引用（const 有 TDZ，后置会炸）。 */
+export const BASE_CAMERA_FOV = 50;
+
 const POSE_PRESETS: Readonly<Record<CameraMode | 'first', PosePreset>> = {
   explore: { distance: 8.5, elevationDeg: 55, azimuth: null },
   dialogue: { distance: 4.6, elevationDeg: 52, azimuth: null },
   // combat 方位角必须归 0（I1 根治）：此前 π/2 的侧视运镜让布阵期 WASD/方向键
   // 与画面整体相差 90°（W=画面右）。归 0 后相机与谜题期同方位，推挤方向 = 画面方向。
-  combat: { distance: 8.2, elevationDeg: 40, azimuth: 0 },
+  // N4：combat/boss 显式携带基准 fov —— FP 贴脸 fov 68 进战斗/BOSS 演出后回落
+  // 50，与第三人称观感一致（位姿管线按 CameraPose.fov 收敛，缺省字段不收敛）。
+  combat: { distance: 8.2, elevationDeg: 40, azimuth: 0, fov: BASE_CAMERA_FOV },
   victory: { distance: 18, elevationDeg: 62, azimuth: null },
-  boss: { distance: 6.2, elevationDeg: 50, azimuth: null },
+  boss: { distance: 6.2, elevationDeg: 50, azimuth: null, fov: BASE_CAMERA_FOV },
   // 第一人称头位档（位姿族新预设）：distance 0.55 = 头位，elevationDeg 12 = 微俯，
   // fov 68 比基准 50 略广（贴脸时保住环境感）；azimuth null = 保留用户头向。
   first: { distance: 0.55, elevationDeg: 12, azimuth: null, fov: 68 },
 } as const;
-
-/** 第三人称基准视场角（WorldCanvas Canvas camera 的初始 fov，fov 收敛回落目标） */
-export const BASE_CAMERA_FOV = 50;
 
 /** 第一人称头位档的弧度化只读快照（POSE_PRESETS.first 派生，CameraRig 消费） */
 export const FIRST_PERSON_POSE = Object.freeze({
@@ -781,6 +784,54 @@ export function computeExploreResetPose(ctx: PoseContext, viewPreference: ViewPr
     };
   }
   return { ...base, distance: null, polar: null, azimuth: 0 };
+}
+
+/**
+ * 自发位姿回落决策（视角切换/战术俯瞰 effect 的纯函数核心；N2 根治）：
+ * CameraRig 在 viewPreference/peeking 变化时按本函数决定「自发位姿请求」的
+ * 目标位姿；返回 null = 不发请求（explore 常态交还用户全权，third 现状一致）。
+ * 分档规则与 cameraLimitsFor 严格对齐 —— 目标位姿必须落在该次请求的目标夹紧
+ * 档内，否则 useFrame 收敛期的每帧 clamp(radius, distMin, distMax) 会把收敛
+ * 钉在档位边界上，完成判据 |distDelta|<0.02 永不满足 → poseActive 悬置且每帧
+ * invalidate（S18 静置零渲染被打破；N2 实测 first+combat 松开 T 冻结在
+ * dist 3.21/polar 55° 800+ 帧，因 FP 头位 0.55 < 全局档 distMin 3.2 不可达）。
+ *  - peeking：T 战术俯瞰 → explore 俯瞰预设（8.5/35°），方位角保留、fov 回
+ *    基准；全局档下 8.5/35° 均可达。
+ *  - first + explore/dialogue（FP 档生效）→ FP 头位（0.55/78°/fov 68），方位
+ *    角保留用户头向。
+ *  - first + combat/victory/boss（全局档）→ **回落该模式既定舞台位**（combat
+ *    8.2/50°/azimuth 0、boss 6.2/40°、victory 18/28°），不再收敛 FP 头位：
+ *    0.55 是全局档下的不可达目标（N2 冻结根因），且设计语义为
+ *    「combat/victory/boss 永远走既定舞台位」，first 档不参与演出模式。fov 回
+ *    基准（与 N4 同语义：FP 贴脸 fov 68 不残留进演出位姿）。
+ *  - third 且视角确有切换：explore/dialogue 收敛回 explore 预设（方位角保留、
+ *    fov 回基准）；combat/victory/boss 同样回落舞台位 —— 与 first 分支同一
+ *    规则，避免 V 往返把战斗取景拽去 explore 俯瞰位。
+ */
+export function computeSpontaneousPose(
+  view: ViewPreference,
+  mode: CameraMode,
+  peeking: boolean,
+  ctx: PoseContext,
+  viewChanged: boolean,
+): CameraPose | null {
+  if (peeking) {
+    return { ...computePose('explore', ctx), azimuth: null, fov: BASE_CAMERA_FOV };
+  }
+  if (view === 'first') {
+    if (mode === 'combat' || mode === 'victory' || mode === 'boss') {
+      // 全局档：舞台位 distance/polar 均在档内可达（N2 回落语义），fov 回基准
+      return { ...computePose(mode, ctx), fov: BASE_CAMERA_FOV };
+    }
+    return { ...computePose('first', ctx), azimuth: null }; // FP 头位，保留头向
+  }
+  if (viewChanged) {
+    if (mode === 'combat' || mode === 'victory' || mode === 'boss') {
+      return { ...computePose(mode, ctx), fov: BASE_CAMERA_FOV }; // 全局档：同 first 分支规则
+    }
+    return { ...computePose('explore', ctx), azimuth: null, fov: BASE_CAMERA_FOV };
+  }
+  return null;
 }
 
 /* ================================= VFX ==================================== */
