@@ -49,10 +49,22 @@ function teleportPlayer(x: number, y: number): void {
   });
 }
 
-/** 走蔡徐坤遭遇战开战（flow.test.ts 同链路）：布阵相战斗就位 */
+/** 授予法则卡（绕过关卡入口的 100% 补发剧本，聚焦遭遇战链路本身） */
+function grantLawCard(cardId: string): void {
+  useGameStore.setState({
+    gacha: {
+      ...store().gacha,
+      owned: [...store().gacha.owned, { uid: `test-${cardId}`, cardId, obtainedAt: 0 }],
+    },
+  });
+}
+
+/** 走蔡徐坤遭遇战开战（flow.test.ts 同链路）：布阵相战斗就位。
+ *  STORY-5：蔡徐坤迁至 L2 双廊回环 (12,3)，不再在主城触发。 */
 function launchMobBattle(): void {
-  store().startLevel('level-sb-01');
-  teleportPlayer(11, 8); // 蔡徐坤主地图 (4,2) → 网格 (11,8)
+  grantLawCard('card-law-feather-chest'); // L2 入口法则门免打扰
+  store().startLevel('level-sb-02');
+  teleportPlayer(12, 3); // 蔡徐坤遭遇格（L2 网格坐标，radius 0 踩上即遭遇）
   useGameStore.setState({ player: { ...store().player, weapons: ['weapon-dagger'] } });
   store().interact();
   store().advanceDialogue();
@@ -62,6 +74,42 @@ function launchMobBattle(): void {
 beforeEach(() => {
   store().resetSave();
   useStatsStore.getState().clearStats();
+});
+
+/* ====================== STORY-5 · 触发评估 level 化 ======================= */
+
+describe('STORY-5 · 触发评估按关卡求值（双坐标）', () => {
+  it('L2 网格 (12,3) 落格触发 script-mob-caixukun（level-scoped 用原始网格坐标）', () => {
+    grantLawCard('card-law-feather-chest'); // L2 入口法则门免打扰
+    store().startLevel('level-sb-02');
+    expect(store().segment?.levelId).toBe('level-sb-02');
+    // MECH-4 twist：蔡徐坤守卫实体与遭遇点同格 (12,3)（北侧 (12,2) 是墙，
+    // 必须先侧移让开）。路径：站 (11,2) 下推箱让位 → 右推守卫 → 玩家落 (12,3)
+    teleportPlayer(11, 2);
+    store().move('down'); // 箱 (11,3)→(11,4)，玩家落 (11,3)
+    store().move('right'); // 守卫实体 (12,3)→(13,3)，玩家落 (12,3) → 真实落格触发
+    expect(store().phase).toBe('dialogue');
+    expect(store().storyRuntime.scriptId).toBe('script-mob-caixukun');
+    // 入场对白已结算：推进到 battle 节点开战（遭遇战接线回归）
+    store().advanceDialogue();
+    store().advanceDialogue();
+    expect(store().phase).toBe('combat');
+    expect(selectBattleState(store())?.enemyId).toBe('enemy-caixukun');
+    // 战场敌人落点 = 遭遇发生的 npc 规则格（不再派生自 originPos 世界坐标）
+    expect(selectBattleState(store())?.formation?.entities.find((e) => e.id === selectBattleState(store())?.enemyId)).toMatchObject({ x: 12, y: 3 });
+  });
+
+  it('同坐标 L3 不触发：蔡徐坤规则是 level-sb-02 作用域，L3 的 (12,3) 落格无剧情', () => {
+    grantLawCard('card-law-wider-push'); // L3 入口法则门免打扰
+    store().startLevel('level-sb-03');
+    expect(store().segment?.levelId).toBe('level-sb-03');
+    teleportPlayer(12, 2); // (12,2) 为 (12,3) 的北侧相邻地板（L3 两侧均为通地板）
+    const stepsBefore = store().segment?.steps ?? 0;
+    store().move('down'); // 落到 L3 的 (12,3)
+    expect(store().phase).toBe('playing');
+    expect(store().storyRuntime.scriptId).toBeNull();
+    expect(store().segment?.steps).toBe(stepsBefore + 1); // 位移真实发生（只是没触发剧情）
+  });
 });
 
 /* ============================== H1 · 布阵推挤战 ============================ */
@@ -181,12 +229,13 @@ describe('M7 · 箱落压碎目标实体生成', () => {
     expect(enemies[0]).toMatchObject({ x: 5, y: 5, kind: 'enemy', pushable: true });
   });
 
-  it('星陨王座两名守卫 + 4 尖刺格（挑战层数据齐备）', () => {
+  it('星陨王座两名守卫 + 8 尖刺格（MECH-4 twist 后数据齐备）', () => {
     const seg = importLevel('level-lb-12');
     const enemies = seg?.entities.filter((e) => e.kind === 'enemy') ?? [];
     expect(enemies).toHaveLength(2);
     store().startLevel('level-lb-12');
-    expect(selectHazardCells(store())).toHaveLength(4);
+    // MECH-4：尖刺 +4 格（(4,3)/(8,3)/(4,7)/(8,7) 点对称），原 4 格合计 8
+    expect(selectHazardCells(store())).toHaveLength(8);
   });
 });
 
@@ -395,8 +444,9 @@ describe('battleTurnFxEvents · 战斗回合演出转译（纯函数，R2）', (
 
 describe('实机战斗反馈链路（R2 复现路径：郭老师徒手 0 伤害）', () => {
   it('徒手 0 伤害攻击也发 anim/spark（命中格 = 战场敌人实体格）', () => {
-    store().startLevel('level-sb-01');
-    teleportPlayer(10, 3); // 郭老师 world (3,-3) → 网格 (10,3)
+    grantLawCard('card-law-wider-push'); // L3 入口法则门免打扰
+    store().startLevel('level-sb-03');
+    teleportPlayer(7, 5); // 郭老师遭遇格（STORY-5：L3 碎星十字网格坐标）
     store().interact();
     store().advanceDialogue();
     store().advanceDialogue();
@@ -413,8 +463,9 @@ describe('实机战斗反馈链路（R2 复现路径：郭老师徒手 0 伤害�
   });
 
   it('selectWeapon（非攻击行动）不发命中演出', () => {
-    store().startLevel('level-sb-01');
-    teleportPlayer(11, 8); // 蔡徐坤 world (4,2) → 网格 (11,8)
+    grantLawCard('card-law-feather-chest'); // L2 入口法则门免打扰
+    store().startLevel('level-sb-02');
+    teleportPlayer(12, 3); // 蔡徐坤遭遇格（STORY-5：L2 双廊回环网格坐标）
     useGameStore.setState({ player: { ...store().player, weapons: ['weapon-dagger'] } });
     store().interact();
     store().advanceDialogue();
@@ -437,8 +488,9 @@ describe('postBattlePlayerHp · 战斗结算 HP 映射（L1 纯函数）', () =>
 
 describe('战败休整回血（L1 · 端到端）', () => {
   it('败北结算 → 玩家 HP 回满（不再 0 血软锁），胜利旗未置位（可再来）', () => {
-    store().startLevel('level-sb-01');
-    teleportPlayer(11, 8); // 蔡徐坤主地图 (4,2) → 网格 (11,8)
+    grantLawCard('card-law-feather-chest'); // L2 入口法则门免打扰
+    store().startLevel('level-sb-02');
+    teleportPlayer(12, 3); // 蔡徐坤遭遇格（STORY-5：L2 网格坐标）
     // 1 血裸装：徒手 0 伤，蔡徐坤反击 12 点必败（secondChance 缺省 false）
     useGameStore.setState({ player: { ...store().player, hp: 1, baseAttack: 0, defense: 0, weapons: [] } });
     store().interact();
@@ -487,13 +539,14 @@ describe('BOSS 刻字 anim/bossTitle（R3 store 侧双发布源）', () => {
   }
 
   function prepareKeyedRun(): void {
-    store().startLevel('level-sb-01');
+    // STORY-5：BOSS 迁至 L12 星陨王座（王座 (6,5) r3）；(6,4) 为王座咽喉地板
+    store().startLevel('level-lb-12');
     // 作者谜题之钥：走解谜后的护盾化 BOSS 战分支（boss-guard gate openNext）
     useGameStore.setState({
       story: { ...store().story, flags: { ...store().story.flags, 'story:key-boss': 'card-x' } },
     });
     useGameStore.setState({ player: { ...store().player, baseAttack: 300, weapons: [] } });
-    teleportPlayer(2, 11); // 影流之主 world (-5,5) → 网格 (2,11)
+    teleportPlayer(6, 4); // 王座 (6,5) 的北侧邻格（r3 覆盖集内，interact 可触发）
   }
 
   it('剧情 fx 与 launchBattle 各发一次（title 分别为刻字串与 enemy.name）', () => {
@@ -509,10 +562,12 @@ describe('BOSS 刻字 anim/bossTitle（R3 store 侧双发布源）', () => {
     prepareKeyedRun();
     launchBossBattle([]);
     expect(selectBattleState(store())?.enemyId).toBe('enemy-ylzz');
+    // 战场敌人落点 = 遭遇的 npc 规则格（王座 (6,5)，不再派生自 originPos）
+    expect(selectBattleState(store())?.formation?.entities.find((e) => e.id === selectBattleState(store())?.enemyId)).toMatchObject({ x: 6, y: 5 });
     store().dispatch({ type: 'toggleFormation' }); // BOSS 战开局也是布阵相 → 确认开打
     const events = captureDuring(() => store().combatAct('attack'));
     const spark = events.find((e) => e.type === 'anim/spark');
-    expect(spark).toMatchObject({ type: 'anim/spark', at: { x: 2, y: 11 }, blocked: true });
+    expect(spark).toMatchObject({ type: 'anim/spark', at: { x: 6, y: 5 }, blocked: true });
   });
 });
 

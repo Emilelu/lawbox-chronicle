@@ -10,7 +10,16 @@
  *    无渲染逻辑集中于此，可在 vitest 中直接断言。
  */
 
-import type { AreaId, Dir, Grid, TerrainCell, Vec2 } from '../../core/types';
+import {
+  DIAG_VECTORS,
+  DIR_VECTORS,
+  type AreaId,
+  type DiagDir,
+  type Dir,
+  type Grid,
+  type TerrainCell,
+  type Vec2,
+} from '../../core/types';
 import type { HeightMap } from '../../engine/puzzle/grid';
 
 /* ============================== 基础尺度（格子派生） ======================= */
@@ -130,13 +139,13 @@ export const FACING_YAW: Readonly<Record<Dir, number>> = Object.freeze({
 export const PLAYER_SKIN_COUNT = 5;
 
 /**
- * 侧视 3/4 收敛角（I4 根治）：角色/玩家体素模型由单片 ASCII 掩码拉伸而来
- * （每体素深度仅 0.72 × skinCell），朝向 left/right 按语义转满 ±90° 时正面
- * 只剩一列侧棱，角色渲染成近 1px 竖条。渲染层把左右朝向收敛到 ±45° 的
- * 3/4 视角 —— 剪影保留 cos45°≈71% 的正面宽度，方向仍可辨；up/down 不受
- * 影响（背/正视）。FACING_YAW 保持方向语义真值，仅绘制走本函数。
+ * 侧视 3/4 收敛角（I4 根治）：角色/玩家体素模型由 ASCII 掩码拉伸而来，
+ * 朝向 left/right 按语义转满 ±90° 时正面只剩一列侧棱，角色渲染成近 1px
+ * 竖条。渲染层把左右朝向收敛到 ±60° 的 3/4 视角（部件化重制后取更饱满的
+ * 侧转，剪影保留 cos60°=50% 的正面宽度且四肢/围巾部件方向可辨）；up/down
+ * 不受影响（背/正视）。FACING_YAW 保持方向语义真值，仅绘制走本函数。
  */
-export const FACING_RENDER_YAW_LIMIT = Math.PI / 4;
+export const FACING_RENDER_YAW_LIMIT = Math.PI / 3;
 
 /** 渲染用朝向角：FACING_YAW 的 3/4 收敛版，PlayerAvatar/ActorMesh 专用 */
 export function facingRenderYaw(dir: Dir): number {
@@ -152,6 +161,17 @@ export const SLIDE_SECONDS = 0.15;
 export const SLIDE_EPSILON = 0.0015;
 
 export const easeOutCubic = (t: number): number => 1 - Math.pow(1 - clamp01(t), 3);
+
+/**
+ * 回弹缓动（easeOutBack，c1=1.70158 标准过冲系数）：落定瞬间越过目标约 10%
+ * 再弹回，角色部件滑动落地的「顿一下」手感。纯函数，charModels 动画消费。
+ */
+export function easeOutBack(t: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  const x = clamp01(t);
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+}
 
 export function clamp01(t: number): number {
   return t < 0 ? 0 : t > 1 ? 1 : t;
@@ -521,6 +541,12 @@ export const COMBAT_STAGE = Object.freeze({
 
 export type CameraMode = 'explore' | 'dialogue' | 'combat' | 'victory' | 'boss';
 
+/**
+ * 视角档偏好：'first' = 第一人称头位（默认），'third' = 第三人称轨道（现状）。
+ * 只影响 explore/dialogue 两族位姿；combat/victory/boss 永远走既定舞台位。
+ */
+export type ViewPreference = 'first' | 'third';
+
 export interface CameraPose {
   /** 注视点（世界坐标） */
   readonly target: WorldVec3;
@@ -530,6 +556,8 @@ export interface CameraPose {
   readonly polar: number | null;
   /** 方位角（弧度）；null = 保持用户当前方位 */
   readonly azimuth: number | null;
+  /** 视场角（度）；缺省 = 保持相机当前 fov（该项不收敛） */
+  readonly fov?: number;
 }
 
 export interface PoseContext {
@@ -551,7 +579,14 @@ export function degToRad(deg: number): number {
   return (deg * Math.PI) / 180;
 }
 
-const POSE_PRESETS = {
+interface PosePreset {
+  readonly distance: number;
+  readonly elevationDeg: number;
+  readonly azimuth: number | null;
+  readonly fov?: number;
+}
+
+const POSE_PRESETS: Readonly<Record<CameraMode | 'first', PosePreset>> = {
   explore: { distance: 8.5, elevationDeg: 55, azimuth: null },
   dialogue: { distance: 4.6, elevationDeg: 52, azimuth: null },
   // combat 方位角必须归 0（I1 根治）：此前 π/2 的侧视运镜让布阵期 WASD/方向键
@@ -559,7 +594,20 @@ const POSE_PRESETS = {
   combat: { distance: 8.2, elevationDeg: 40, azimuth: 0 },
   victory: { distance: 18, elevationDeg: 62, azimuth: null },
   boss: { distance: 6.2, elevationDeg: 50, azimuth: null },
+  // 第一人称头位档（位姿族新预设）：distance 0.55 = 头位，elevationDeg 12 = 微俯，
+  // fov 68 比基准 50 略广（贴脸时保住环境感）；azimuth null = 保留用户头向。
+  first: { distance: 0.55, elevationDeg: 12, azimuth: null, fov: 68 },
 } as const;
+
+/** 第三人称基准视场角（WorldCanvas Canvas camera 的初始 fov，fov 收敛回落目标） */
+export const BASE_CAMERA_FOV = 50;
+
+/** 第一人称头位档的弧度化只读快照（POSE_PRESETS.first 派生，CameraRig 消费） */
+export const FIRST_PERSON_POSE = Object.freeze({
+  distance: POSE_PRESETS.first.distance,
+  polar: degToRad(90 - POSE_PRESETS.first.elevationDeg),
+  fov: POSE_PRESETS.first.fov ?? BASE_CAMERA_FOV,
+});
 
 export const CAMERA_ZOOM_LIMITS = Object.freeze({ min: 3.2, max: 26 });
 export const BOSS_ORBIT_SECONDS = 2.6; // BOSS 入场轨道运镜时长（s）
@@ -567,10 +615,66 @@ export const BOSS_ORBIT_SPEED = Math.PI / 2.6; // rad/s，BOSS 入场轨道运�
 export const SHAKE_DECAY = 3.2; // 震屏强度衰减（1/s）
 export const SHAKE_MAX_OFFSET = 0.16; // 震屏最大位移（世界单位）
 
+/* ============================ 夹紧分档（纯函数） ============================ */
+
+/** 一档夹紧限制：OrbitControls 极角/距离 props 与 useFrame 收敛夹紧同源消费 */
+export interface CameraLimits {
+  readonly polarMin: number;
+  readonly polarMax: number;
+  readonly distMin: number;
+  readonly distMax: number;
+}
+
+/** 全局档：POLAR_MIN/MAX + CAMERA_ZOOM_LIMITS 的聚合单例（分档函数的缺省返回） */
+export const GLOBAL_CAMERA_LIMITS: CameraLimits = Object.freeze({
+  polarMin: POLAR_MIN,
+  polarMax: POLAR_MAX,
+  distMin: CAMERA_ZOOM_LIMITS.min,
+  distMax: CAMERA_ZOOM_LIMITS.max,
+});
+
+/** 第一人称档：极角 70°~84°（俯仰 6°~20° 微俯头位）、距离 0.35~1.2 贴脸范围 */
+export const FIRST_PERSON_LIMITS: CameraLimits = Object.freeze({
+  polarMin: degToRad(70),
+  polarMax: degToRad(84),
+  distMin: 0.35,
+  distMax: 1.2,
+});
+
+/**
+ * 按（视角档 × 相机模式 × 是否战术俯瞰）三元分档返回夹紧限制。
+ * 仅 first && !peeking && mode∈{explore,dialogue} 收紧到 FP 头位档；其余一切
+ * 组合（combat/victory/boss 演出运镜、peeking 俯瞰、third 全档）恒返回全局档
+ * —— victory 18 / boss 6.2 / combat 8.2 / dialogue(第三人称) 4.6 与 T 俯瞰
+ * 8.5 的既定舞台位全部不受压，worldStage 既有「全模式极角/距离在全局限制内」
+ * 不变量天然保持绿。
+ */
+export function cameraLimitsFor(view: ViewPreference, mode: CameraMode, peeking: boolean): CameraLimits {
+  if (view === 'first' && !peeking && (mode === 'explore' || mode === 'dialogue')) {
+    return FIRST_PERSON_LIMITS;
+  }
+  return GLOBAL_CAMERA_LIMITS;
+}
+
+/**
+ * 两档限制的并集（跨档收敛期专用）：OrbitControls 的 update() 会按 min/max
+ * 硬夹紧半径与极角，跨档运镜若直接换档会把相机瞬移夹到边界上 —— 收敛期间
+ * 放宽到并集，收敛完成后才把档位切换过去（CameraRig 内部时序）。
+ */
+export function widerCameraLimits(a: CameraLimits, b: CameraLimits): CameraLimits {
+  return {
+    polarMin: Math.min(a.polarMin, b.polarMin),
+    polarMax: Math.max(a.polarMax, b.polarMax),
+    distMin: Math.min(a.distMin, b.distMin),
+    distMax: Math.max(a.distMax, b.distMax),
+  };
+}
+
 /**
  * 由相机模式与上下文计算目标位姿（纯函数；CameraRig 每次位姿请求消费一次）。
+ * 'first' 为第一人称头位档（viewPreference 驱动，CameraRig 内部自发请求）。
  */
-export function computePose(mode: CameraMode, ctx: PoseContext): CameraPose {
+export function computePose(mode: CameraMode | 'first', ctx: PoseContext): CameraPose {
   const preset = POSE_PRESETS[mode];
   const target: WorldVec3 =
     mode === 'dialogue' || mode === 'boss'
@@ -589,19 +693,93 @@ export function computePose(mode: CameraMode, ctx: PoseContext): CameraPose {
     distance: preset.distance,
     polar: degToRad(90 - preset.elevationDeg),
     azimuth: preset.azimuth,
+    fov: preset.fov,
   };
+}
+
+/* ====================== 相机相对移动方向（纯函数） ========================= */
+
+/**
+ * 网格语义意图向量随相机偏航旋转：θ=0 恒等（相机在 +Z 侧看网格 -Y）。
+ * 公式与 OrbitControls 方位角定义对齐（θ 绕 +Y 自 +Z 量起）：
+ * forward=(-sinθ,−cosθ)、right=(cosθ,−sinθ)，与 DIR_VECTORS/cellWorldCenter
+ * 的网格坐标（+Y=南→世界 +Z）一致。
+ */
+function rotateGridIntent(v: Vec2, camYaw: number): Vec2 {
+  const s = Math.sin(camYaw);
+  const c = Math.cos(camYaw);
+  return { x: v.x * c + v.y * s, y: -v.x * s + v.y * c };
+}
+
+/** 四向扫描序（固定 + 严格 > ：±45° 平局时先扫描者胜，确定性锁死） */
+const DIR_SCAN_ORDER: readonly Dir[] = ['up', 'right', 'down', 'left'];
+
+/**
+ * 输入方向 → 网格方向：把输入的「画面方向」按相机偏航旋到网格轴上，取与
+ * 四个网格方向点积最大者。camYaw=0 时映射恒等（存档/攻略箭头/预计算解路
+ * 零影响）；camYaw=π/2（相机转到 +X 侧）时 W(up)→left。
+ */
+export function cameraYawToGridDir(inputDir: Dir, camYaw: number): Dir {
+  const intent = rotateGridIntent(DIR_VECTORS[inputDir], camYaw);
+  let best = DIR_SCAN_ORDER[0] as Dir;
+  let bestDot = -Infinity;
+  for (const dir of DIR_SCAN_ORDER) {
+    const dv = DIR_VECTORS[dir];
+    const dot = dv.x * intent.x + dv.y * intent.y;
+    if (dot > bestDot) {
+      bestDot = dot;
+      best = dir;
+    }
+  }
+  return best;
+}
+
+/** 斜向扫描序（同上：固定 + 严格 >，平局确定性） */
+const DIAG_SCAN_ORDER: readonly DiagDir[] = ['upleft', 'upright', 'downleft', 'downright'];
+
+/**
+ * 斜向输入（Y/U/B/N）→ 斜向网格方向：8 向意图向量随相机偏航旋转后再 snap
+ * 到最近斜向（动作类型必须仍是 diagonal，故候选取 4 个对角而非 8 向全集）。
+ * camYaw=0 恒等。
+ */
+export function cameraYawToDiagDir(diag: DiagDir, camYaw: number): DiagDir {
+  const intent = rotateGridIntent(DIAG_VECTORS[diag], camYaw);
+  let best = DIAG_SCAN_ORDER[0] as DiagDir;
+  let bestDot = -Infinity;
+  for (const candidate of DIAG_SCAN_ORDER) {
+    const dv = DIAG_VECTORS[candidate];
+    const dot = dv.x * intent.x + dv.y * intent.y;
+    if (dot > bestDot) {
+      bestDot = dot;
+      best = candidate;
+    }
+  }
+  return best;
 }
 
 /**
  * explore 回正位姿（I2 根治）：combat/dialogue/victory/boss 运镜结束后相位
  * 切回 playing 时，explore 常态不发位姿请求（用户全权），被运镜转走的方位角
- * 会永久残留 —— 按键方向与画面错位到整关。此位姿只把方位角收敛回 0（相机
- * 回到 +Z 侧，画面「上」= 网格 -Y，与移动键语义一致），距离与俯仰传 null
- * = 保留用户当前值，回正不抢用户已调好的缩放/视角。由 WorldCanvas 在
- * 「切回 explore」的那一拍发出，CameraRig 收敛一次后照常交还用户。
+ * 会永久残留 —— 按键方向与画面错位到整关。第三人称（缺省）只把方位角收敛
+ * 回 0（相机回到 +Z 侧，画面「上」= 网格 -Y，与移动键语义一致），距离与
+ * 俯仰传 null = 保留用户当前值，回正不抢用户已调好的缩放/视角。
+ * 第一人称（viewPreference='first'）则收敛到 FP 头位档（distance 0.55 /
+ * polar 78° / fov 68），方位角传 null = 保留用户头向（不拽头向；combat→
+ * explore 的归 0 语义由调用方按前一模式显式传 'third' 决定）。
+ * 由 WorldCanvas 在「切回 explore」的那一拍发出，CameraRig 收敛一次后照常
+ * 交还用户。第二参带默认值：既有单参调用（worldStage.test.ts）不受影响。
  */
-export function computeExploreResetPose(ctx: PoseContext): CameraPose {
+export function computeExploreResetPose(ctx: PoseContext, viewPreference: ViewPreference = 'third'): CameraPose {
   const base = computePose('explore', ctx);
+  if (viewPreference === 'first') {
+    return {
+      ...base,
+      distance: FIRST_PERSON_POSE.distance,
+      polar: FIRST_PERSON_POSE.polar,
+      azimuth: null,
+      fov: FIRST_PERSON_POSE.fov,
+    };
+  }
   return { ...base, distance: null, polar: null, azimuth: 0 };
 }
 

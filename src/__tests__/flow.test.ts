@@ -4,9 +4,10 @@
  * 直接驱动全局 store（引擎纯函数的真实接线，无 mock）：
  *   1. startLevel → 谜题引擎状态 + segment 投影同步；
  *   2. move → 实体位移（puzzle-engine 接管）；
- *   3. interact → 剧情解释器开演（天使教学 → 发匕首+角色卡）；
- *   4. 踩上小怪坐标 → 遭遇战 → 布阵选武器 → 开打 → 胜利 →
- *      defeat 旗标 + 星石 + 战斗收尾回世界；
+ *   3. interact → 剧情解释器开演（天使教学 → 发匕首+角色卡+双写旗）；
+ *      谢幕落格回踩 → 光羽 tile 触发（level-scoped 双坐标求值回归）；
+ *   4. 踩上小怪坐标（STORY-5：蔡徐坤在 L2 (12,3)）→ 遭遇战 → 布阵选武器 →
+ *      开打 → 胜利 → defeat 旗标 + 星石 + 战斗收尾回世界；
  *   5. rollGacha → performGacha 正式池 + 三层保底计数器 + 翻牌相；
  *   6. applyLawCard → 法则卡改写 RuleSet（羽箱 mass-1）/角色卡编入卡组；
  *   7. 法则门槛关（sb-02）缺卡 → 100% 补发剧本覆盖入场；
@@ -70,16 +71,17 @@ describe('流程冒烟 · 开始与推箱', () => {
 });
 
 describe('流程冒烟 · 剧情（解释器接线）', () => {
-  it('踩上天使坐标交互 → 剧本开演 → 读完发匕首+角色卡+旗标 → 收尾回世界', () => {
+  it('踩上天使坐标交互 → 剧本开演 → 读完发匕首+角色卡+双写旗 → 收尾；回踩同格触发光羽', () => {
     store().startLevel('level-sb-01');
-    // 导航天使①：主地图 (1,0) → 网格 (8,6)
+    // 导航天使①：STORY-5 留主城 L1 网格 (8,6)（= 原版出生地 (1,0) 的重化格）
     teleportPlayer(8, 6);
     store().interact();
     expect(store().phase).toBe('dialogue');
     expect(store().storyRuntime.scriptId).toBe('script-angel-1');
-    // 入场效果已结算：匕首入包 + 角色卡入卡组
+    // 入场效果已结算：匕首入包 + 角色卡入卡组 + 双写旗（评审⑤：per-angel + 全局）
     expect(store().player.weapons).toContain('weapon-dagger');
     expect(store().gacha.owned.some((o) => o.cardId === 'card-chr-angel-1')).toBe(true);
+    expect(store().story.flags['story:angel-met-1']).toBe(true);
     // 读完对白（10+ 行）直到剧本收尾
     let guard = 0;
     while (store().phase === 'dialogue' && guard < 40) {
@@ -89,12 +91,32 @@ describe('流程冒烟 · 剧情（解释器接线）', () => {
     expect(store().phase).toBe('playing');
     expect(store().storyRuntime.scriptId).toBeNull();
     expect(store().story.flags['story:angels-met']).toBe('angel-1');
+    // 谢幕原地光羽（tile 触发）：跨到东侧地板 (9,6) 再回踩 (8,6) 制造落格动作
+    teleportPlayer(9, 6);
+    store().move('left');
+    expect(store().phase).toBe('dialogue');
+    expect(store().storyRuntime.scriptId).toBe('script-angel-lightfeather-1');
+    guard = 0;
+    while (store().phase === 'dialogue' && guard < 20) {
+      store().advanceDialogue();
+      guard += 1;
+    }
+    expect(store().phase).toBe('playing');
+    expect(store().story.flags['story:feather-1']).toBe(true);
   });
 
-  it('踩上小怪坐标 → 遭遇战 → 布阵选武器开打 → 胜利置旗回世界', () => {
-    store().startLevel('level-sb-01');
-    // 蔡徐坤：主地图 (4,2) → 网格 (11,8)；先发匕首（模拟天使教学已完成）
-    teleportPlayer(11, 8);
+  it('踩上小怪坐标 → 遭遇战 → 布阵选武器开打 → 胜利置旗回世界（STORY-5：蔡徐坤居 L2）', () => {
+    // 授予 L2 入口法则卡（免 100% 补发剧本打扰，聚焦遭遇战链路）
+    useGameStore.setState({
+      gacha: {
+        ...store().gacha,
+        owned: [...store().gacha.owned, { uid: 't-feather', cardId: 'card-law-feather-chest', obtainedAt: 0 }],
+      },
+    });
+    store().startLevel('level-sb-02');
+    // 蔡徐坤：STORY-5 迁至 L2 双廊回环网格 (12,3)（radius 0 踩上即遭遇）；
+    // 先发匕首（模拟天使教学已完成）
+    teleportPlayer(12, 3);
     useGameStore.setState({ player: { ...store().player, weapons: ['weapon-dagger'] } });
     store().interact();
     expect(store().phase).toBe('dialogue');

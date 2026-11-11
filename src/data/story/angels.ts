@@ -1,17 +1,22 @@
 /**
- * 四导航天使 —— 同一事件模板 × 4 组台词（数据化重铸）。
+ * 四导航天使 —— 同一事件模板 × 4 组台词（数据化重铸 + STORY-5 迁关分布）。
  * ---------------------------------------------------------------------------
  * 根治对象：Game.java:509-808 四段近乎逐字复制粘贴的 guideAngel1..4 分支
  * （各含 1 张 ASCII art + 同一套台词 + 同一套 bag.add/alive 置 false 逻辑）。
  * 此处收敛为一个模板工厂 makeAngelScript()，四位天使只声明差异参数：
- *   - 名称 / 坐标（Game.java:48-51：①(1,0) ②(-1,0) ③(0,1) ④(0,-1)）
+ *   - 名称 / 所在关卡与网格坐标（原版出生地 Game.java:48-51 ①(1,0) ②(-1,0)
+ *     ③(0,1) ④(0,-1) 作为「主城残留羽毛」保留，见 HUB_FEATHER_RULES）；
  *   - 台词顺序差异：①②为「难度→一步登天→越界劝告」，③④把「越界劝告」
  *     提前（Game.java:540-545 vs :711-716/:792-797 实测）—— 保真保留原版怪癖。
  * 行为对照（原版 → 新设计）：
  *   - bag.add(dagger)（Game.java:546 等）→ grantWeapon('weapon-dagger')，
  *     武器数值只引用 src/data/weapons.ts 的字符串 id；
- *   - 四姐妹 alive 全灭（Game.java:553-556 等）→ 触发锁 unlessFlag
- *     ('story:angels-met')，并在姐妹坐标补「残留的羽毛」tile 事件；
+ *   - 四姐妹 alive 全灭（Game.java:553-556 等）→ 旗标双写（评审⑤修法）：
+ *     per-angel `story:angel-met-<seq>`（unlessFlag 用它，各关互不牵连）+
+ *     全局 `story:angels-met`（语义=「至少遇见一位」，主城羽毛 requireFlag 不失效）；
+ *   - 每位谢幕原地留「光羽」tile（requireFlag per-angel 旗），拾取置
+ *     `story:feather-<seq>`；主城四姐妹出生地的「残留的羽毛」拾取同样置
+ *     `story:feather-<seq>`（L12 彩蛋消费）；
  *   - 融合点新增：临别赠礼发放角色卡 card-chr-angel（编入卡组解锁对话分支）。
  */
 
@@ -59,6 +64,9 @@ const CIRCLE = ['①', '②', '③', '④'] as const;
 export interface AngelParam {
   readonly seq: 1 | 2 | 3 | 4;
   readonly name: string;
+  /** 关级作用域（STORY-5 分布）：天使只在对应关卡现身 */
+  readonly levelId: string;
+  /** 该关自身网格坐标（trigger when.x/y 直接消费；均已对 areas.ts 原始网格逐格验证为可站地板） */
   readonly x: number;
   readonly y: number;
   readonly order: readonly ('greet' | 'quadrants' | 'oneStep' | 'boundary' | 'gift')[];
@@ -94,7 +102,10 @@ function makeAngelScript(p: AngelParam): StoryScriptDef {
       {
         kind: 'dialogue',
         id: `angel-${p.seq}-entry`,
+        // 旗标双写（评审⑤修法）：per-angel 旗锁本人触发（各关互不牵连），
+        // 全局旗语义=「至少遇见一位」，主城残留羽毛的 requireFlag 靠它不失效
         onEnterEffects: [
+          { kind: 'setFlag', key: `story:angel-met-${p.seq}`, value: true },
           { kind: 'setFlag', key: 'story:angels-met', value: `angel-${p.seq}` },
           { kind: 'grantWeapon', weaponId: 'weapon-dagger' },
           { kind: 'grantCard', cardId: `card-chr-angel-${p.seq}`, source: 'angel-farewell' },
@@ -114,61 +125,125 @@ function makeAngelScript(p: AngelParam): StoryScriptDef {
   };
 }
 
+/**
+ * 四天使分布（STORY-5，坐标已对 areas.ts 逐格验证为原始网格 0 的可站地板）：
+ * ①留主城 L1(8,6)（= 原版出生地 (1,0) 的重化网格）、②L4 星陨间奏 (7,4)、
+ * ③L5 阶下回音 (7,3)、④L10 三阶圣所 (2,7)。
+ */
 export const ANGEL_PARAMS: readonly AngelParam[] = [
-  { seq: 1, name: '导航天使①', x: 1, y: 0, order: ORDER_A },
-  { seq: 2, name: '导航天使②', x: -1, y: 0, order: ORDER_A },
-  { seq: 3, name: '导航天使③', x: 0, y: 1, order: ORDER_B },
-  { seq: 4, name: '导航天使④', x: 0, y: -1, order: ORDER_B },
+  { seq: 1, name: '导航天使①', levelId: 'level-sb-01', x: 8, y: 6, order: ORDER_A },
+  { seq: 2, name: '导航天使②', levelId: 'level-sb-04', x: 7, y: 4, order: ORDER_A },
+  { seq: 3, name: '导航天使③', levelId: 'level-lb-05', x: 7, y: 3, order: ORDER_B },
+  { seq: 4, name: '导航天使④', levelId: 'level-lb-10', x: 2, y: 7, order: ORDER_B },
 ];
 
 export const ANGEL_SCRIPTS: readonly StoryScriptDef[] = ANGEL_PARAMS.map(makeAngelScript);
 
+/* ============================== 光羽脚本 ================================== */
+
+/** 「光羽」拾取脚本工厂：谢幕原地留光羽 tile，拾取置 per-seq 羽毛旗（L12 彩蛋消费） */
+function makeLightFeatherScript(p: AngelParam): StoryScriptDef {
+  return {
+    id: `script-angel-lightfeather-${p.seq}`,
+    title: `${p.name}的光羽`,
+    entryNodeId: `angel-lightfeather-${p.seq}-entry`,
+    nodes: [
+      {
+        kind: 'dialogue',
+        id: `angel-lightfeather-${p.seq}-entry`,
+        onEnterEffects: [{ kind: 'setFlag', key: `story:feather-${p.seq}`, value: true }],
+        lines: [
+          {
+            speakerId: 'narration',
+            text: `${p.name} 消失的地方，留着一根微微发光的羽——「我们永远在这里等着你」，原来落在了这里。`,
+          },
+        ],
+        next: `angel-lightfeather-${p.seq}-close`,
+      },
+      {
+        kind: 'ending',
+        id: `angel-lightfeather-${p.seq}-close`,
+        endingId: `angel-lightfeather-${p.seq}`,
+        closable: true,
+        lines: [{ speakerId: 'system', text: '光羽化作星尘，轻轻落进了你的口袋。' }],
+      },
+    ],
+  };
+}
+
+export const ANGEL_LIGHTFEATHER_SCRIPTS: readonly StoryScriptDef[] = ANGEL_PARAMS.map(makeLightFeatherScript);
+
+/* ============================ 主城残留羽毛 ================================ */
+
+/** 主城「残留的羽毛」tile 出处（Game.java:48-51 四姐妹出生地的世界坐标） */
+export const HUB_FEATHER_PARAMS: readonly { readonly seq: 1 | 2 | 3 | 4; readonly x: number; readonly y: number }[] = [
+  { seq: 1, x: 1, y: 0 }, // 重化网格 (8,6)：与天使①/光羽① 同格
+  { seq: 2, x: -1, y: 0 }, // 重化网格 hub(6,6)：原始格值 4=箱子出生点（既有行为），
+  // 箱移开后 tile 才可落格触发 —— 新坐标断言对本格豁免（评审⑨）
+  { seq: 3, x: 0, y: 1 }, // 重化网格 (7,7)
+  { seq: 4, x: 0, y: -1 }, // 重化网格 (7,5)
+];
+
+/** 主城「残留的羽毛」per-seq 拾取脚本（原版只把 alive 置 false，世界不留痕迹） */
+export const ANGEL_HUB_FEATHER_SCRIPTS: readonly StoryScriptDef[] = HUB_FEATHER_PARAMS.map(
+  (f): StoryScriptDef => ({
+    id: `script-angel-feather-${f.seq}`,
+    title: '残留的羽毛',
+    entryNodeId: `angel-feather-${f.seq}-entry`,
+    nodes: [
+      {
+        kind: 'dialogue',
+        id: `angel-feather-${f.seq}-entry`,
+        // 主城羽毛拾取同样置 per-seq 羽毛旗（评审⑤：光羽/主城羽毛拾取脚本统一语义）
+        onEnterEffects: [{ kind: 'setFlag', key: `story:feather-${f.seq}`, value: true }],
+        lines: [
+          { speakerId: 'narration', text: '地上只剩一根发着微光的羽毛。' },
+          {
+            speakerId: 'narration',
+            text: '你想起那句「我们永远在这里等着你」——她们没有说谎，只是以另一种方式等着。',
+          },
+        ],
+        next: `angel-feather-${f.seq}-close`,
+      },
+      {
+        kind: 'ending',
+        id: `angel-feather-${f.seq}-close`,
+        endingId: 'angel-feather',
+        closable: true,
+        lines: [{ speakerId: 'system', text: '羽毛化作星尘，轻轻落进了你的口袋。' }],
+      },
+    ],
+  }),
+);
+
 /* ============================ 天使触发规则 ================================ */
 /**
- * 触发锁 = 原版「遇到一位，其余瞬间去世」（Game.java:553-556 等四段）：
- * unlessFlag('story:angels-met') 让其余三位的坐标事件永不触发 ——
- * 且没有任何「穿透到下一位天使」的顺序路径（K15 同源教训的结构性修复）。
+ * 触发锁（评审⑤修法）：
+ *  - 天使 npc 规则 unlessFlag = per-angel 旗（story:angel-met-<seq>）：见过本人
+ *    后她的规则永不复触发；四位各居一关（levelId 不同），互不牵连；
+ *  - 光羽 tile requireFlag = per-angel 旗（谢幕原地留光羽）；
+ *  - 主城残留羽毛 requireFlag = 全局旗 story:angels-met（「至少遇见一位」），
+ *    坐标保持原版世界坐标（主城旧规则，集成层经 gridToWorld 映射）。
+ * 规则表顺序即优先级：npc → 光羽 → 主城羽毛（同格时光羽先命中）。
  */
 
 export const ANGEL_TRIGGER_RULES: readonly TriggerRule[] = [
   ...ANGEL_PARAMS.map((p): TriggerRule => ({
     id: `trigger-angel-${p.seq}`,
     scriptId: `script-angel-${p.seq}`,
-    when: { kind: 'npc', x: p.x, y: p.y, radius: 1 },
-    unlessFlag: 'story:angels-met',
+    when: { kind: 'npc', x: p.x, y: p.y, radius: 1, levelId: p.levelId },
+    unlessFlag: `story:angel-met-${p.seq}`,
   })),
   ...ANGEL_PARAMS.map((p): TriggerRule => ({
-    id: `trigger-angel-${p.seq}-feather`,
-    scriptId: 'script-angel-feather',
-    when: { kind: 'tile', x: p.x, y: p.y },
+    id: `trigger-angel-${p.seq}-lightfeather`,
+    scriptId: `script-angel-lightfeather-${p.seq}`,
+    when: { kind: 'tile', x: p.x, y: p.y, levelId: p.levelId },
+    requireFlag: `story:angel-met-${p.seq}`,
+  })),
+  ...HUB_FEATHER_PARAMS.map((f): TriggerRule => ({
+    id: `trigger-angel-${f.seq}-feather`,
+    scriptId: `script-angel-feather-${f.seq}`,
+    when: { kind: 'tile', x: f.x, y: f.y },
     requireFlag: 'story:angels-met',
   })),
 ];
-
-/** 姐妹坐标上的「残留的羽毛」tile 事件（原版只把 alive 置 false，世界不留痕迹） */
-export const ANGEL_FEATHER_SCRIPT: StoryScriptDef = {
-  id: 'script-angel-feather',
-  title: '残留的羽毛',
-  entryNodeId: 'angel-feather-entry',
-  nodes: [
-    {
-      kind: 'dialogue',
-      id: 'angel-feather-entry',
-      lines: [
-        { speakerId: 'narration', text: '地上只剩一根发着微光的羽毛。' },
-        {
-          speakerId: 'narration',
-          text: '你想起那句「我们永远在这里等着你」——她们没有说谎，只是以另一种方式等着。',
-        },
-      ],
-      next: 'angel-feather-close',
-    },
-    {
-      kind: 'ending',
-      id: 'angel-feather-close',
-      endingId: 'angel-feather',
-      closable: true,
-      lines: [{ speakerId: 'system', text: '羽毛化作星尘，轻轻落进了你的口袋。' }],
-    },
-  ],
-};

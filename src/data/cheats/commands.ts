@@ -124,7 +124,9 @@ export const CHEAT_COMMANDS: readonly CheatCommandDef[] = [
     description: '按需重掷一次阴面 14 张墙皮（S18：无定时器）',
     category: 'cheat',
     entrypoints: ['keyboard', 'click'],
-    hotkey: 'KeyV',
+    // KeyV 让位给「第一/第三人称视角切换」（useKeyActions KeyBinding kind:'view'），
+    // 墙皮重掷改绑 KeyG（KeyG/KeyT 全仓无其他占用，HOTKEY_CHEATS 由本表派生）
+    hotkey: 'KeyG',
     requires: [{ kind: 'cheats-enabled' }],
   },
   {

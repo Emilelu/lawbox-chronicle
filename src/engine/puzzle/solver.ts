@@ -13,7 +13,11 @@
  *   - 求出的解路用 move.resolvePlayerAction 逐格回放验证——solver 与实机
  *     引擎若不一致，离线校验当场爆掉，不会静默放行坏关卡。
  *
- * 范围：solver 只支持标准规则（pushRange=1、无拉箱/斜推/穿行）。
+ * 范围：solver 只支持标准规则（pushRange=1、无拉箱/斜推/穿行），
+ * 并完整建模关卡数据过滤器（MECH-4）：goalOrder 旗位顺序闸（箱子入清单旗格
+ * 必须按「已就位前缀」依次落座，乱序后继直接剪枝）与 oneWay 单向阀
+ * （玩家可达域按阀向有向化、推完落格同样过闸；箱子不受限）——机制进引擎
+ * 解路自动合法，同一 solver 供给 genSolutionSteps 预计算。
  * 主线关卡的硬门槛是「零法则可解」；法则卡只做评分加成（fusionPlan 约定）。
  * Date.now 仅用于离线求解预算（本模块是工具函数，不进游戏状态机）。
  */
@@ -21,7 +25,7 @@
 import type { Dir, GridEntity, Vec2 } from '../../core/types';
 import { DIR_VECTORS } from '../../core/types';
 import { cellAt, isWall } from '../../core/gridMove';
-import { CLIMB_LIMIT, FALL_DROP, isSolved, parseLevelGeometry, type Level3D, type LevelGeometry } from './grid';
+import { CLIMB_LIMIT, FALL_DROP, isSolved, parseLevelGeometry, playerMayEnter, type Level3D, type LevelGeometry } from './grid';
 import { DEFAULT_PUZZLE_RULE_SET, type PuzzleRuleSet } from './rules';
 import { computePushDistanceMap } from './deadlock';
 import { resolvePlayerAction, type TurnContext } from './move';
@@ -225,6 +229,16 @@ export function solveGeometry(
     if (ai >= 0 && ai < N) passable[ai] = 0;
   }
 
+  // ---- MECH-4 数据过滤器预计算（与 move.ts 同一语义）----
+  // 单向阀：格索引 → 允许进入的方向；玩家可达域与推完落格都过此闸（箱不受限）
+  const oneWayAllow = new Map<number, Dir>();
+  for (const gate of geometry.oneWay) {
+    if (gate.cell.x < 0 || gate.cell.y < 0 || gate.cell.x >= W || gate.cell.y >= H) continue;
+    oneWayAllow.set(idx(gate.cell.x, gate.cell.y), gate.allow);
+  }
+  // 旗位顺序闸：清单旗格的格索引；箱子入格必须与「已就位前缀」对位（乱序后继剪枝）
+  const orderCells = geometry.goalOrder.map((c) => idx(c.x, c.y));
+
   // 推距图（与 deadlock 同源）：∞ = 死角格；同时充当 A* 启发式
   const distMap = computePushDistanceMap(geometry);
 
@@ -242,7 +256,8 @@ export function solveGeometry(
   let stampGen = 0;
 
   /**
-   * 玩家可达域：箱子/敌人视为障碍；走位高度语义与实机一致（爬升 ≤1，下降不限）。
+   * 玩家可达域：箱子/敌人视为障碍；走位高度语义与实机一致（爬升 ≤1，下降不限）；
+   * 进入邻格受单向阀约束（MECH-4：阀格只允许 allow 方向进入，有向边）。
    * 返回本次代际号——reachStamp[i] === gen 即格 i 可达。
    */
   const reach = (blocked: readonly number[], from: number): { gen: number; root: number } => {
@@ -266,6 +281,8 @@ export function solveGeometry(
         if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
         const ni = idx(nx, ny);
         if (reachStamp[ni] === gen || blockStamp[ni] === gen || passable[ni] === 0) continue;
+        const allow = oneWayAllow.get(ni);
+        if (allow !== undefined && allow !== dir) continue; // 单向阀逆向/侧向进入被拒
         if ((heightArr[ni] ?? 0) - (heightArr[cur] ?? 0) > CLIMB_LIMIT) continue;
         reachStamp[ni] = gen;
         bfsQueue[tail++] = ni;
@@ -385,6 +402,8 @@ export function solveGeometry(
           if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue;
           const si = idx(sx, sy);
           if (curVisited[si] === 0) continue; // 玩家够不到发力位
+          const landAllow = oneWayAllow.get(ci);
+          if (landAllow !== undefined && landAllow !== dir) continue; // 推完玩家落箱原格，须过单向阀
           const tx = cx + d.x;
           const ty = cy + d.y;
           if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
@@ -401,6 +420,21 @@ export function solveGeometry(
           // 平推入敌人 → 链超限（pushRange=1，箱后不能再跟敌）；箱落则压碎移除敌人
           if (!isFall && targetEnemy) continue;
           if (!Number.isFinite(distMap[ti] ?? Number.POSITIVE_INFINITY) && !goalSet.has(ti)) continue; // 静态死角
+
+          // 旗位顺序闸（MECH-4）：入清单旗格必须对位「已就位前缀」——
+          // 前缀由动作前箱位派生（含被推箱 ci：沿序推进亦合法），乱序后继直接剪枝
+          if (orderCells.length > 0) {
+            const at = orderCells.indexOf(ti);
+            if (at !== -1) {
+              let prefix = 0;
+              for (;;) {
+                const oc = orderCells[prefix];
+                if (oc === undefined || !rec.chests.includes(oc)) break;
+                prefix += 1;
+              }
+              if (at !== prefix) continue;
+            }
+          }
 
           const nextEnemies = isFall && targetEnemy ? rec.enemies.filter((e) => e !== ti) : rec.enemies;
           const nextChests = rec.chests.filter((c) => c !== ci).concat(ti).sort((a, b) => a - b);
@@ -434,6 +468,8 @@ export function solveGeometry(
           if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue;
           const si = idx(sx, sy);
           if (curVisited[si] === 0) continue;
+          const landAllow = oneWayAllow.get(ei);
+          if (landAllow !== undefined && landAllow !== dir) continue; // 推完玩家落敌原格，须过单向阀
           const tx = ex + d.x;
           const ty = ey + d.y;
           if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
@@ -607,6 +643,8 @@ function walkPath(
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const nk = key(nx, ny);
       if (seen.has(nk) || blockedAt(nx, ny)) continue;
+      // 单向阀与实机同闸：阀格只允许 allow 方向进入（回放/演示走位不会规划出逆行步）
+      if (!playerMayEnter(geometry, { x: nx, y: ny }, dir)) continue;
       const curH = geometry.heights[cy]?.[cx] ?? 0;
       const nextH = geometry.heights[ny]?.[nx] ?? 0;
       if (nextH - curH > CLIMB_LIMIT) continue;

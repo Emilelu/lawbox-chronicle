@@ -1633,40 +1633,6 @@ export const PRECOMPUTED_SOLUTIONS: Readonly<Record<string, readonly Precomputed
   ],
   "level-lb-05": [
     {
-      "dir": "right",
-      "stand": {
-        "x": 2,
-        "y": 2
-      },
-      "from": {
-        "x": 3,
-        "y": 2
-      },
-      "to": {
-        "x": 4,
-        "y": 2
-      },
-      "kind": "chest",
-      "isFall": false
-    },
-    {
-      "dir": "right",
-      "stand": {
-        "x": 3,
-        "y": 2
-      },
-      "from": {
-        "x": 4,
-        "y": 2
-      },
-      "to": {
-        "x": 5,
-        "y": 2
-      },
-      "kind": "chest",
-      "isFall": false
-    },
-    {
       "dir": "down",
       "stand": {
         "x": 5,
@@ -1712,6 +1678,57 @@ export const PRECOMPUTED_SOLUTIONS: Readonly<Record<string, readonly Precomputed
       },
       "to": {
         "x": 5,
+        "y": 5
+      },
+      "kind": "chest",
+      "isFall": false
+    },
+    {
+      "dir": "down",
+      "stand": {
+        "x": 3,
+        "y": 1
+      },
+      "from": {
+        "x": 3,
+        "y": 2
+      },
+      "to": {
+        "x": 3,
+        "y": 3
+      },
+      "kind": "chest",
+      "isFall": false
+    },
+    {
+      "dir": "down",
+      "stand": {
+        "x": 3,
+        "y": 2
+      },
+      "from": {
+        "x": 3,
+        "y": 3
+      },
+      "to": {
+        "x": 3,
+        "y": 4
+      },
+      "kind": "chest",
+      "isFall": false
+    },
+    {
+      "dir": "down",
+      "stand": {
+        "x": 3,
+        "y": 3
+      },
+      "from": {
+        "x": 3,
+        "y": 4
+      },
+      "to": {
+        "x": 3,
         "y": 5
       },
       "kind": "chest",

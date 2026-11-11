@@ -227,6 +227,88 @@ describe('solver —— 敌人纳入求解投影（R1）', () => {
   });
 });
 
+describe('solver —— MECH-4 数据过滤器（goalOrder / oneWay 与实机同一语义）', () => {
+  it('goalOrder 顺序闸约束 solver：解路落座次序必须跟随清单（两种声明各验一次）', () => {
+    // 两箱两龛，任一箱都能到任一龛——solver 落座次序只能由 goalOrder 决定
+    const rows = [
+      [1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 2, 0, 0, 0, 0, 0, 1],
+      [1, 0, 0, 4, 0, 4, 0, 1],
+      [1, 0, 3, 3, 0, 0, 0, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1],
+    ];
+    const seatOrderOf = (g: ReturnType<typeof geom>, r: ReturnType<typeof solveGeometry>): string[] => {
+      const goalKeys = new Set(g.goals.map((gp) => `${gp.x},${gp.y}`));
+      return r.steps.filter((s) => s.kind === 'chest' && goalKeys.has(`${s.to.x},${s.to.y}`)).map((s) => `${s.to.x},${s.to.y}`);
+    };
+
+    const gWest = geom(rows, { goalOrder: [{ x: 2, y: 3 }, { x: 3, y: 3 }] });
+    const westFirst = solveGeometry(gWest);
+    expect(westFirst.solvable).toBe(true);
+    expect(westFirst.optimal).toBe(true);
+    expect(seatOrderOf(gWest, westFirst)).toEqual(['2,3', '3,3']); // 西龛先落座，乱序后继被剪枝
+    expect(replaySolution(gWest, westFirst.steps).ok).toBe(true);
+
+    const gEast = geom(rows, { goalOrder: [{ x: 3, y: 3 }, { x: 2, y: 3 }] });
+    const eastFirst = solveGeometry(gEast);
+    expect(eastFirst.solvable).toBe(true);
+    expect(seatOrderOf(gEast, eastFirst)).toEqual(['3,3', '2,3']); // 同一局面，声明反转 → 落座反转
+    expect(replaySolution(gEast, eastFirst.steps).ok).toBe(true);
+  });
+
+  it('oneWay 单向阀约束 solver 可达域：阀向封死发力位 → 不可解；阀向放行 → 照常求解', () => {
+    const rows = [
+      [1, 1, 1, 1, 1],
+      [1, 2, 0, 0, 1],
+      [1, 0, 0, 4, 1],
+      [1, 0, 0, 3, 1],
+      [1, 1, 1, 1, 1],
+    ];
+    // 无阀：玩家自西向东走到 (3,1) 下推，minPushes=1
+    const plain = solveGeometry(geom(rows));
+    expect(plain.solvable).toBe(true);
+    expect(plain.minPushes).toBe(1);
+    expect(replaySolution(geom(rows), plain.steps).ok).toBe(true);
+    // 阀 allow='right'：发力位 (3,1) 自西向东进入仍放行 → 解不变
+    const pass = solveGeometry(geom(rows, { oneWay: [{ cell: { x: 3, y: 1 }, allow: 'right' }] }));
+    expect(pass.solvable).toBe(true);
+    expect(pass.minPushes).toBe(1);
+    expect(replaySolution(geom(rows, { oneWay: [{ cell: { x: 3, y: 1 }, allow: 'right' }] }), pass.steps).ok).toBe(true);
+    // 阀 allow='left'：唯一发力位 (3,1) 只能自西向东进入 → 逆向封死，全图无可解
+    const blocked = solveGeometry(geom(rows, { oneWay: [{ cell: { x: 3, y: 1 }, allow: 'left' }] }));
+    expect(blocked.solvable).toBe(false);
+    expect(blocked.timeout).toBe(false);
+  });
+
+  it('主线数据契约：lb-10 goalOrder 西→中→东、lb-11 四向单向阀，解析透传给引擎', () => {
+    const lb10 = AREA_LEVELS.find((l) => l.id === 'level-lb-10');
+    expect(lb10).toBeDefined();
+    if (lb10 === undefined) return;
+    const p10 = parseLevelGeometry(lb10);
+    expect(p10.ok).toBe(true);
+    if (!p10.ok) return;
+    expect(p10.geometry.goalOrder).toEqual([{ x: 3, y: 6 }, { x: 5, y: 6 }, { x: 8, y: 6 }]);
+    // 清单三格必须都是本关旗位（数据护栏：顺序闸只应钉在真实旗位上）
+    const goalKeys10 = new Set(p10.geometry.goals.map((gp) => `${gp.x},${gp.y}`));
+    for (const cell of p10.geometry.goalOrder) {
+      expect(goalKeys10.has(`${cell.x},${cell.y}`), `goalOrder (${cell.x},${cell.y}) 应为旗位`).toBe(true);
+    }
+
+    const lb11 = AREA_LEVELS.find((l) => l.id === 'level-lb-11');
+    expect(lb11).toBeDefined();
+    if (lb11 === undefined) return;
+    const p11 = parseLevelGeometry(lb11);
+    expect(p11.ok).toBe(true);
+    if (!p11.ok) return;
+    expect(p11.geometry.oneWay).toEqual([
+      { cell: { x: 4, y: 2 }, allow: 'right' },
+      { cell: { x: 8, y: 2 }, allow: 'left' },
+      { cell: { x: 4, y: 5 }, allow: 'right' },
+      { cell: { x: 8, y: 5 }, allow: 'left' },
+    ]);
+  });
+});
+
 describe('solver —— 主线 12 关离线校验（ST6 硬门槛）', () => {
   it('关卡数据形状：LevelDef schema + heights/shadeGrid 与网格同尺寸', () => {
     for (const lv of AREA_LEVELS) {

@@ -1,12 +1,13 @@
 /**
  * puzzle/move —— 移动/推箱/撤销/死角/法则单测。
  * 重点回归：S3（越界守卫）、S4（旗格可通行可推离）、S1（幻影箱子/不可变状态）、
- * S17（穿行充能每段重置语义）、立体高度层（爬升/箱落）、法则卡应用点。
+ * S17（穿行充能每段重置语义）、立体高度层（爬升/箱落）、法则卡应用点、
+ * MECH-4 数据过滤器（goalOrder 旗位顺序闸 / oneWay 单向阀：过滤器而非新物理）。
  */
 
 import { describe, expect, it } from 'vitest';
 import type { GridEntity, TerrainCell } from '../../../core/types';
-import { isSolved, parseLevelGeometry, type Level3D } from '../grid';
+import { goalOrderPrefix, isSolved, parseLevelGeometry, playerMayEnter, type Level3D } from '../grid';
 import { applyPuzzleMove, createPuzzleState, grantPhaseCharges, HISTORY_LIMIT, type PuzzleState } from '../move';
 import { undoPuzzle, canUndo, historyDepth } from '../undo';
 import { checkDeadlock, computeDeadSquares } from '../deadlock';
@@ -478,6 +479,244 @@ describe('move —— 阴阳位面', () => {
     s = expectOkOrThrow(applyPuzzleMove(s, rules, { type: 'move', dir: 'left' }));
     expect(s.entities.find((e) => e.id === 'chest-1')).toMatchObject({ x: 1, y: 2 });
     expect(isSolved(s.geometry, s.entities)).toBe(true);
+  });
+});
+
+/* ====================== MECH-4 数据过滤器（过滤器而非新物理） ================= */
+
+describe('move —— 旗位顺序闸（MECH-4 goalOrder）', () => {
+  // 三龛一字排开：goalOrder 要求 (1,3)→(3,3)→(5,3) 西→中→东依次落座
+  const g = geom(
+    [
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 2, 0, 0, 0, 0, 1],
+      [1, 4, 0, 4, 0, 4, 1],
+      [1, 3, 0, 3, 0, 3, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+    ],
+    { goalOrder: [{ x: 1, y: 3 }, { x: 3, y: 3 }, { x: 5, y: 3 }] },
+  );
+  const rules = DEFAULT_PUZZLE_RULE_SET;
+
+  it('乱序拒：首推直入清单第 2 龛 → order-locked，局面原样', () => {
+    const s = createPuzzleState(g, rules);
+    // 玩家走到中龛上方 (3,1)，向下推箱：落格 (3,3) 是 goalOrder[1]，前缀 0 → 拒
+    let moved = s;
+    for (const dir of ['right', 'right'] as const) {
+      moved = expectOkOrThrow(applyPuzzleMove(moved, rules, { type: 'move', dir }));
+    }
+    const r = applyPuzzleMove(moved, rules, { type: 'move', dir: 'down' });
+    expect(r).toMatchObject({ ok: false, reason: 'order-locked' });
+    // 纯函数：被拒动作不产生任何位移
+    expect((r as { ok: false; state: PuzzleState }).state.entities).toEqual(moved.entities);
+    expect(goalOrderPrefix(g, moved.entities)).toBe(0);
+  });
+
+  it('顺序过：西→中→东依次落座；前缀随落座推进，终局达标', () => {
+    let s = createPuzzleState(g, rules);
+    // 西龛：玩家 (1,1) 下推，箱 (1,2)→(1,3)
+    s = expectOkOrThrow(applyPuzzleMove(s, rules, { type: 'move', dir: 'down' }));
+    expect(goalOrderPrefix(g, s.entities)).toBe(1);
+    // 中龛：绕回 (3,1) 下推，箱 (3,2)→(3,3)
+    for (const dir of ['up', 'right', 'right'] as const) {
+      s = expectOkOrThrow(applyPuzzleMove(s, rules, { type: 'move', dir }));
+    }
+    s = expectOkOrThrow(applyPuzzleMove(s, rules, { type: 'move', dir: 'down' }));
+    expect(goalOrderPrefix(g, s.entities)).toBe(2);
+    // 东龛：绕到 (5,1) 下推，箱 (5,2)→(5,3) → 三龛齐座
+    for (const dir of ['up', 'right', 'right'] as const) {
+      s = expectOkOrThrow(applyPuzzleMove(s, rules, { type: 'move', dir }));
+    }
+    s = expectOkOrThrow(applyPuzzleMove(s, rules, { type: 'move', dir: 'down' }));
+    expect(goalOrderPrefix(g, s.entities)).toBe(3);
+    expect(isSolved(g, s.entities)).toBe(true);
+  });
+
+  it('清单外旗格不受理序约束；撤销后语义由箱位自然回滚（无状态残留）', () => {
+    // goalOrder 只约束 (1,3)；(3,3) 在清单外 → 前缀 0 时也可自由落座
+    const gFree = geom(
+      [
+        [1, 1, 1, 1, 1],
+        [1, 2, 0, 0, 1],
+        [1, 4, 0, 4, 1],
+        [1, 3, 0, 3, 1],
+        [1, 1, 1, 1, 1],
+      ],
+      { goalOrder: [{ x: 1, y: 3 }] },
+    );
+    let s = createPuzzleState(gFree, rules);
+    // 先落清单外龛 (3,3)
+    for (const dir of ['right', 'right'] as const) {
+      s = expectOkOrThrow(applyPuzzleMove(s, rules, { type: 'move', dir }));
+    }
+    s = expectOkOrThrow(applyPuzzleMove(s, rules, { type: 'move', dir: 'down' }));
+    expect(s.entities.find((e) => e.id === 'chest-2')).toMatchObject({ x: 3, y: 3 });
+    // 撤销把箱位原样回滚；前缀由箱位派生 → 顺序语义无残留（不用 Z 也改不坏）
+    const undone = undoPuzzle(s);
+    expect(undone.entities.find((e) => e.id === 'chest-2')).toMatchObject({ x: 3, y: 2 });
+    // 落清单内龛 (1,3)，再绕回 (3,1) 把 chest-2 下推回清单外龛 → 达标
+    let back = undone;
+    for (const dir of ['left', 'left'] as const) {
+      back = expectOkOrThrow(applyPuzzleMove(back, rules, { type: 'move', dir }));
+    }
+    back = expectOkOrThrow(applyPuzzleMove(back, rules, { type: 'move', dir: 'down' }));
+    expect(back.entities.find((e) => e.id === 'chest-1')).toMatchObject({ x: 1, y: 3 });
+    for (const dir of ['up', 'right', 'right', 'down'] as const) {
+      back = expectOkOrThrow(applyPuzzleMove(back, rules, { type: 'move', dir }));
+    }
+    expect(back.entities.find((e) => e.id === 'chest-2')).toMatchObject({ x: 3, y: 3 });
+    expect(isSolved(gFree, back.entities)).toBe(true);
+  });
+
+  it('拉箱/箱落/斜推入清单旗格同样过闸（法则卡绕不开顺序谜题）', () => {
+    // 拉箱：箱 (1,1)、玩家 (2,1)，pull left → 箱入玩家原格 (2,1)=goalOrder[1] → 拒
+    const pullRows = [
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 4, 2, 0, 3, 0, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+    ];
+    const pullGrid = geom(pullRows, { goalOrder: [{ x: 4, y: 1 }, { x: 2, y: 1 }] });
+    const pullPatched = buildPuzzleRuleSet(rules, ['mirror-pull']);
+    expectOk(pullPatched);
+    const pullRules = (pullPatched as { ok: true; ruleSet: typeof rules }).ruleSet;
+    const sPull = createPuzzleState(pullGrid, pullRules);
+    expect(applyPuzzleMove(sPull, pullRules, { type: 'pull', dir: 'left' })).toMatchObject({
+      ok: false,
+      reason: 'order-locked',
+    });
+    // 同一局面去掉 goalOrder：拉箱自由（过滤器只随数据生效）
+    const pullPlainParsed = parseLevelGeometry(def('t-pull-plain', pullRows));
+    expectOk(pullPlainParsed);
+    if (!pullPlainParsed.ok) return;
+    const rPull = applyPuzzleMove(createPuzzleState(pullPlainParsed.geometry, pullRules), pullRules, { type: 'pull', dir: 'left' });
+    expectOk(rPull);
+    expect((rPull as { ok: true; state: PuzzleState }).state.entities.find((e) => e.id === 'chest-1')).toMatchObject({ x: 2, y: 1 });
+
+    // 箱落：箱 (3,1) 从 h2 推向 h0 旗位 (4,1)=goalOrder[1]（前缀 0）→ 拒
+    const fallRows = [
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 0, 2, 4, 3, 0, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+    ];
+    const fallHeights = [
+      [0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 2, 2, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0],
+    ];
+    const fallGrid = geom(fallRows, {
+      heights: fallHeights,
+      goalOrder: [{ x: 5, y: 1 }, { x: 4, y: 1 }],
+    });
+    const sFall = createPuzzleState(fallGrid, rules);
+    expect(applyPuzzleMove(sFall, rules, { type: 'move', dir: 'right' })).toMatchObject({
+      ok: false,
+      reason: 'order-locked',
+    });
+    const fallPlainParsed = parseLevelGeometry(def('t-fall-plain', fallRows, { heights: fallHeights }));
+    expectOk(fallPlainParsed);
+    if (!fallPlainParsed.ok) return;
+    const rFall = applyPuzzleMove(createPuzzleState(fallPlainParsed.geometry, rules), rules, { type: 'move', dir: 'right' });
+    expectOk(rFall);
+    expect((rFall as { ok: true; state: PuzzleState }).state.entities.find((e) => e.id === 'chest-1')).toMatchObject({ x: 4, y: 1 });
+
+    // 斜推：箱 (2,2) 斜推入 (3,3)=goalOrder[1]（前缀 0）→ 拒
+    const diagRows = [
+      [1, 1, 1, 1, 1, 1],
+      [1, 2, 0, 0, 0, 1],
+      [1, 0, 4, 0, 0, 1],
+      [1, 0, 0, 3, 0, 1],
+      [1, 1, 1, 1, 1, 1],
+    ];
+    const diagPatched = buildPuzzleRuleSet(rules, ['diagonal-push']);
+    expectOk(diagPatched);
+    const diagRules = (diagPatched as { ok: true; ruleSet: typeof rules }).ruleSet;
+    const diagGrid = geom(diagRows, { goalOrder: [{ x: 1, y: 3 }, { x: 3, y: 3 }] });
+    const sDiag = createPuzzleState(diagGrid, diagRules);
+    expect(applyPuzzleMove(sDiag, diagRules, { type: 'diagonal', diag: 'downright' })).toMatchObject({
+      ok: false,
+      reason: 'order-locked',
+    });
+    const diagPlainParsed = parseLevelGeometry(def('t-diag-plain', diagRows));
+    expectOk(diagPlainParsed);
+    if (!diagPlainParsed.ok) return;
+    const rDiag = applyPuzzleMove(createPuzzleState(diagPlainParsed.geometry, diagRules), diagRules, { type: 'diagonal', diag: 'downright' });
+    expectOk(rDiag);
+    expect((rDiag as { ok: true; state: PuzzleState }).state.entities.find((e) => e.id === 'chest-1')).toMatchObject({ x: 3, y: 3 });
+  });
+});
+
+describe('move —— 单向阀（MECH-4 oneWay：玩家位移过滤、箱不受限）', () => {
+  // 阀格 (3,1) 仅允许自西向东（right）进入；箱子放在 (2,2) 不挡阀下格
+  const g = geom(
+    [
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 2, 0, 0, 0, 0, 1],
+      [1, 0, 4, 0, 0, 0, 1],
+      [1, 0, 0, 0, 0, 3, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+    ],
+    { oneWay: [{ cell: { x: 3, y: 1 }, allow: 'right' }] },
+  );
+  const rules = DEFAULT_PUZZLE_RULE_SET;
+
+  it('顺过：沿箭头方向穿行阀格放行', () => {
+    const s = createPuzzleState(g, rules);
+    let moved = s;
+    for (const dir of ['right', 'right', 'right'] as const) {
+      moved = expectOkOrThrow(applyPuzzleMove(moved, rules, { type: 'move', dir }));
+    }
+    expect(moved.entities.find((e) => e.id === 'player-1')).toMatchObject({ x: 4, y: 1 });
+    expect(playerMayEnter(g, { x: 3, y: 1 }, 'right')).toBe(true);
+  });
+
+  it('逆拒/侧拒：逆向与垂直方向进入阀格 → one-way，位置不变', () => {
+    let s = createPuzzleState(g, rules);
+    for (const dir of ['right', 'right', 'right'] as const) {
+      s = expectOkOrThrow(applyPuzzleMove(s, rules, { type: 'move', dir }));
+    }
+    // 逆向：自东向西再进阀格被拒
+    const back = applyPuzzleMove(s, rules, { type: 'move', dir: 'left' });
+    expect(back).toMatchObject({ ok: false, reason: 'one-way' });
+    // 侧拒：从 (3,2) 向上进入阀格同样被拒
+    let side = s;
+    for (const dir of ['down', 'left'] as const) {
+      side = expectOkOrThrow(applyPuzzleMove(side, rules, { type: 'move', dir }));
+    }
+    expect(side.entities.find((e) => e.id === 'player-1')).toMatchObject({ x: 3, y: 2 });
+    const up = applyPuzzleMove(side, rules, { type: 'move', dir: 'up' });
+    expect(up).toMatchObject({ ok: false, reason: 'one-way' });
+    expect(playerMayEnter(g, { x: 3, y: 1 }, 'up')).toBe(false);
+    expect(playerMayEnter(g, { x: 3, y: 1 }, 'left')).toBe(false);
+  });
+
+  it('箱不受限：箱可被推上/推离/停在阀格；玩家跟进才按阀向过滤', () => {
+    // 箱 (3,2) 在阀格正下方：玩家绕到 (3,3) 向上把箱「逆行」推上阀格 → 自由
+    const gChest = geom(
+      [
+        [1, 1, 1, 1, 1, 1, 1],
+        [1, 2, 0, 0, 0, 0, 1],
+        [1, 0, 0, 4, 0, 0, 1],
+        [1, 0, 0, 0, 0, 3, 1],
+        [1, 1, 1, 1, 1, 1, 1],
+      ],
+      { oneWay: [{ cell: { x: 3, y: 1 }, allow: 'right' }] },
+    );
+    let moved = createPuzzleState(gChest, rules);
+    for (const dir of ['down', 'down', 'right', 'right'] as const) {
+      moved = expectOkOrThrow(applyPuzzleMove(moved, rules, { type: 'move', dir }));
+    }
+    expect(moved.entities.find((e) => e.id === 'player-1')).toMatchObject({ x: 3, y: 3 });
+    moved = expectOkOrThrow(applyPuzzleMove(moved, rules, { type: 'move', dir: 'up' }));
+    expect(moved.entities.find((e) => e.id === 'chest-1')).toMatchObject({ x: 3, y: 1 }); // 箱停在阀格
+    expect(moved.entities.find((e) => e.id === 'player-1')).toMatchObject({ x: 3, y: 2 });
+    // 玩家绕到阀格西侧沿箭头推箱离阀：箱出阀自由，玩家跟进方向与阀向一致
+    for (const dir of ['down', 'left', 'up', 'up'] as const) {
+      moved = expectOkOrThrow(applyPuzzleMove(moved, rules, { type: 'move', dir }));
+    }
+    expect(moved.entities.find((e) => e.id === 'player-1')).toMatchObject({ x: 2, y: 1 });
+    moved = expectOkOrThrow(applyPuzzleMove(moved, rules, { type: 'move', dir: 'right' }));
+    expect(moved.entities.find((e) => e.id === 'chest-1')).toMatchObject({ x: 4, y: 1 });
+    expect(moved.entities.find((e) => e.id === 'player-1')).toMatchObject({ x: 3, y: 1 }); // 玩家自西向东进阀格 ✓
   });
 });
 

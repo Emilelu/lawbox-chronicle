@@ -24,9 +24,11 @@ import {
   DIAG_VECTORS,
   canTogglePlane,
   effectiveTerrain,
+  goalOrderPrefix,
   heightAt,
   isSolved,
   occupiedBy,
+  playerMayEnter,
   playerOnAnchor,
   type DiagDir,
   type LevelGeometry,
@@ -156,7 +158,9 @@ export type PuzzleBlockReason =
   | 'landed-occupied' // 箱落点/穿行落点被不可压碎实体占据
   | 'plane-locked' // 位面未解锁（缺 plane-shift 补丁）
   | 'no-anchor' // 不在位面锚点（无位面之眼）
-  | 'embedded'; // 切位面会使实体嵌入墙
+  | 'embedded' // 切位面会使实体嵌入墙
+  | 'one-way' // 单向阀：玩家逆向进入被拒（箱子不受限）
+  | 'order-locked'; // 旗位顺序闸：箱子乱序推入清单旗格被拒
 
 export type PuzzleMoveResult =
   | { readonly ok: true; readonly state: PuzzleState; readonly fx: readonly PuzzleFx[] }
@@ -290,6 +294,10 @@ function resolveMoveOrPush(
   const targetCell = cellAt(terrain, target.x, target.y);
   if (!targetCell.ok) return { ok: false, reason: 'out-of-bounds' };
 
+  // 单向阀资格闸（MECH-4）：玩家进格按阀向过滤（普通移动与推箱跟进同闸；
+  // 箱子的落格不在本闸范围——箱不受限）
+  if (!playerMayEnter(geometry, target, dir)) return { ok: false, reason: 'one-way' };
+
   const hPlayer = heightAt(geometry.heights, playerPos.x, playerPos.y) ?? 0;
   const hTarget = heightAt(geometry.heights, target.x, target.y) ?? 0;
   if (hTarget - hPlayer > CLIMB_LIMIT) return { ok: false, reason: 'cliff' };
@@ -318,6 +326,11 @@ function resolveMoveOrPush(
   const before = [playerAt(player, playerPos), ...others];
   const result = resolvePush({ grid: terrain, entities: before, origin: player.id, dir, rules: pushRules });
   if (result.kind === 'blocked') return { ok: false, reason: result.reason };
+
+  // 旗位顺序闸（MECH-4）：本推中有箱子落入清单旗格时按链序逐个校验资格
+  // （动作前箱位派生已就位前缀；连锁时按 moved 序即最近箱先入格结算）
+  const movedEntities = result.kind === 'move' ? [] : result.moved;
+  if (firstOrderViolation(geometry, others, movedEntities)) return { ok: false, reason: 'order-locked' };
 
   // 高度后验：位移实体爬升不得超过 CLIMB_LIMIT；箱体下降不得超过 1 格
   //（单箱大落差已在上面分流为箱落；连锁推不触发箱落——保守语义）
@@ -364,6 +377,11 @@ function resolveFallPush(
   // 就位箱（旗格上）被推落 → 需「箱可推离」法则；平推离旗格不受此限（S4）
   if (isSeatedOnGoal(geometry, chest) && !canDropSeatedChest(ctx.rules)) {
     return { ok: false, reason: 'goal-locked' };
+  }
+
+  // 旗位顺序闸：坠落也是「箱入格」，落入清单旗格同样受理序约束
+  if (firstOrderViolation(geometry, others, [{ ...chest, x: landing.x, y: landing.y }])) {
+    return { ok: false, reason: 'order-locked' };
   }
 
   const crushed = landOccupant !== undefined ? [landOccupant.id] : [];
@@ -450,6 +468,8 @@ function resolvePhase(
   const landingCell = cellAt(terrain, landing.x, landing.y);
   if (!landingCell.ok) return { ok: false, reason: 'out-of-bounds' };
   if (isWall(landingCell.value)) return { ok: false, reason: 'wall' };
+  // 单向阀：穿行落格按阀向过滤（玩家位移过滤覆盖一切进格路径）
+  if (!playerMayEnter(geometry, landing, dir)) return { ok: false, reason: 'one-way' };
   if (occupiedBy(others, landing.x, landing.y) !== undefined) return { ok: false, reason: 'landed-occupied' };
   const hLanding = heightAt(geometry.heights, landing.x, landing.y) ?? 0;
   if (hLanding - hPlayer > CLIMB_LIMIT) return { ok: false, reason: 'cliff' };
@@ -487,6 +507,8 @@ function resolvePull(
   const backCell = cellAt(terrain, back.x, back.y);
   if (!backCell.ok) return { ok: false, reason: 'out-of-bounds' };
   if (isWall(backCell.value)) return { ok: false, reason: 'wall' };
+  // 单向阀：后退位移方向 = pull 方向的反向，进格按阀向过滤
+  if (!playerMayEnter(geometry, back, oppositeDir(dir))) return { ok: false, reason: 'one-way' };
   if (occupiedBy(others, back.x, back.y) !== undefined) return { ok: false, reason: 'immovable' };
   const hPlayer = heightAt(geometry.heights, playerPos.x, playerPos.y) ?? 0;
   const hBack = heightAt(geometry.heights, back.x, back.y) ?? 0;
@@ -499,6 +521,10 @@ function resolvePull(
   const nextPlayer: GridEntity = { ...player, x: back.x, y: back.y };
   const nextChest: GridEntity = { ...chest, x: playerPos.x, y: playerPos.y };
   const kept = others.filter((e) => e.id !== chest.id);
+
+  // 旗位顺序闸：拉箱入格同样受理序约束（法则卡不能绕开顺序谜题）
+  if (firstOrderViolation(geometry, others, [nextChest])) return { ok: false, reason: 'order-locked' };
+
   return {
     ok: true,
     entities: [nextPlayer, nextChest, ...kept],
@@ -550,9 +576,18 @@ function resolveDiagonal(
   // 玩家进到箱子原格
   if (hChest - hPlayer > CLIMB_LIMIT) return { ok: false, reason: 'cliff' };
 
+  // 单向阀：阀向皆为正交方向，斜向进入阀格不可能匹配 → 一律拒绝（位移过滤语义）
+  if (geometry.oneWay.some((gt) => gt.cell.x === chestPos.x && gt.cell.y === chestPos.y)) {
+    return { ok: false, reason: 'one-way' };
+  }
+
   const nextPlayer: GridEntity = { ...player, x: chestPos.x, y: chestPos.y };
   const nextChest: GridEntity = { ...chest, x: chestTarget.x, y: chestTarget.y };
   const kept = others.filter((e) => e.id !== chest.id);
+
+  // 旗位顺序闸：斜推入格同样受理序约束
+  if (firstOrderViolation(geometry, others, [nextChest])) return { ok: false, reason: 'order-locked' };
+
   return {
     ok: true,
     entities: [nextPlayer, nextChest, ...kept],
@@ -597,6 +632,36 @@ function applyPlaneShift(state: PuzzleState, rules: PuzzleRuleSet, player: GridE
 }
 
 /* ================================ 工具 ==================================== */
+
+/** pull 的后退位移方向 = pull 方向的反向（单向阀按实际位移方向过滤） */
+function oppositeDir(dir: Dir): Dir {
+  return dir === 'up' ? 'down' : dir === 'down' ? 'up' : dir === 'left' ? 'right' : 'left';
+}
+
+/**
+ * 旗位顺序闸校验（MECH-4 goalOrder 过滤器）。
+ * 动作中被移动的箱子若有落入清单旗格者，按移动序（连锁时最近箱先入格）
+ * 逐个对照「动作前箱位派生的已就位前缀」：只允许恰好依次落入 prefix、
+ * prefix+1、… 各格，任何越序者判违规（整个动作拒绝，reason='order-locked'）。
+ * 前缀由 entitiesBefore 的箱位派生（grid.goalOrderPrefix）——不进状态机字段，
+ * 撤销/纯函数语义天然一致；清单外旗格不受理序约束。
+ */
+function firstOrderViolation(
+  geometry: LevelGeometry,
+  entitiesBefore: readonly GridEntity[],
+  moved: readonly GridEntity[],
+): boolean {
+  if (geometry.goalOrder.length === 0) return false;
+  let prefix = goalOrderPrefix(geometry, entitiesBefore);
+  for (const e of moved) {
+    if (e.kind !== 'chest') continue;
+    const at = geometry.goalOrder.findIndex((c) => c.x === e.x && c.y === e.y);
+    if (at === -1) continue;
+    if (at !== prefix) return true;
+    prefix += 1;
+  }
+  return false;
+}
 
 function playerAt(player: GridEntity, pos: Vec2): GridEntity {
   return { ...player, x: pos.x, y: pos.y };

@@ -8,6 +8,10 @@
  *  - 滑动/溶解/粒子等有限时长动画在未收敛帧内自行 invalidate，结束即停。
  * 场景内容：灯光 + 指数雾 + 渐变天空穹（零纹理，1 draw call）、GridArena
  * （体素竞技场）、玩家/石板/NPC/门实体、Vfx 粒子层、CameraRig 运镜。
+ * THEME-3 逐关主题：主题/灯光/雾经 levelThemes.resolveLevelTheme(levelId, yin)
+ * 随关生效；逐关 Sparkles 环境粒子（demand 下静置冻结）；L3/L9 阴面玩家提灯；
+ * FP 档 explore/dialogue 隐藏玩家化身（订阅 CAM-1 viewStore）；CameraRig 按
+ * cameraMode 分档夹紧；explore 回正按 viewPreference 分支。
  * 本组件只读 selector / 只经 bus 消费演出事件；地形与海拔经 selector 输出
  * （selectPuzzleState.geometry / selectBattleState.formation）消费引擎纯几何
  * 助手（effectiveTerrain/heightOf），不写引擎、不维护第二份地图。
@@ -16,6 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
+import { Sparkles } from '@react-three/drei';
 import type { ShaderMaterial } from 'three';
 import { BackSide, Color, ShaderMaterial as ShaderMaterialClass } from 'three';
 import type { Vec2 } from '../../core/types';
@@ -33,6 +38,7 @@ import {
   type HeightMap,
 } from '../../core/store/gameStore';
 import { selectLevelComplete } from '../../core/store/selectors';
+import { positionalRuleLevelId } from '../../engine/story/triggers';
 import { findEnemy } from '../../data/enemies';
 import { ALL_SCRIPTS, ALL_SPEAKERS, ALL_TRIGGER_RULES } from '../../data/storyScripts';
 import { findLevel } from '../../data/levels';
@@ -46,12 +52,13 @@ import {
   computePose,
   gridCenterWorld,
   heightOf,
-  planeTheme,
   type CameraMode,
   type CameraPose,
   type PlaneTheme,
   type WorldVec3,
 } from './theme';
+import { levelLantern, levelSparkles, resolveLevelTheme } from './levelThemes';
+import { useViewStore } from './viewStore';
 import { CameraRig } from './CameraRig';
 import { GridArena } from './GridArena';
 import { PlayerAvatar } from './entities/PlayerAvatar';
@@ -177,7 +184,15 @@ function SceneContent({ pinnedInfo, onPin }: {
   }, [phase, battleFormationGrid, geometry, planeShifted, imported]);
   const heights: HeightMap | undefined = geometry?.heights;
   const currentArea = level?.area ?? 'main';
-  const theme = planeTheme(planeShifted);
+  // THEME-3：位面换肤升级为「位面 × 关卡」双维主题（12 关 accent/fog/sky/双灯/
+  // 地面墙 mixHex 派生，L9 per-plane 分支；null 关卡退回基础位面主题）
+  const theme = resolveLevelTheme(levelId, planeShifted);
+  // CAM-1 viewStore 订阅：FP 档（first）且非 T 俯瞰时，explore/dialogue 相内
+  // 隐藏自己的化身（第一人称看不见自己身体）；combat/victory 与俯瞰恢复可见
+  const viewPreference = useViewStore((s) => s.viewPreference);
+  const peeking = useViewStore((s) => s.peeking);
+  const hidePlayerAvatar =
+    viewPreference === 'first' && !peeking && (phase === 'playing' || phase === 'dialogue');
 
   const player = entities?.find((e) => e.kind === 'player');
   const chests = entities?.filter((e) => e.kind === 'chest') ?? [];
@@ -239,6 +254,10 @@ function SceneContent({ pinnedInfo, onPin }: {
   // 集成期：数据源从骨架 STORY_EVENTS 切到 story-weaver 触发表（ALL_TRIGGER_RULES
   // 的 npc 规则）——坐标经主地图 → 网格换算（worldToGrid），可见性与解释器
   // ruleMatches 同一套旗标判定，渲染与触发永不脱钩。
+  // STORY-5 渲染契约（与 gameStore.queryPositionalTrigger 同一判别源
+  // positionalRuleLevelId）：level-scoped 规则只属于声明的关卡，坐标就是该关
+  // 原始网格坐标，直接 toWorld 落位（不走 worldToGrid+clampNpcCell）；无
+  // levelId 的旧规则保持主城世界坐标换算的现行为。
   const npcActors = useMemo(() => {
     const flagOn = (key: string): boolean => {
       const v = storyFlags[key];
@@ -251,6 +270,9 @@ function SceneContent({ pinnedInfo, onPin }: {
       // 节点 onEnterEffects 自置的旗（天使的 story:angels-met 就写在 unlessFlag
       // 上）在触发第一拍即为真，旗标门仍会把说话者剔除出渲染列表。
       if (rule.scriptId === dialogueScriptId) return true;
+      // STORY-5：level-scoped 规则只渲染在对应关卡（缺省 = 主城兼容旧规则）
+      const ruleLevelId = positionalRuleLevelId(rule);
+      if (ruleLevelId !== undefined && ruleLevelId !== levelId) return false;
       if (rule.once !== false && seenEventIds.includes(rule.id)) return false;
       if (rule.requireFlag !== undefined && !flagOn(rule.requireFlag)) return false;
       if (rule.requireFlags !== undefined && !rule.requireFlags.every(flagOn)) return false;
@@ -260,7 +282,11 @@ function SceneContent({ pinnedInfo, onPin }: {
     }).map((rule) => {
       // 过滤器已保证 when.kind === 'npc'
       const when = rule.when as { kind: 'npc'; x: number; y: number };
-      const cell = clampNpcCell(worldToGrid(when.x, when.y), terrain);
+      // level-scoped 规则坐标 = 当前关原始网格坐标，直接落位；旧规则走换算+钳位
+      const cell =
+        positionalRuleLevelId(rule) !== undefined
+          ? { x: when.x, y: when.y }
+          : clampNpcCell(worldToGrid(when.x, when.y), terrain);
       // R1：说话者提取扫全剧本的 dialogue 节点，取第一个有世界皮肤
       // （SPEAKER_SKINS 命中）的说话者 —— 多节点剧本（影流之主三幕）的首个
       // dialogue 节点可能只有 system/narration 旁白，按首个节点提取会拿到
@@ -286,7 +312,7 @@ function SceneContent({ pinnedInfo, onPin }: {
         skin,
       };
     });
-  }, [seenEventIds, storyFlags, dialogueScriptId, terrain, toWorld]);
+  }, [levelId, seenEventIds, storyFlags, dialogueScriptId, terrain, toWorld]);
 
   // ---- 对话注视点：对准当前说话者 NPC（骨架 activeEventId 已退位） ----
   const dialogueLines = phase === 'dialogue' ? currentLines(ALL_SCRIPTS, storyRuntime) : [];
@@ -353,6 +379,9 @@ function SceneContent({ pinnedInfo, onPin }: {
   // explore 回正（I2 根治）：战斗/对话/胜利运镜把方位角转走后，切回 playing
   // 的那一拍发一次「只回正方位角」的位姿（computeExploreResetPose），此后仍
   // 交还用户全权 —— 不发这次收敛，被转走的方位角会残留到整关谜题期。
+  // CAM-1 契约：按 viewPreference 分支 —— third 回正方位角 0（现状），
+  // first 传 null 保留用户头向（接缝验收：explore↔dialogue 往返在 first 档
+  // getCameraAzimuth() 保持）。
   const [exploreResetPose, setExploreResetPose] = useState<CameraPose | null>(null);
   const prevCameraModeRef = useRef<CameraMode>('explore');
   useEffect(() => {
@@ -361,9 +390,12 @@ function SceneContent({ pinnedInfo, onPin }: {
     prevCameraModeRef.current = cameraMode;
     if (!backToExplore) return;
     setExploreResetPose(
-      computeExploreResetPose({ playerPos: playerWorld, focusPos: playerWorld, arenaCenter }),
+      computeExploreResetPose({ playerPos: playerWorld, focusPos: playerWorld, arenaCenter }, viewPreference),
     );
-  }, [cameraMode, playerWorld, arenaCenter]);
+  }, [cameraMode, playerWorld, arenaCenter, viewPreference]);
+  // THEME-3：玩家提灯（L3 暗夜关双位面 / L9 仅阴面）与 Sparkles 环境粒子参数
+  const lantern = useMemo(() => levelLantern(levelId, planeShifted), [levelId, planeShifted]);
+  const sparklesSpec = useMemo(() => levelSparkles(levelId, planeShifted), [levelId, planeShifted]);
   const pose = useMemo<CameraPose | null>(() => {
     if (cameraMode === 'explore') return exploreResetPose;
     return computePose(cameraMode, {
@@ -400,7 +432,7 @@ function SceneContent({ pinnedInfo, onPin }: {
 
   return (
     <>
-      {/* 灯光（随位面换肤；无阴影贴图，保移动端帧预算） */}
+      {/* 灯光（随「位面 × 关卡」主题生效；无阴影贴图，保移动端帧预算） */}
       <ambientLight color={theme.ambient.color} intensity={theme.ambient.intensity} />
       <directionalLight
         color={theme.keyLight.color}
@@ -412,6 +444,15 @@ function SceneContent({ pinnedInfo, onPin }: {
         intensity={theme.rimLight.intensity}
         position={theme.rimLight.position}
       />
+      {/* L3/L9 阴面玩家提灯：暗关的随身 PointLight，位置随 playerWorld 每拍同步 */}
+      {lantern !== null && (
+        <pointLight
+          color={lantern.color}
+          intensity={lantern.intensity}
+          distance={lantern.distance}
+          position={playerWorld}
+        />
+      )}
       <fogExp2 attach="fog" color={theme.fogColor} density={theme.fogDensity} />
       <SkyDome theme={theme} />
 
@@ -428,6 +469,7 @@ function SceneContent({ pinnedInfo, onPin }: {
         }
         pose={pose}
         poseId={poseId}
+        cameraMode={cameraMode} // CAM-1 契约：分档夹紧按 (viewPreference × cameraMode × peeking)
       />
 
       {/* 竞技场（点地面关闭信息卡）；战斗布阵时 grid = 战场网格、hazardCells = 尖刺 */}
@@ -436,14 +478,16 @@ function SceneContent({ pinnedInfo, onPin }: {
           grid={terrain}
           currentArea={currentArea}
           yin={planeShifted}
+          levelId={levelId}
           heights={heights}
           hazardCells={spikeCells}
           complete={complete}
         />
       </group>
 
-      {/* 玩家（关卡切换即重挂，朝向复位） */}
-      {(phase !== 'combat' ? player !== undefined : true) && (
+      {/* 玩家（关卡切换即重挂，朝向复位）；FP 档 explore/dialogue 相内隐藏化身
+          （第一人称不见自己身体），combat/victory 与 T 俯瞰恢复正常可见 */}
+      {!hidePlayerAvatar && (phase !== 'combat' ? player !== undefined : true) && (
         <group onPointerDown={pinEntity(playerInfo, playerWorld)}>
           <PlayerAvatar
             key={`player:${levelId ?? 'none'}`}
@@ -529,6 +573,20 @@ function SceneContent({ pinnedInfo, onPin }: {
           )}
 
       <VfxLayer toWorld={vfxToWorld} playerWorld={playerWorld} theme={theme} />
+
+      {/* 逐关环境粒子（THEME-3）：drei Sparkles 的 useFrame 只写 material.time、
+          不 invalidate —— demand 下静置冻结，S18 零渲染约定不破 */}
+      {sparklesSpec !== null && (
+        <Sparkles
+          count={sparklesSpec.count}
+          color={sparklesSpec.color}
+          size={sparklesSpec.size}
+          speed={sparklesSpec.speed}
+          opacity={sparklesSpec.opacity}
+          scale={[sparklesSpec.scale[0], sparklesSpec.scale[1], sparklesSpec.scale[2]]}
+          position={[arenaCenter[0], arenaCenter[1] + sparklesSpec.lift, arenaCenter[2]]}
+        />
+      )}
 
       {/* 实体信息卡（本地 state；点空白处/竞技场关闭） */}
       {pinnedInfo !== null && (

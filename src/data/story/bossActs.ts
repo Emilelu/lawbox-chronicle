@@ -1,11 +1,12 @@
 /**
  * BOSS 三幕 —— 未解谜秒杀演出 / 解谜后护盾化 BOSS 战 / 通关结局与成就。
  * ---------------------------------------------------------------------------
- * 源自 Game.java:1491-1861：
- *   - Game.java:1494 `if (author.isAlive())`：没解作者谜题就踩 (-5,5) →
+ * 源自 Game.java:1491-1861（STORY-5 迁关：BOSS 居 L12 星陨王座，王座厅即终关）：
+ *   - Game.java:1494 `if (author.isAlive())`：没解作者谜题就闯王座厅 →
  *     影流之主分身三个，attack×3 = 700,999,314 秒杀 + System.exit（:1601-1606）。
  *     新设计：秒杀改为「演出 + 可关闭终局 overlay」（S11：终局不锁控制），
- *     玩家被送回主地图继续探索，绝无 System.exit 式逃逸。
+ *     玩家留在王座厅继续探索（once:false 可重复触发，持钥后再入走真战斗），
+ *     绝无 System.exit 式逃逸。
  *   - 解谜后：BOSS 攻击归零（:495-496），强制装备爷爷的拐杖（:1611-1612 的
  *     假选择改真选择 K12），分身数每回合 ×2（:1828，long 无界 → 上限 64，K10）。
  *     新设计：BOSS 护盾化 —— 常规攻击被护盾吸收，命中「弱点卡」（作者谜题
@@ -20,7 +21,17 @@ import type { TriggerRule } from '../../engine/story/triggers';
 
 /* ============================== 常量与说话者 =============================== */
 
-export const BOSS_POS = { x: -5, y: 5 } as const; // Game.java:58
+/**
+ * BOSS 坐标（STORY-5 迁关：L12 星陨王座 (6,5) —— 2×2 圣坛旗格「王座」的一角，
+ * 原始格值 3=旗格不可站，npc 触发无需玩家可站；原版出处 Game.java:58 (-5,5)
+ * 存档于注释）。
+ * radius 3 的依据（本 ask node BFS 实测）：禁走 (6,4) 从出生点仍 98 格可达 ——
+ * tile(6,4) 非必经咽喉；而完成本关最后一次推箱必然站在王座邻格，goal 4-邻格
+ * 全集到 (6,5) 曼哈顿距离最大 = 3 且全部可站，出生点 (1,1) 距离 9 不误触 ——
+ * r3 触发是通关的必然前置（绕路通关不可能）。
+ */
+export const BOSS_POS = { levelId: 'level-lb-12', x: 6, y: 5 } as const;
+export const BOSS_TRIGGER_RADIUS = 3;
 export const BOSS_ENEMY_ID = 'enemy-ylzz'; // src/data/enemies.ts
 
 /** Game.java:1602  attack = 233666438 × 3（秒杀演出播报数值，保真计算） */
@@ -78,7 +89,7 @@ export const BOSS_ACTS_SCRIPT: StoryScriptDef = {
       id: 'boss-meet',
       lines: [
         { speakerId: 'system', text: '你遇到了一个怪物！它叫 影流之主' },
-        { speakerId: 'narration', text: '坐标 (-5,5)——地图的角落。空气沉得像凝固的墨。' },
+        { speakerId: 'narration', text: '星陨王座的大厅尽头——王座上的影子缓缓站起。空气沉得像凝固的墨。' },
       ],
       next: 'boss-guard',
     },
@@ -185,15 +196,101 @@ export const BOSS_ACTS_SCRIPT: StoryScriptDef = {
   ],
 };
 
+/* ==================== 前置演出：残影（L10）与投影（L11） ==================== */
+
+/**
+ * L10 三阶圣所「影之残影」：圣所里残存的一缕分身气息（once）——
+ * 顺序谜题的第二课：先见残影，再见投影，最后才在王座见到本体。
+ */
+export const SHADOW_ECHO_SCRIPT: StoryScriptDef = {
+  id: 'script-shadow-echo',
+  title: '影之残影',
+  entryNodeId: 'shadow-echo-entry',
+  nodes: [
+    {
+      kind: 'dialogue',
+      id: 'shadow-echo-entry',
+      fx: [{ fx: 'sfx', sfxId: 'sfx-effect-13' }],
+      lines: [
+        { speakerId: 'narration', text: '圣所的台阶上凝着一缕黑雾——它有轮廓，却没有脸。' },
+        { speakerId: 'npc-ylzz', text: '……影子记得主人的形状。你在收集什么？羽毛？钥匙？' },
+        { speakerId: 'narration', text: '话没说完，残影就像被风吹散的墨一样消失了。' },
+        { speakerId: 'narration', text: '（有谁在更深处看着你。越往前行，空气越沉。）' },
+      ],
+      next: 'shadow-echo-close',
+    },
+    {
+      kind: 'ending',
+      id: 'shadow-echo-close',
+      endingId: 'shadow-echo',
+      closable: true,
+      lines: [{ speakerId: 'system', text: '（残影消散了。前方还有一重更深的影子在等你。）' }],
+    },
+  ],
+};
+
+/** L10 影之残影触发：npc (7,1) r1（once），坐标已对 areas.ts 验证为原始网格 0 */
+export const SHADOW_ECHO_TRIGGER: TriggerRule = {
+  id: 'trigger-shadow-echo',
+  scriptId: 'script-shadow-echo',
+  when: { kind: 'npc', x: 7, y: 1, radius: 1, levelId: 'level-lb-10' },
+  once: true,
+};
+
+/** L11 合宇之厅「影流之主投影」：终厅前的最后警告（once） */
+export const SHADOW_PROJECTION_SCRIPT: StoryScriptDef = {
+  id: 'script-shadow-projection',
+  title: '影流之主的投影',
+  entryNodeId: 'shadow-projection-entry',
+  nodes: [
+    {
+      kind: 'dialogue',
+      id: 'shadow-projection-entry',
+      fx: [{ fx: 'screenShake', intensity: 0.4 }],
+      lines: [
+        { speakerId: 'narration', text: '大厅中央的星阶上，一个巨大的人影凭空投影成形——不是分身，是「预告」。' },
+        { speakerId: 'npc-ylzz', text: '最后一关的门槛前，先给你一句忠告：没拿到「钥匙」的话，就别踏进王座厅。' },
+        { speakerId: 'npc-ylzz', text: '分身成了三个的滋味，你已经尝过一次了。想再尝一次吗？' },
+        { speakerId: 'narration', text: '投影碎成点点黑星，散落在四箱归一的星阶之间。' },
+      ],
+      next: 'shadow-projection-close',
+    },
+    {
+      kind: 'ending',
+      id: 'shadow-projection-close',
+      endingId: 'shadow-projection',
+      closable: true,
+      lines: [{ speakerId: 'system', text: '（投影消失了。王座厅就在下一关——带好你的「钥匙」。）' }],
+    },
+  ],
+};
+
+/** L11 影流之主投影触发：npc (6,7) r1（once），坐标已对 areas.ts 验证为原始网格 0 */
+export const SHADOW_PROJECTION_TRIGGER: TriggerRule = {
+  id: 'trigger-shadow-projection',
+  scriptId: 'script-shadow-projection',
+  when: { kind: 'npc', x: 6, y: 7, radius: 1, levelId: 'level-lb-11' },
+  once: true,
+};
+
 /* ============================== 触发规则 ================================== */
 
 export const BOSS_TRIGGER_RULES: readonly TriggerRule[] = [
   {
     id: 'trigger-boss-ylzz',
     scriptId: 'script-boss-acts',
-    when: { kind: 'npc', x: BOSS_POS.x, y: BOSS_POS.y, radius: 1 },
-    // 影流之主只此一次；胜负两条路都通向显式节点（Game.java:1863-1865 的
-    // 「好像没啥发生」兜底由 once + seenEventIds 承担）
-    once: true,
+    when: {
+      kind: 'npc',
+      x: BOSS_POS.x,
+      y: BOSS_POS.y,
+      radius: BOSS_TRIGGER_RADIUS,
+      levelId: BOSS_POS.levelId,
+    },
+    // once:false + unlessFlag('story:boss-defeated')（击败旗只在信结局 boss-letter
+    // 置位）：未解谜的秒杀演出可重复触发（短、可关闭，S11）——顺带修复既有
+    // once:true 在「先 BOSS 后作者」顺序下被 seenEventIds 永久封印的软锁隐患；
+    // 解谜持钥后再入王座厅即走护盾战真分支。
+    once: false,
+    unlessFlag: 'story:boss-defeated',
   },
 ];

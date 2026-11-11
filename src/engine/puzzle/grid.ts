@@ -45,6 +45,26 @@ export interface Level3D extends LevelDef {
    * 祭坛是「建筑」，不可推、不可压碎，谜题引擎与 solver 都视作障碍占位。
    */
   readonly altarSpawns?: readonly Vec2[];
+  /**
+   * 旗位落座顺序（MECH-4 顺序谜题过滤器）：箱子进入清单内旗格必须按序——
+   * 只允许落入「下一个未就位」的清单格，乱序推入被拒（order-locked）。
+   * 过滤器而非新物理：推/滑/坠结算零改动，只是给「箱入旗格」加一道资格闸；
+   * 缺席（undefined）时零影响。清单外旗格不受理序约束。
+   */
+  readonly goalOrder?: readonly Vec2[];
+  /**
+   * 单向阀（MECH-4 位移过滤器）：玩家进入 cell 只允许沿 allow 方向，
+   * 逆向/侧向进入被拒（one-way）；箱子不受限（推过、停在阀格均自由）。
+   * 过滤器而非新物理：位移结算零改动，只给「玩家进格」加一道资格闸；
+   * 缺席（undefined）时零影响。
+   */
+  readonly oneWay?: readonly OneWayGate[];
+}
+
+/** 单向阀声明：cell 格仅允许玩家以 allow 方向进入 */
+export interface OneWayGate {
+  readonly cell: Vec2;
+  readonly allow: Dir;
 }
 
 /** 爬升上限：玩家/箱子单步可上的最大高度差 */
@@ -82,6 +102,10 @@ export interface LevelGeometry {
   readonly enemySpawns: readonly Vec2[];
   /** 祭坛出生点（Level3D.altarSpawns 透传；不可推静态障碍，谜题引擎与 solver 按需消费） */
   readonly altarSpawns: readonly Vec2[];
+  /** 旗位落座顺序（Level3D.goalOrder 透传；缺席 = 无顺序约束） */
+  readonly goalOrder: readonly Vec2[];
+  /** 单向阀清单（Level3D.oneWay 透传；缺席 = 空表，玩家位移无方向限制） */
+  readonly oneWay: readonly OneWayGate[];
 }
 
 /**
@@ -187,6 +211,8 @@ export function parseLevelGeometry(def: Level3D): ParsedGeometry | ParseError {
       chestSpawns,
       enemySpawns: def.enemySpawns ?? [],
       altarSpawns: def.altarSpawns ?? [],
+      goalOrder: def.goalOrder ?? [],
+      oneWay: def.oneWay ?? [],
     },
   };
 }
@@ -256,6 +282,36 @@ export function canTogglePlane(
 /** 玩家是否站在位面锚点上（无位面之眼时的 F 键门槛） */
 export function playerOnAnchor(geometry: LevelGeometry, player: Vec2): boolean {
   return geometry.planeAnchors.some((a) => a.x === player.x && a.y === player.y);
+}
+
+/* ======================== 机制过滤器查询（MECH-4） ========================= */
+
+/**
+ * 单向阀资格闸：玩家以 moveDir 进入 cell 是否放行。
+ * 只过滤「玩家位移」——箱子被推过/停在阀格均不受限（箱不受限语义）；
+ * 未设阀的格恒放行（缺席即零影响）。纯谓词，move/solver 共用同一实现。
+ */
+export function playerMayEnter(geometry: LevelGeometry, cell: Vec2, moveDir: Dir): boolean {
+  const gate = geometry.oneWay.find((gt) => gt.cell.x === cell.x && gt.cell.y === cell.y);
+  return gate === undefined || gate.allow === moveDir;
+}
+
+/**
+ * 旗位顺序闸的「已就位前缀」：goalOrder 头部连续有箱的格数。
+ * 由当前箱位派生（不进状态机字段）——撤销/纯函数语义天然一致：
+ * 箱子只允许落入清单第 prefix 格（下一个未就位者），乱序推入被拒。
+ */
+export function goalOrderPrefix(geometry: LevelGeometry, entities: readonly GridEntity[]): number {
+  if (geometry.goalOrder.length === 0) return 0;
+  let prefix = 0;
+  for (;;) {
+    const cell = geometry.goalOrder[prefix];
+    if (cell === undefined) break;
+    const seated = entities.some((e) => e.kind === 'chest' && e.x === cell.x && e.y === cell.y);
+    if (!seated) break;
+    prefix += 1;
+  }
+  return prefix;
 }
 
 /* ============================== 达标判定（纯） ============================= */

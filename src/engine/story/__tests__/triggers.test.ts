@@ -14,10 +14,12 @@ import {
   classifyPosition,
   findInteractableRule,
   isOutskirtsTransition,
+  positionalRuleLevelId,
   queryTrigger,
   type TriggerContext,
   type TriggerRule,
 } from '../triggers';
+import { ALL_TRIGGER_RULES } from '../../../data/storyScripts';
 
 const baseCtx: TriggerContext = {
   x: 0,
@@ -165,5 +167,82 @@ describe('checkLevelEntryDeck —— 法则卡兜底（100% 必发）', () => {
     const partial = checkLevelEntryDeck('level-sb-03', ['card-law-feather-chest']);
     expect(partial.ok).toBe(false);
     if (!partial.ok) expect(partial.missingCardIds).toEqual(['card-law-wider-push']);
+  });
+
+  it('level-sb-04 变体关门（STORY-5/评审③）：同门槛、复用补发剧本、零新剧本', () => {
+    const gate = LAW_GATES.find((g) => g.levelId === 'level-sb-04');
+    expect(gate).toBeDefined();
+    expect(gate?.requiredCardIds).toEqual(['card-law-wider-push']);
+    expect(gate?.makeUpScriptId).toBe('script-gate-wider-push');
+    const empty = checkLevelEntryDeck('level-sb-04', []);
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) expect(empty.makeUpScriptId).toBe('script-gate-wider-push');
+    expect(checkLevelEntryDeck('level-sb-04', ['card-law-wider-push']).ok).toBe(true);
+  });
+});
+
+/* ==================== STORY-5 触发评估 level 化（三组） ==================== */
+
+/** 与 gameStore.queryPositionalTrigger 同口径的作用域过滤（store 侧另有双坐标求值） */
+const rulesScopedTo = (levelId: string): readonly TriggerRule[] =>
+  ALL_TRIGGER_RULES.filter((r) => positionalRuleLevelId(r) === levelId);
+const hubScopedRules = (): readonly TriggerRule[] =>
+  ALL_TRIGGER_RULES.filter((r) => positionalRuleLevelId(r) === undefined);
+
+describe('STORY-5 ① level-scoped 命中：声明的关卡内按该关网格坐标求值', () => {
+  it('positionalRuleLevelId：npc/tile 读取声明值，非位置类恒 undefined', () => {
+    const mob = ALL_TRIGGER_RULES.find((r) => r.id === 'trigger-mob-caixukun');
+    expect(mob?.when.kind).toBe('npc');
+    expect(positionalRuleLevelId(mob as TriggerRule)).toBe('level-sb-02');
+    const outskirt = ALL_TRIGGER_RULES.find((r) => r.when.kind === 'outskirts');
+    expect(positionalRuleLevelId(outskirt as TriggerRule)).toBeUndefined();
+    const synthetic: TriggerRule = { id: 'x', scriptId: 's', when: { kind: 'battle-end', enemyId: 'e' } };
+    expect(positionalRuleLevelId(synthetic)).toBeUndefined();
+  });
+
+  it('蔡徐坤 L2 网格 (12,3) radius 0：落格命中，邻格不命中', () => {
+    const scoped = rulesScopedTo('level-sb-02');
+    const hit = queryTrigger(scoped, { x: 12, y: 3, flags: {}, seenEventIds: [] });
+    expect(hit?.id).toBe('trigger-mob-caixukun');
+    expect(queryTrigger(scoped, { x: 12, y: 2, flags: {}, seenEventIds: [] })).toBeNull();
+  });
+
+  it('天使① 留主城 L1 (8,6) radius 1：同关作用域内半径内命中', () => {
+    const hit = queryTrigger(rulesScopedTo('level-sb-01'), { x: 8, y: 5, flags: {}, seenEventIds: [] });
+    expect(hit?.id).toBe('trigger-angel-1');
+  });
+});
+
+describe('STORY-5 ② 跨关不命中：同坐标在其它关的作用域内无此规则', () => {
+  it('L3 作用域不含蔡徐坤规则：同坐标 (12,3) 在 L3 求值不触发（wiring.test 落格路径复核）', () => {
+    const l3Scoped = rulesScopedTo('level-sb-03');
+    expect(l3Scoped.some((r) => r.id === 'trigger-mob-caixukun')).toBe(false);
+    expect(queryTrigger(l3Scoped, { x: 12, y: 3, flags: {}, seenEventIds: [] })).toBeNull();
+    // L3 自己的郭老师规则在其作用域内（(7,5) radius 0）
+    expect(queryTrigger(l3Scoped, { x: 7, y: 5, flags: {}, seenEventIds: [] })?.id).toBe('trigger-mob-guolaoshi');
+  });
+
+  it('hub 作用域不含任何迁关后的剧情规则（三怪/作者/BOSS/残影投影均已声明 levelId）', () => {
+    const hub = hubScopedRules();
+    for (const id of ['trigger-mob-caixukun', 'trigger-mob-guolaoshi', 'trigger-mob-dygg', 'trigger-author-quiz', 'trigger-boss-ylzz', 'trigger-shadow-echo', 'trigger-shadow-projection']) {
+      expect(hub.some((r) => r.id === id), `规则 ${id} 不应在 hub 作用域`).toBe(false);
+    }
+  });
+});
+
+describe('STORY-5 ③ hub 回归：缺省 levelId 的旧规则仍走世界坐标、只属主城', () => {
+  it('主城残留羽毛 tile（世界坐标）在 hub 作用域内照常命中', () => {
+    const hit = queryTrigger(hubScopedRules(), { x: 1, y: 0, flags: { 'story:angels-met': 'angel-1' }, seenEventIds: [] });
+    expect(hit?.id).toBe('trigger-angel-1-feather');
+    // 全局旗未置位 → 门槛锁死（既有语义不变）
+    expect(queryTrigger(hubScopedRules(), { x: 1, y: 0, flags: {}, seenEventIds: [] })).toBeNull();
+  });
+
+  it('outskirts 规则保持缺省 levelId（HUB-only 语义由 store 过滤承担）', () => {
+    const outskirts = ALL_TRIGGER_RULES.filter((r) => r.when.kind === 'outskirts');
+    expect(outskirts.length).toBe(8); // 四方向 buffer + beyond
+    for (const rule of outskirts) {
+      expect(positionalRuleLevelId(rule)).toBeUndefined();
+    }
   });
 });

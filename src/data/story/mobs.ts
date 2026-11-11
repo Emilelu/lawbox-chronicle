@@ -1,5 +1,5 @@
 /**
- * 三小怪遭遇战 —— 剧本化战斗（集成期新增）。
+ * 三小怪遭遇战 —— 剧本化战斗（集成期新增 + STORY-5 迁关分布）。
  * ---------------------------------------------------------------------------
  * 原版三怪（蔡徐坤/郭老师/冬泳怪鸽）在 Game.java 主地图坐标上直接开打；
  * 本文件把它们接进 story-weaver 解释器的统一战斗流：
@@ -7,8 +7,10 @@
  *   胜利：置 story:defeated:<id>（作者谜题的前置三旗，见 authorPuzzle.DEFEAT_FLAGS）
  *        + 掉落武器 + 星石（grantStarStones）→ ending（closable，S11）；
  *   失败：可关闭的败北 ending（绝无 System.exit）。
- * 触发规则（MOB_TRIGGER_RULES）与天使/作者/BOSS 同表注册，坐标为
- * KichikuAdventure 主地图语义（集成层经 STORY_GRID_OFFSET 映射进箱庭网格）。
+ * 触发规则（MOB_TRIGGER_RULES）与天使/作者/BOSS 同表注册。STORY-5 分布：
+ * 三怪迁出主城分散到 L2/L3/L6（遭遇坐标声明在本文件 MOB_PARAMS，为对应关卡
+ * 自身网格坐标且逐格验证为原始网格 0）；enemies.ts 的 originPos 自此只作
+ * 图鉴字段（原版 Game.java:55-65 出处存档），不再派生触发坐标。
  */
 
 import type { StoryScriptDef } from '../../engine/story/interpreter';
@@ -34,24 +36,43 @@ export const MOB_REWARD_STONES = 300;
 
 interface MobParam {
   readonly enemyId: string;
+  /** 关级作用域（STORY-5 分布）：遭遇发生在对应关卡 */
+  readonly levelId: string;
+  /** 该关自身网格坐标（已对 areas.ts 原始网格逐格验证为 0=可站地板） */
+  readonly x: number;
+  readonly y: number;
   /** 遭遇台词（原版 printDialogue 的「你遇到了一个怪物！」句式保真） */
   readonly taunt: string;
   readonly victoryNote: string;
 }
 
+/**
+ * 三怪分布（STORY-5，坐标已对 areas.ts 逐格验证）：
+ * 蔡徐坤 L2 双廊回环 (12,3) / 郭老师 L3 碎星十字 (7,5)（暗夜关中遭遇）/ 冬泳怪鸽 L6 双石门 (3,3)。
+ * HP 递增（28→98→149）与关卡曲线同向；不再派生自 enemies.originPos（图鉴字段）。
+ */
 const MOB_PARAMS: readonly MobParam[] = [
   {
     enemyId: 'enemy-caixukun',
+    levelId: 'level-sb-02',
+    x: 12,
+    y: 3,
     taunt: '只因你实在是太美，must 的！——蔡徐坤拦在了你的面前。',
     victoryNote: '小贴士：本游戏的“格挡”与其字面意思略有差异——在新法则之下，格挡即减免：伤害下限为 1，防御不再造成任何“回血”。（原 ev-battle-tip-block）',
   },
   {
     enemyId: 'enemy-guolaoshi',
+    levelId: 'level-sb-03',
+    x: 7,
+    y: 5,
     taunt: '耶斯莫拉！郭老师占领了这条走廊，集美们把门焊死了！',
     victoryNote: '迷吼tiao（外观酷似猕猴桃的炸弹）掉在了地上——它可以“多次使用”，这次是真的。',
   },
   {
     enemyId: 'enemy-dygg',
+    levelId: 'level-lb-06',
+    x: 3,
+    y: 3,
     taunt: '奥利给！！冬泳怪鸽从寒潭里站了起来，正面对决！',
     victoryNote: '巨剑太重了，但你还是把它背了起来。没有困难的工作，只有勇敢的冒险者！',
   },
@@ -127,20 +148,21 @@ export const MOB_SCRIPTS: readonly StoryScriptDef[] = MOB_PARAMS.map(makeMobScri
 
 /* ============================== 触发规则 ================================== */
 
-/** 三怪触发：原版主地图坐标（enemies.ts originPos，Game.java:55-65），NPC 语义。
+/** 三怪触发：level-scoped 网格坐标（STORY-5 分布，坐标声明在 MOB_PARAMS），
+ *  NPC 语义 radius 0 = 踩上即遭遇。
  *  once:false + unlessFlag(击败旗) —— 战败/逃跑可再来（once 会把逃兵永久锁在门外，
  *  进而锁死作者谜题的三前置旗）；胜利置旗后不再触发。 */
 export const MOB_TRIGGER_RULES: readonly TriggerRule[] = MOB_PARAMS.map((p) => {
-  const enemy = findEnemy(p.enemyId);
   const seq = p.enemyId.replace('enemy-', '');
   return {
     id: `trigger-mob-${seq}`,
     scriptId: `script-mob-${seq}`,
     when: {
       kind: 'npc',
-      x: enemy?.originPos.x ?? 0,
-      y: enemy?.originPos.y ?? 0,
+      x: p.x,
+      y: p.y,
       radius: 0,
+      levelId: p.levelId,
     },
     once: false,
     unlessFlag: `story:defeated:${p.enemyId}`,

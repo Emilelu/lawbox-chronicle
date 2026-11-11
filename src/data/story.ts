@@ -1,9 +1,13 @@
 /**
- * 剧情事件表 —— 唯一数据源。
+ * 剧情事件表 ——【archive · 骨架期旧表，STORY-5 起不再参与运行时触发】。
  * ---------------------------------------------------------------------------
- * 对白搬自 KichikuAdventure Game.java printDialogue()（Game.java:475-503 作者
- * 问答、Game.java:539-556 导航天使①教学）。原版以 System.out.println 散落在
- * 34 万字符的 main 函数里；此处置于数据层，事件→敌人/武器只写字符串 id。
+ * 本表是骨架期的剧情数据源；story-weaver 集成后，运行时触发一律走
+ * src/data/storyScripts.ts 的 ALL_TRIGGER_RULES + ALL_SCRIPTS（STORY-5 起
+ * 触发按 levelId 分关求值，坐标语义见 triggers.ts 的 positionalRuleLevelId）。
+ * 旧表保留原因：core/schema.ts 的数据表交叉校验仍以 storyEvents 为输入分片
+ * （data/index.ts 装配），且对白文案是 Game.java printDialogue 的第一手搬运
+ * 存档（Game.java:475-503 作者问答、Game.java:539-556 导航天使①教学）——
+ * 表内 pos 坐标是原版主地图语义，不代表运行时触发位置。
  */
 
 import type { StoryEventDef } from '../core/types';

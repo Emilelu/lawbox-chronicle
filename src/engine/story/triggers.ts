@@ -57,8 +57,25 @@ export function classifyPosition(x: number, y: number): OutskirtsZone {
 /* ============================== 触发规则表 ================================= */
 
 export type TriggerWhen =
-  | { readonly kind: 'npc'; readonly x: number; readonly y: number; readonly radius?: number }
-  | { readonly kind: 'tile'; readonly x: number; readonly y: number }
+  | {
+      readonly kind: 'npc';
+      readonly x: number;
+      readonly y: number;
+      readonly radius?: number;
+      /**
+       * 关级作用域（STORY-5 分布）：声明时 x/y 是「该关自身网格」坐标，
+       * 规则只在该关卡求值；缺省 = 主城枢纽旧规则，x/y 是世界坐标
+       * （集成层经 gridToWorld 映射，向后兼容既有触发表）。
+       */
+      readonly levelId?: string;
+    }
+  | {
+      readonly kind: 'tile';
+      readonly x: number;
+      readonly y: number;
+      /** 关级作用域（语义同 npc）：声明时 x/y 为该关网格坐标，缺省 = 主城世界坐标 */
+      readonly levelId?: string;
+    }
   | { readonly kind: 'battle-end'; readonly enemyId: string }
   | { readonly kind: 'level-entry'; readonly levelId: string }
   | { readonly kind: 'outskirts'; readonly dir: OutskirtsDir; readonly zone: 'buffer' | 'beyond' };
@@ -163,6 +180,17 @@ export function findInteractableRule(
   return queryTrigger(interactable, ctx);
 }
 
+/**
+ * 位置类规则（npc/tile）的关级作用域判别（STORY-5 分布）：
+ * 规则声明 levelId 时，其 x/y 是「该关自身网格」坐标，只应在对应关卡求值；
+ * 缺省 = 主城枢纽旧规则，x/y 是世界坐标（集成层经 gridToWorld 映射，向后兼容）。
+ * 非位置类（battle-end/level-entry/outskirts）恒返回 undefined —— 无关级作用域，
+ * 由调用方按各自语义处理（outskirts 由 store 保持 HUB-only）。
+ */
+export function positionalRuleLevelId(rule: TriggerRule): string | undefined {
+  return rule.when.kind === 'npc' || rule.when.kind === 'tile' ? rule.when.levelId : undefined;
+}
+
 /* =========================== 关卡入口卡组校验 ============================== */
 
 /** 主线法则门槛：进入该关卡必须持有的法则卡（缺卡 → 补发对话 100% 必发） */
@@ -187,6 +215,15 @@ export const LAW_GATES: readonly LawGateDef[] = [
     requiredCardIds: ['card-law-wider-push'],
     makeUpScriptId: 'script-gate-wider-push',
     note: 'level-sb-03 的长廊十字依赖推程 +1 才有解（solver 校验前置）；该卡同时是本关通关奖励，入口缺卡必补发。',
+  },
+  {
+    // STORY-5（评审③修法）：sb-04 是 sb-03 十字回廊的四星变体关（同款长廊布局，
+    // areas.ts 数据同构），同样依赖推程 +1 才有解；补发剧本复用 script-gate-wider-push
+    //（零新剧本），levelGuide 的 gateHint 由本条目自动消费。
+    levelId: 'level-sb-04',
+    requiredCardIds: ['card-law-wider-push'],
+    makeUpScriptId: 'script-gate-wider-push',
+    note: 'level-sb-04（星陨间奏）是 sb-03 长廊十字的变体关：布局同构、同样依赖推程 +1 才有解，本关无卡奖励（纯星石），直接选关进入时缺卡即入口补发（复用 script-gate-wider-push，零新剧本）。',
   },
 ];
 

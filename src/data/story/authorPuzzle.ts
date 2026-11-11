@@ -1,9 +1,10 @@
 /**
  * 作者谜题 —— x-y=(D-1)-z（数据 + 求解器）。
  * ---------------------------------------------------------------------------
- * 源自 Game.java:475-508：作者位于 (-2,4)（Game.java:52），三只小怪全灭后出现
- * （Game.java:328-329 的显式前置），谜题见 Game.java:481，答案注释见 :482-488
- * （x=5,y=5,z=1 或 x=1,y=5,z=5 —— 尤拉公式 v+f-e=2 的变体，x/z 可互换）。
+ * 源自 Game.java:475-508：作者位于 (-2,4)（Game.java:52，STORY-5 迁至 L9 表里
+ * 回廊 (5,4)），三只小怪全灭后出现（Game.java:328-329 的显式前置，三怪关
+ * L2/L3/L6 排在作者关之前 —— 顺序谜题成立），谜题见 Game.java:481，答案注释见
+ * :482-488（x=5,y=5,z=1 或 x=1,y=5,z=5 —— 尤拉公式 v+f-e=2 的变体，x/z 可互换）。
  *
  * 原版行为对照：
  *   - 答错 → System.exit(0)（Game.java:506-507）→ 改为「重试 + 阶梯提示」，
@@ -47,8 +48,10 @@ export const AUTHOR_PUZZLE_STATEMENT =
 export const AUTHOR_PUZZLE_ANSWERS = ['5,5,1', '1,5,5'] as const;
 export type AuthorPuzzleAnswer = (typeof AUTHOR_PUZZLE_ANSWERS)[number];
 
-/** 作者坐标（Game.java:52） */
-export const AUTHOR_POS = { x: -2, y: 4 } as const;
+/** 作者坐标（STORY-5 迁关：L9 表里回廊 (5,4)，该关自身网格坐标，原始格值 0
+ *  已对 areas.ts 逐格验证；原版出处 Game.java:52 (-2,4) 存档于注释）。
+ *  npc 与「沉默的躺椅」hint tile 同格 —— 谜题与提示共用同一落点。 */
+export const AUTHOR_POS = { levelId: 'level-lb-09', x: 5, y: 4 } as const;
 
 /** 答对后 BOSS（影流之主）攻击被改写为 0（Game.java:495-496 保真） */
 export const BOSS_ATTACK_AFTER_PUZZLE = 0;
@@ -170,7 +173,7 @@ export const AUTHOR_PUZZLE_SCRIPT: StoryScriptDef = {
       id: 'author-entry',
       onEnterEffects: [{ kind: 'setFlag', key: 'story:author-encounter-started', value: true }],
       lines: [
-        { speakerId: 'narration', text: '坐标 (-2,4)——一张躺椅凭空摆在荒野正中，作者翘着二郎腿。' },
+        { speakerId: 'narration', text: '表里回廊的深处——一张躺椅凭空摆在廊道正中，作者翘着二郎腿。' },
         { speakerId: SPEAKER_AUTHOR, text: '哦吼！没想到你竟然遇到我了！不知道你是乱走还是认真探索了每一个坐标呢。' },
         { speakerId: SPEAKER_AUTHOR, text: '既然你遇到了我，说明你离通关已经不远了。顺便说一下，假如你没有遇到我，你是永远都无法通关的！' },
         { speakerId: SPEAKER_AUTHOR, text: '听好了！——' },
@@ -216,7 +219,7 @@ export const AUTHOR_PUZZLE_SCRIPT: StoryScriptDef = {
       endingId: 'author-puzzle-solved',
       closable: true,
       lines: [
-        { speakerId: 'system', text: '「钥匙」到手——影流之主的弱点已被答案绑定。快去 (-5,5) 吧。' },
+        { speakerId: 'system', text: '「钥匙」到手——影流之主的弱点已被答案绑定。快去 L12 的星陨王座吧。' },
       ],
     },
   ],
@@ -228,6 +231,7 @@ export const AUTHOR_PUZZLE_SCRIPT: StoryScriptDef = {
  * 作者前置：三只小怪全部被击败（Game.java:328-329 的显式化 ——
  * !caixukun.isAlive() && !guolaoshi.isAlive() && !dygg.isAlive()）。
  * 战胜依次置 flag 'story:defeated:<id>'，requireFlags 要求三者齐备。
+ * STORY-5 分布：作者居 L9（表里回廊），三怪关（L2/L3/L6）在其前 —— 顺序谜题成立。
  */
 export const DEFEAT_FLAGS = ['story:defeated:enemy-caixukun', 'story:defeated:enemy-guolaoshi', 'story:defeated:enemy-dygg'] as const;
 
@@ -235,14 +239,15 @@ export const AUTHOR_TRIGGER_RULES: readonly TriggerRule[] = [
   {
     id: 'trigger-author-quiz',
     scriptId: 'script-author-puzzle',
-    when: { kind: 'npc', x: AUTHOR_POS.x, y: AUTHOR_POS.y, radius: 1 },
+    when: { kind: 'npc', x: AUTHOR_POS.x, y: AUTHOR_POS.y, radius: 1, levelId: AUTHOR_POS.levelId },
     requireFlags: [...DEFEAT_FLAGS],
     once: true,
   },
   {
     id: 'trigger-author-hint',
     scriptId: 'script-author-hint',
-    when: { kind: 'tile', x: AUTHOR_POS.x, y: AUTHOR_POS.y },
+    // 躺椅 hint tile 与作者 npc 同格（level-scoped）
+    when: { kind: 'tile', x: AUTHOR_POS.x, y: AUTHOR_POS.y, levelId: AUTHOR_POS.levelId },
     // 剧情已开场/已解谜后不再打扰（unless 任一即封锁）
     unlessFlags: ['story:author-encounter-started', 'story:author-met'],
     once: false,
@@ -262,7 +267,7 @@ export const AUTHOR_HINT_SCRIPT: StoryScriptDef = {
       kind: 'dialogue',
       id: 'author-hint-entry',
       lines: [
-        { speakerId: 'narration', text: '一张躺椅凭空摆在荒野正中，但作者还没露面。' },
+        { speakerId: 'narration', text: '一张躺椅凭空摆在廊道正中，但作者还没露面。' },
         { speakerId: 'narration', text: '椅背上贴着字条：“把地图上另外三位‘名人’都打发了再来。——作者”' },
       ],
       next: 'author-hint-close',

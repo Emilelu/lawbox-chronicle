@@ -1,8 +1,8 @@
 /**
  * 席卷界面层 · LevelGuidePanel —— 每关攻略面板。
  * ---------------------------------------------------------------------------
- * 内容 = data/levels/levelGuide.buildLevelGuide(levelId)：机制提示 + 法则门 +
- * 星级线 + 奖励 + 预计算推法序列（与 docs/game-guide.html 同源同真相）。
+ * 内容 = data/levels/levelGuide.buildLevelGuide(levelId)：twist（置顶新机制行）+
+ * 机制提示 + 法则门 + 星级线 + 奖励 + 预计算推法序列（与 docs/game-guide.html 同源同真相）。
  * 入口：HUD 左上「💡 攻略」（当前关）与选关面板每行的「💡 攻略」。
  * 定位沿用 L3 教训：居中位移并入 motion 的 x/y 百分比，绝不用 CSS transform。
  */
@@ -67,6 +67,26 @@ export function LevelGuidePanel() {
             ✕ 关闭
           </button>
         </div>
+
+        {/* twist 行置顶（LEVEL_TWISTS 数据层唯一文字源）：显式 normal/word-break 防长句溢出 */}
+        {guide.twist !== null && (
+          <div
+            data-guide-twist=""
+            style={{
+              border: '1px solid rgba(124, 92, 255, 0.45)',
+              borderRadius: 8,
+              background: 'rgba(124, 92, 255, 0.08)',
+              padding: '7px 10px',
+              fontSize: 12.5,
+              lineHeight: 1.55,
+              color: 'var(--neon-violet)',
+              whiteSpace: 'normal',
+              wordBreak: 'break-word',
+            }}
+          >
+            ✦ {guide.twist}
+          </div>
+        )}
 
         <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{guide.subtitle}</span>
 

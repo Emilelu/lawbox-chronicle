@@ -18,11 +18,13 @@ import {
   HOLD_REPEAT_MS,
   KEY_CODE_TO_ACTION,
   createHoldRepeater,
+  dispatchBinding,
   isTypingTarget,
   useKeyActions,
 } from '../useKeyActions';
 import { isMetaTerminalOpen, setMetaTerminalOpen } from '../MetaTerminal';
-import { resetCheatVisualState } from '../cheatRegistry';
+import { HOTKEY_CHEATS, getVisualState, resetCheatVisualState } from '../cheatRegistry';
+import { useViewStore } from '../../view/three/viewStore';
 
 describe('KEY_CODE_TO_ACTION —— e.code → 语义', () => {
   it('WASD 与方向键映射到语义方向，且「上」= up = (0,-1)（函数名错位回归）', () => {
@@ -52,6 +54,15 @@ describe('KEY_CODE_TO_ACTION —— e.code → 语义', () => {
     expect(KEY_CODE_TO_ACTION['65']).toBeUndefined();
     expect(KEY_CODE_TO_ACTION['37']).toBeUndefined();
     expect(KEY_CODE_TO_ACTION['38']).toBeUndefined();
+  });
+
+  it('KeyV 绑定视角切换（独立 view 变体，GameAction 零改动）；热键表同步换防', () => {
+    expect(KEY_CODE_TO_ACTION['KeyV']).toEqual({ kind: 'view' });
+    // KeyV 原绑 cheat-wall-shuffle 已让位：热键表里 KeyV 必须退场
+    expect(HOTKEY_CHEATS['KeyV']).toBeUndefined();
+    // 墙皮重掷改绑 KeyG；皮肤轮换 KeyR 不受影响
+    expect(HOTKEY_CHEATS['KeyG']).toBe('cheat-wall-shuffle');
+    expect(HOTKEY_CHEATS['KeyR']).toBe('cheat-skin-next');
   });
 });
 
@@ -132,6 +143,11 @@ describe('useKeyActions 全链路（jsdom 键盘事件 → store）', () => {
     });
     resetCheatVisualState();
     useGameStore.getState().resetSave();
+    // 视角档分片是模块级 store：每个用例前归位默认值，不跨测试泄漏
+    useViewStore.getState().setViewPreference('first');
+    useViewStore.getState().setPeeking(false);
+    useViewStore.getState().setCamYaw(0);
+    useViewStore.getState().setCamDistance(0);
   });
 
   afterEach(async () => {
@@ -144,6 +160,7 @@ describe('useKeyActions 全链路（jsdom 键盘事件 → store）', () => {
     }
     container.remove();
     setMetaTerminalOpen(false); // 终端是模块态：兜底关闭，不跨测试泄漏（关闭永远放行）
+    useViewStore.getState().setPeeking(false); // KeyT 按住态兜底释放
     vi.useRealTimers();
   });
 
@@ -273,5 +290,78 @@ describe('useKeyActions 全链路（jsdom 键盘事件 → store）', () => {
     press('KeyZ');
     lift('KeyZ');
     expect(useGameStore.getState().segment?.steps).toBe((stepsAfterMove ?? 1) - 1);
+  });
+
+  it('KeyV 切换第一/第三人称视角：任意相位可用（无段位也可切），只碰 viewStore', () => {
+    // 标题页（无段位）下即可切换 —— 与静音/关浮层同语义，不进任何门禁
+    press('KeyV');
+    lift('KeyV');
+    expect(useViewStore.getState().viewPreference).toBe('third');
+    press('KeyV');
+    lift('KeyV');
+    expect(useViewStore.getState().viewPreference).toBe('first');
+    // 游玩相同样可切，且不影响玩家位置
+    useGameStore.getState().startLevel('level-sb-01');
+    const before = playerPos();
+    press('KeyV');
+    lift('KeyV');
+    expect(useViewStore.getState().viewPreference).toBe('third');
+    expect(playerPos()).toEqual(before);
+  });
+
+  it('KeyV 不再触发任何作弊：作弊开关全开时墙皮纪元也不动，只有视角切换生效', () => {
+    useGameStore.setState((s) => ({ settings: { ...s.settings, cheatsEnabled: true } }));
+    const epochBefore = getVisualState().wallSkinEpoch;
+    press('KeyV');
+    lift('KeyV');
+    expect(getVisualState().wallSkinEpoch).toBe(epochBefore); // 墙皮重掷未被 KeyV 触发
+    expect(useViewStore.getState().viewPreference).toBe('third'); // 视角切换生效
+    // 反向：KeyG 才是墙皮重掷的热键（同开关全开下纪元 +1）
+    useViewStore.getState().setViewPreference('first');
+    press('KeyG');
+    lift('KeyG');
+    expect(getVisualState().wallSkinEpoch).toBe(epochBefore + 1);
+    expect(useViewStore.getState().viewPreference).toBe('first'); // KeyG 不碰视角
+  });
+
+  it('KeyT 按住进入战术俯瞰（viewStore.peeking=true）、松开回落（keyup=false）', () => {
+    press('KeyT');
+    expect(useViewStore.getState().peeking).toBe(true);
+    // 按住期间浏览器自动重复（repeat=true）不破坏按住态（守卫跳过，状态保持 true）
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyT', bubbles: true, repeat: true }));
+    expect(useViewStore.getState().peeking).toBe(true);
+    lift('KeyT');
+    expect(useViewStore.getState().peeking).toBe(false);
+  });
+
+  it('移动方向随相机偏航映射：camYaw=π/2 时按 W 向左、按 A 向下，与 mapInputDir 一致', () => {
+    // 基准：camYaw=0 映射恒等，S = 网格 down（出生点向下可走，既有用例已证）
+    useGameStore.getState().startLevel('level-sb-01');
+    const spawn = playerPos();
+    press('KeyS');
+    lift('KeyS');
+    expect(playerPos()).toEqual({ x: spawn.x, y: spawn.y + 1 });
+    // 相机斜置 π/2（相机转到 +X 侧）：W(up)→left、A(left)→down（验收②样例）
+    useViewStore.getState().setCamYaw(Math.PI / 2);
+    useGameStore.getState().startLevel('level-sb-01'); // 回出生点重测
+    const spawn2 = playerPos();
+    press('KeyW');
+    lift('KeyW');
+    expect(playerPos()).toEqual({ x: spawn2.x - 1, y: spawn2.y }); // W = 网格 left
+    press('KeyA');
+    lift('KeyA');
+    expect(playerPos()).toEqual({ x: spawn2.x - 1, y: spawn2.y + 1 }); // A = 网格 down
+    // camYaw 归 0 后 W 回到恒等映射（up = 网格 up）：从 (12,2) 走回 (12,1)
+    useViewStore.getState().setCamYaw(0);
+    press('KeyW');
+    lift('KeyW');
+    expect(playerPos()).toEqual({ x: spawn2.x - 1, y: spawn2.y });
+  });
+
+  it('dispatchBinding({kind:"view"}) 直调同样切换视角（binding 变体本身可单测）', () => {
+    dispatchBinding({ kind: 'view' });
+    expect(useViewStore.getState().viewPreference).toBe('third');
+    dispatchBinding({ kind: 'view' });
+    expect(useViewStore.getState().viewPreference).toBe('first');
   });
 });

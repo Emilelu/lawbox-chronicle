@@ -19,26 +19,40 @@
  *     超限且有下一关则跳关继续，无下一关才放弃 —— 永不无限重玩、不永久卡死；
  *  6. 步数预算（N2）：每关单次尝试的移动总数（巡游+走位+推）超过
  *     parSteps[1] + DEMO_STEP_BUDGET_MARGIN 即重开本关从 0 重计，结算步数
- *     不会因重试路径无限膨胀（重试次数由 levelRetryPlan 封顶）。
+ *     不会因重试路径无限膨胀（重试次数由 levelRetryPlan 封顶）；
+ *  7. 演示期间强制第三人称视角（经 CAM-1 viewStore，见 takeOverViewPreference），
+ *     结束/停止/卸载时恢复进入演示前的 viewPreference，不污染视角偏好。
  *
  * 这是纯观赏模式：不激活任何法则卡（保证 solver 的标准推箱语义与实机一致）。
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore, visibleChoices, selectPuzzleState, HUB_LEVEL_ID, type GameStore } from '../core/store/gameStore';
+import { useViewStore } from '../view/three/viewStore';
 import { LEVELS } from '../data/levels';
 import { WEAPONS } from '../data/weapons';
 import { ALL_SCRIPTS } from '../data/storyScripts';
 import { parseLevelGeometry, type LevelGeometry } from '../engine/puzzle/grid';
 import { solveGeometry, walkDirs, type SolveStep } from '../engine/puzzle/solver';
 import { PRECOMPUTED_SOLUTIONS } from '../data/levels/solutionSteps';
-import type { Dir, GameState, Vec2 } from '../core/types';
+import { DIR_VECTORS, type Dir, type GameState, type Vec2 } from '../core/types';
 
-/* ===================== 主线剧情巡游路线（主城枢纽） ====================== */
-/* 网格坐标 = 世界坐标 + STORY_GRID_OFFSET(7,6)。按主线顺序拜访：
-   天使（radius 1）→ 姐妹羽毛（tile）→ 三小怪（radius 0 需踩点）→
-   作者谜题（作者格是墙，radius 1 站相邻格）→ BOSS（radius 1）→
-   东侧边界彩蛋（向边界外推一步触发“神秘法阵”，对话选送回）。 */
+/* ==================== 主线剧情巡游路线（per-level，STORY-5） ==================== */
+/* STORY-5 触发分布：剧情点不再全堆主城（旧实现经 STORY_GRID_OFFSET(7,6) 把
+   世界坐标映射进主城网格、且触发评估有 HUB 硬门），而是分散到各关：
+   level-scoped 触发按「该关自身网格」的 (x, y) 求值，主城旧规则（羽毛 tile、
+   越界彩蛋）保留世界坐标映射。巡游在每关推箱解路开始前完成，站点坐标 =
+   对应关卡网格的地板格：
+     L1 主城：天使①（radius 1）+ 羽毛①③④（tile 同/邻格）+ 东侧越界彩蛋；
+       羽毛② hub(6,6) 是箱子出生点（原始格值 4），箱子推开后才能落格触发，
+       由解路过程顺路覆盖，不设巡游站；
+     L2/L3/L6：三小怪（radius 0，必须踩上触发格）；
+     L4/L5/L10：天使②③④（radius 1）；
+     L9：作者谜题（radius 1，需三小怪旗齐 —— 故作者关必须排在三怪关之后）；
+     L11：影流之主投影（radius 1）；
+     L12：王座咽喉 (6,4) —— BOSS 触发点 (6,5) 是 2×2 圣坛旗格不可站，
+       (6,4) 距其曼哈顿 1，radius 3 内必触发；先触发 BOSS 三幕（此时作者旗
+       已齐、持谜题之钥，走护盾战分支不进秒杀），再开始推箱解路。 */
 
 interface TourStop {
   readonly label: string;
@@ -54,31 +68,96 @@ interface TourStop {
 }
 
 /**
- * 主城剧情巡游路线（按实测最省步排序，N2）。十站内容一个不少，顺序约束
- * （天使① 在最前；作者谜题必须在三小怪全灭之后；BOSS 在作者后；东侧彩蛋
- * 收尾）全部保留 —— 羽毛与三小怪的触发彼此独立（各自 once/unlessFlag，
- * 作者只看三怪旗），因此可按最短路穿插。实测（walkDirs BFS，含箱子/祭坛
- * 占位）：原顺序巡游 103 步 + 解路 128 步 ≈ 231 步，超 2☆ 阈值 222；
- * 本顺序巡游 81 步，全程 ≈ 209 步，落回 2☆ 之内。
+ * 各关剧情巡游路线（key = LEVELS 关卡 id；缺表的关无剧情点，直接进解路）。
+ * 巡游步数为 walkDirs BFS 实测（单测逐关核算并钉值，见 autoPlay.test.ts），
+ * 预算核算（巡游 + 从巡游终点起步的解路实走，对照 parSteps[1] 2☆ 阈值）：
+ *   L1  巡游 54 + 解路 133 = 187 < 222（2☆ 硬指标达标）；
+ *   L2  巡游 0（遭遇点被守卫占位跳过，见下注）+ 解路 131 = 131 < 236；
+ *   L3 11 + 179 = 190 < 339；L4 10 + 41 = 51 < 92；
+ *   L5 8 + 13 = 21（>17，见下注）；L6 4 + 16 = 20 < 33；
+ *   L9 7 + 17 = 24 < 44；L10 7 + 56 = 63 < 92；L11 11 + 73 = 84 < 134；
+ *   L12 8 + 73 = 81 < 135。
+ * 例外一 L2：MECH-4 把「蔡徐坤守卫」实体放在遭遇点 (12,3) 同格堵东廊箱道，
+ * 而该格四向皆不可推（上/下让路格是墙、左是箱、右推位是箱）——巡游推入
+ * 不可行，站点按实机规则优雅跳过（planTourPushIn 单测钉死该负例）；遭遇
+ * 触发依赖 STORY-5/MECH-4 的联动语义（触碰遭遇/regen 敌推），demo 完成性
+ * 不受影响（解路不经过 (12,3)）。
+ * 例外二 L5（阶下回音，par 最小的一关）：天使③被剧情分布放在关卡最东
+ * (7,3)，而解路首发力位在西侧 (2,2)，巡游到访的往返成本 ≈12 步 → 全程
+ * 21 步必落 1☆。这是 STORY-5 放置的结构性代价，任何巡游站位（r1 内）都
+ * 无法避免；21 仍远小于运行时预算（17+30），不影响通关与跳关 —— 演示以
+ * 「完整通关、无 skip」为准，星级只有 L1 被验收硬性钉在 2☆。
  */
-export const HUB_TOUR: readonly TourStop[] = [
-  { label: '导航天使①', target: { x: 8, y: 6 } },
-  // 羽毛①与天使①同格 (8,6)：先跨出到 (8,7) 再回踩，制造 tile 落格（+2 步）
-  { label: '残留的羽毛·①', target: { x: 8, y: 6 }, reEnter: 'down' },
-  { label: '残留的羽毛·③', target: { x: 7, y: 7 } },
-  { label: '蔡徐坤', target: { x: 11, y: 8 } },
-  { label: '郭老师', target: { x: 10, y: 3 } },
-  { label: '残留的羽毛·④', target: { x: 7, y: 5 } },
-  { label: '冬泳怪鸽', target: { x: 3, y: 2 } },
-  { label: '作者谜题', target: { x: 4, y: 10 } },
-  { label: '影流之主 BOSS', target: { x: 2, y: 11 } },
-  { label: '东侧彩蛋·神秘法阵', target: { x: 14, y: 10 }, edgePush: 'right' },
-];
+export const LEVEL_TOURS: Record<string, readonly TourStop[]> = {
+  [HUB_LEVEL_ID]: [
+    { label: '导航天使①', target: { x: 8, y: 6 } },
+    // 羽毛①与天使①同格 (8,6)：先跨出到 (8,7) 再回踩，制造 tile 落格（+2 步）
+    { label: '残留的羽毛·①', target: { x: 8, y: 6 }, reEnter: 'down' },
+    { label: '残留的羽毛·③', target: { x: 7, y: 7 } },
+    { label: '残留的羽毛·④', target: { x: 7, y: 5 } },
+    { label: '东侧彩蛋·神秘法阵', target: { x: 14, y: 10 }, edgePush: 'right' },
+  ],
+  // L2 蔡徐坤遭遇点 (12,3) 被 MECH-4 守卫实体同格占位且四向不可推：巡游
+  // 推入不可行时按实机规则优雅跳过（planTourPushIn 负例），遭遇触发交给
+  // STORY-5/MECH-4 联动语义；站点坐标保持 STORY-5 分布不动。
+  'level-sb-02': [{ label: '蔡徐坤', target: { x: 12, y: 3 } }],
+  'level-sb-03': [{ label: '郭老师', target: { x: 7, y: 5 } }],
+  'level-sb-04': [{ label: '导航天使②', target: { x: 7, y: 4 } }],
+  'level-lb-05': [{ label: '导航天使③', target: { x: 7, y: 3 } }],
+  'level-lb-06': [{ label: '冬泳怪鸽', target: { x: 3, y: 3 } }],
+  'level-lb-09': [{ label: '作者谜题', target: { x: 5, y: 4 } }],
+  'level-lb-10': [{ label: '导航天使④', target: { x: 2, y: 7 } }],
+  'level-lb-11': [{ label: '影流之主投影', target: { x: 6, y: 7 } }],
+  'level-lb-12': [{ label: '王座咽喉', target: { x: 6, y: 4 } }],
+};
 
 export interface AutoPlayConfig {
   readonly enabled: boolean;
   /** 演示速度倍率（0.5~5） */
   readonly speed: number;
+}
+
+/* 与 solver.walkPath 内部的 DIR_ORDER 同序（未导出，此处复刻；改动须同步） */
+const TOUR_DIR_ORDER: readonly Dir[] = ['up', 'down', 'left', 'right'];
+
+/**
+ * 「推入到站」规划（纯函数）：剧情遭遇点被可推实体占位时（MECH-4 把蔡徐坤
+ * 守卫放在与遭遇点同格的东廊箱道上），walkDirs 无法直达 —— 从四方向找
+ * 「走到推位 → 推进一步 → 玩家落站」的方案：
+ *   推位 stand = target 反向邻格（须可达），实体让路落点 beyond = target
+ *   沿推方向的邻格（须在界内且是无人占的可走格）。玩家在推位 s.move(pushDir)
+ *   即推进实体并落到 target，触发剧情遭遇。
+ * target 本身是墙/不可推占位（祭坛等）时返回 null；调用方退化为跳过站点。
+ */
+export function planTourPushIn(
+  geometry: LevelGeometry,
+  blockedPoints: readonly Vec2[],
+  player: Vec2,
+  target: Vec2,
+  targetPushable: boolean,
+): { readonly walkTo: Vec2; readonly pushDir: Dir } | null {
+  if (!targetPushable) return null;
+  const targetTerrain = geometry.terrain[target.y]?.[target.x];
+  if (targetTerrain === undefined || targetTerrain === 1) return null; // 墙/界外不可落站
+  const blocked = new Set(blockedPoints.map((p) => `${p.x},${p.y}`));
+  const standable = (x: number, y: number): boolean => {
+    if (x < 0 || y < 0 || x >= geometry.width || y >= geometry.height) return false;
+    if (blocked.has(`${x},${y}`)) return false;
+    const t = geometry.terrain[y]?.[x];
+    return t !== undefined && t !== 1;
+  };
+  for (const dir of TOUR_DIR_ORDER) {
+    const v = DIR_VECTORS[dir];
+    const stand = { x: target.x - v.x, y: target.y - v.y }; // 推位（玩家先走到这）
+    const beyond = { x: target.x + v.x, y: target.y + v.y }; // 实体让路落点
+    if (!standable(stand.x, stand.y)) continue;
+    if (!standable(beyond.x, beyond.y)) continue;
+    if (stand.x === player.x && stand.y === player.y) return { walkTo: stand, pushDir: dir };
+    const walk = walkDirs(geometry, player, blockedPoints, stand);
+    if (!walk.ok) continue;
+    return { walkTo: stand, pushDir: dir };
+  }
+  return null;
 }
 
 /** 解析 URL 参数（纯函数，单测可直接喂 query 字符串） */
@@ -115,11 +194,11 @@ export function levelRetryPlan(resets: number, hasNextLevel: boolean): LevelRetr
 /* --------------------------- 步数预算（N2） ------------------------------ */
 
 /**
- * 演示步数预算余量：2☆ 阈值之上的容忍度。实测干净全程 ≈ 标定解路 128 步 +
- * 主城巡游 81 步（初醒箱庭 ≈ 209 ≤ par[1] 222），余量只需吸收重规划/被打断
- * 的少量绕行（实测噪声 ~3 步）；取 30 让预算仍覆盖巡游路线的合理漂移
- * （例如巡游站点增减十几步），同时把真正病态的尝试（反复被挡/久等重置）
- * 挡在 2☆ 阈值 + 30 之内。
+ * 演示步数预算余量：2☆ 阈值之上的容忍度。实测干净全程 ≈ 巡游 54 步 +
+ * 解路 133 步（初醒箱庭 ≈ 187 ≤ par[1] 222，见 LEVEL_TOURS 预算核算），
+ * 余量只需吸收重规划/被打断的少量绕行（实测噪声 ~3 步）；取 30 让预算仍
+ * 覆盖巡游路线的合理漂移（例如巡游站点增减十几步），同时把真正病态的尝试
+ * （反复被挡/久等重置）挡在 2☆ 阈值 + 30 之内。
  */
 export const DEMO_STEP_BUDGET_MARGIN = 30;
 
@@ -150,6 +229,21 @@ export function demoPlayer(): GameState['player'] {
   };
 }
 
+/**
+ * 视角接管（CAM-1 viewStore，只消费其 get/set API）：演示开始强制第三人称
+ * ——自动演示是观赏模式，巡游/解路/结算统一按第三人称演出，也不受
+ * viewPreference 相关相机分档的干扰；结束（完成/停止/卸载）时恢复进入
+ * 演示前的 viewPreference。返回恢复函数（幂等：完成、停止、卸载多条退出
+ * 路径都会调 restore，重复写回同一前值无副作用）。
+ */
+export function takeOverViewPreference(): () => void {
+  const saved = useViewStore.getState().viewPreference;
+  useViewStore.getState().setViewPreference('third');
+  return () => {
+    useViewStore.getState().setViewPreference(saved);
+  };
+}
+
 export function AutoPlayLayer() {
   const [config] = useState<AutoPlayConfig>(() =>
     readAutoPlayConfig(typeof window === 'undefined' ? '' : window.location.search),
@@ -177,7 +271,11 @@ export function AutoPlayLayer() {
       gacha: { ...initial.gacha, activeLaws: [] }, // 不激活法则卡，保持 solver 标准语义
     });
 
+    // 演示期强制第三人称视角（CAM-1 viewStore），结束/停止/卸载恢复前值
+    const restoreView = takeOverViewPreference();
+
     const restore = (): void => {
+      restoreView(); // viewPreference 恢复进入演示前的值（不污染偏好）
       const s = useGameStore.getState();
       useGameStore.setState({
         player: backup.player,
@@ -215,7 +313,9 @@ export function AutoPlayLayer() {
     let stepBudget = Number.POSITIVE_INFINITY;
     /** 当前巡游站是否已执行「跨出回踩」（防重复跨出的死循环） */
     let tourReEntered = false;
-    /** 主城剧情巡游进度 */
+    /** 推入到站：走位到推位后待执行的推方向（null = 无推入规划） */
+    let tourPushIn: Dir | null = null;
+    /** 本关剧情巡游进度（per-level 巡游表） */
     let tourIndex = 0;
     let tourDone = false;
     /** 对话节奏（每行约 1 秒，选项停留 0.9 秒再选） */
@@ -249,6 +349,7 @@ export function AutoPlayLayer() {
       const clearPlan = (): void => {
         legDirs = [];
         pushStep = null;
+        tourPushIn = null;
         waiting = 0;
         legBlocked = 0;
       };
@@ -288,7 +389,9 @@ export function AutoPlayLayer() {
       waiting = 0;
       tourIndex = 0;
       tourReEntered = false;
-      tourDone = id !== HUB_LEVEL_ID;
+      tourPushIn = null;
+      // 剧情巡游按关查表（STORY-5 分布）：无巡游表的关直接进解路
+      tourDone = LEVEL_TOURS[id] === undefined;
       const level = LEVELS.find((l) => l.id === id);
       if (level === undefined) {
         finish(`演示结束：会话关卡 ${id} 无法自动求解`);
@@ -378,13 +481,19 @@ export function AutoPlayLayer() {
       s.combatAct('attack');
     };
 
-    /** 主城剧情巡游：按 HUB_TOUR 顺序走到每个剧情点并停留（返回 true 表示本 tick 已处理） */
+    /** 本关剧情巡游：按 LEVEL_TOURS[levelId] 顺序走到每个剧情点并停留（返回 true 表示本 tick 已处理） */
     const driveTour = (
       s: GameStore,
-      entities: readonly { readonly kind: string; readonly x: number; readonly y: number }[],
+      entities: readonly {
+        readonly kind: string;
+        readonly x: number;
+        readonly y: number;
+        readonly pushable?: boolean;
+      }[],
       player: { readonly x: number; readonly y: number },
     ): boolean => {
-      const stop = HUB_TOUR[tourIndex];
+      const tour = (levelId !== null ? LEVEL_TOURS[levelId] : undefined) ?? [];
+      const stop = tour[tourIndex];
       if (stop === undefined) {
         tourDone = true;
         legDirs = [];
@@ -392,17 +501,51 @@ export function AutoPlayLayer() {
         return true;
       }
       if (player.x !== stop.target.x || player.y !== stop.target.y) {
+        if (legDirs.length === 0 && tourPushIn !== null) {
+          // 已走到推位：推进一步，实体让路、玩家落站（触发遭遇剧情）
+          const dir = tourPushIn;
+          tourPushIn = null;
+          s.move(dir);
+          lastProgress = Date.now();
+          return true;
+        }
         if (legDirs.length === 0) {
           if (geometry === null) return false;
           const blocked = entities.filter((e) => e.kind !== 'player').map((e) => ({ x: e.x, y: e.y }));
           const walk = walkDirs(geometry, { x: player.x, y: player.y }, blocked, stop.target);
           if (!walk.ok) {
-            tourIndex += 1; // 走不到的站点跳过（如被箱子占位）
-            tourReEntered = false;
-            return true;
+            // 站点被可推实体占位（如 MECH-4 守卫与遭遇点同格）：规划「推入到站」；
+            // 规划不出（不可推/围死）才跳过站点（剧情断链由看门狗重试兜底）
+            const occupant = entities.find(
+              (e) => e.x === stop.target.x && e.y === stop.target.y && e.kind !== 'player',
+            );
+            // 只有「可推实体」（箱子/敌人）占位才可推入；祭坛等建筑（pushable
+            // false）与无占位的围死站点都不可推入
+            const pushable = occupant?.pushable === true;
+            const pushIn = planTourPushIn(
+              geometry,
+              blocked,
+              { x: player.x, y: player.y },
+              stop.target,
+              pushable,
+            );
+            const approach =
+              pushIn === null
+                ? undefined
+                : walkDirs(geometry, { x: player.x, y: player.y }, blocked, pushIn.walkTo);
+            if (pushIn === null || approach === undefined || !approach.ok) {
+              tourIndex += 1; // 走不到也推不进的站点跳过（如被多实体围死）
+              tourReEntered = false;
+              tourPushIn = null;
+              return true;
+            }
+            legDirs = [...approach.dirs];
+            tourPushIn = pushIn.pushDir;
+            setStatus(`剧情巡游 ${tourIndex + 1}/${tour.length}：${stop.label}`);
+          } else {
+            legDirs = [...walk.dirs];
+            setStatus(`剧情巡游 ${tourIndex + 1}/${tour.length}：${stop.label}`);
           }
-          legDirs = [...walk.dirs];
-          setStatus(`剧情巡游 ${tourIndex + 1}/${HUB_TOUR.length}：${stop.label}`);
         }
         const dir = legDirs[0];
         if (dir === undefined) return true;
@@ -456,8 +599,8 @@ export function AutoPlayLayer() {
         return;
       }
 
-      // 主城：先走完整条剧情线（天使/羽毛/小怪/作者/BOSS/彩蛋），再开始推箱
-      if (!tourDone && segment.levelId === HUB_LEVEL_ID) {
+      // 本关有剧情巡游表（STORY-5 分布）：先走完剧情线，再开始推箱
+      if (!tourDone) {
         if (driveTour(s, puzzle.entities, player)) return;
       }
 
@@ -553,6 +696,7 @@ export function AutoPlayLayer() {
       if (phaseChanged && s.phase === 'playing') {
         legDirs = [];
         pushStep = null;
+        tourPushIn = null; // 巡游走位同样作废，回 playing 后按当前位置重规划
       }
       if (phaseChanged && s.phase === 'dialogue') {
         lastDialogueAt = now; // 进入对话先展示 1 秒再翻页

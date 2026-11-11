@@ -27,6 +27,8 @@ const CONTROLS: Array<[string, string]> = [
   ['S / ↓', '向下移动 / 推箱'],
   ['A / ←', '向左移动 / 推箱'],
   ['D / →', '向右移动 / 推箱'],
+  ['V', '第一 / 第三人称视角切换（任意相位可用）'],
+  ['T（按住）', '第一人称俯瞰：临时战术视角，松开自动恢复'],
   ['Y / U / B / N', '斜向推挤（需法则卡「斜向推挤」）'],
   ['Shift + 方向', '镜像拉箱：后退一格箱子跟进（需「镜像拉箱」）'],
   ['C', '相位穿行：消耗充能穿过一格障碍（需「相位穿行」）'],
@@ -65,6 +67,8 @@ const levelSections = AREA_LEVELS.map((lv) => {
     .map((p) => `<li><b class="arrow">${p.arrow}</b> ${esc(p.label)}${p.isFall ? ' <b class="fall">（坠落）</b>' : ''}</li>`)
     .join('');
   const mechanics = g.mechanics.map((m) => `<li>${esc(m)}</li>`).join('');
+  // twist 段：与游戏内攻略面板置顶行同一份 LEVEL_TWISTS 文案（数据层唯一文字源）
+  const twist = g.twist !== null ? `<p class="twist">✦ <b>本关新机制</b>：${esc(g.twist)}</p>` : '';
   const gate = g.gateHint !== null ? `<p class="gate">🎫 ${esc(g.gateHint)}</p>` : '';
   return `
   <section class="level" id="${esc(lv.id)}">
@@ -74,6 +78,7 @@ const levelSections = AREA_LEVELS.map((lv) => {
       <span class="chip">★★ ≤ ${g.stars.two} 步</span>
       <span class="chip cyan">奖励 ${esc(g.rewardText)}</span>
     </p>
+    ${twist}
     <ul>${mechanics}</ul>
     ${gate}
     <details><summary>展开参考推法（${g.pushes.length} 推 · 剧透）</summary><ol>${pushList}</ol>
@@ -117,6 +122,7 @@ const html = `<!doctype html>
   .arrow { color: var(--cyan); font-size: 15px; }
   .fall { color: var(--rose); }
   .gate { border:1px dashed rgba(255,207,92,.5); border-radius:8px; padding:6px 10px; font-size:13px; }
+  .twist { border:1px solid rgba(124,92,255,.45); background:rgba(124,92,255,.08); border-radius:8px; padding:6px 10px; font-size:13.5px; }
   .note { color: var(--dim); font-size: 12px; }
   .warn { color: var(--rose); font-size: 12.5px; }
   code, kbd { background: rgba(0,229,255,.08); border: 1px solid rgba(0,229,255,.25); border-radius: 5px; padding: 0 6px; font-size: 12.5px; }
@@ -135,7 +141,7 @@ const html = `<!doctype html>
   <p class="tagline">LAWBOX CHRONICLE · 三款远古小游戏融合重制</p>
   <div class="badges">
     <span>React 18 + TypeScript strict</span><span>Vite 5</span><span>three.js / React-Three-Fiber 3D</span>
-    <span>zustand</span><span>framer-motion</span><span>howler.js</span><span>vitest 553 用例</span>
+    <span>zustand</span><span>framer-motion</span><span>howler.js</span><span>vitest 全量回归门禁</span>
   </div>
 </header>
 
@@ -208,7 +214,7 @@ ${levelSections}
   <li><b>越界四方向</b>：主城边缘向外走——北=时空裂缝进隐藏关；东=神秘法阵传送（可进无尽回廊）；南/西=反转为高难挑战层「深渊坠道」「E N D 之壁」。</li>
   <li><b>无尽回廊</b>：程序生成关卡，逆向拉箱构造保证可解，生成后仍经求解器+逐格回放双闸门校验。</li>
   <li><b>作者谜题</b>：集齐三小怪击杀后到作者处答题（答案 x−y=(D−1)−z 的原作谜题），答对 BOSS 攻击归零并获得弱点钥匙——原作答错即死的设定改成了阶梯提示+重试。</li>
-  <li><b>三种作弊入口</b>（设置开启作弊 / 标题页连点 20 次）：K 消箱、V 墙皮重掷、] [ 选关跳转、META 终端指令等——所有入口共用同一张命令表与解锁门，热键无特权。</li>
+  <li><b>三种作弊入口</b>（设置开启作弊 / 标题页连点 20 次）：K 消箱、G 墙皮重掷（原 V 键位已改为视角切换）、] [ 选关跳转、META 终端指令等——所有入口共用同一张命令表与解锁门，热键无特权。</li>
   <li><b>隐藏关与真结局</b>（剧透）：<details><summary>展开</summary>北越界进入隐藏关，复刻原作 EasterEgg：/kill--SetName、w/w/s/s、adad、BABA、/give 三武装、Base64 提示……最终以 <code>/kill--%^%&amp;62*^*&amp;^@&amp;*</code> 拒绝剧本，达成真结局「拒绝剧本的人」并解锁 META 终端常驻。</details></li>
 </ul>
 
@@ -218,7 +224,7 @@ npm install        # 安装依赖
 npm run dev        # 开发服务器（默认 :5173）
 npm run demo       # 自动通关演示（起服务并打开 /?autoplay=1）
 npm run build      # tsc -b &amp;&amp; vite build（纯静态产物 dist/）
-npm run test       # vitest run（37 文件 / 553 用例）
+npm run test       # vitest run（全量回归门禁）
 npm run preview    # 预览构建产物
 </pre>
 <p>自动演示：内置求解器逐关自动推箱 + 剧情巡游（天使/小怪/作者/BOSS/彩蛋），可加 <code>&amp;speed=2</code> 调速（0.5~5）；顶栏随时可停，演示使用临时角色，结束自动恢复你的存档。</p>

@@ -15,8 +15,11 @@
  *     `gacha` 与 `pity`（三层独立计数器，随存档持久化）。
  *
  * 世界坐标约定：Kichiku 主地图（±5）重化为「初醒箱庭」（level-sb-01，15×13）
- * 的网格空间 —— STORY_GRID_OFFSET=(7,6)。剧情 NPC/越界触发只在主线枢纽关卡
- * （HUB_LEVEL_ID）上评估；越界 beyond 事件由「边界外一步被拒」的出界动作触发。
+ * 的网格空间 —— STORY_GRID_OFFSET=(7,6)。剧情触发按规则作用域双坐标求值
+ * （STORY-5 分布）：level-scoped 规则（when.levelId 已声明）在该关自身网格上
+ * 用玩家原始网格坐标求值；缺省 levelId 的旧规则（主城羽毛/越界彩蛋）只在
+ * 主线枢纽关卡（HUB_LEVEL_ID）上经 gridToWorld 世界坐标求值，向后兼容。
+ * 越界 beyond 事件由「边界外一步被拒」的出界动作触发（保持 HUB-only）。
  *
  * 演出副作用（音效/震屏/运镜）一律经 core/events/bus 广播，不进状态。
  */
@@ -51,9 +54,10 @@ import { generateEndlessFloor, floorAsLevel } from '../../data/levels/endless';
 import {
   classifyPosition,
   checkLevelEntryDeck,
-  findInteractableRule,
   isOutskirtsTransition,
+  positionalRuleLevelId,
   queryTrigger,
+  type TriggerContext,
   type TriggerRule,
 } from '../../engine/story/triggers';
 import {
@@ -593,6 +597,21 @@ export const useGameStore = create<GameStore>()(
         return hazards;
       };
 
+      /**
+       * 战场敌人落点（STORY-5）：敌人实体的布阵位 = 遭遇发生的 npc 触发规则格
+       * （当前正在演出的剧本 → 触发规则表反查；level-scoped 规则为该关网格坐标，
+       * 主城旧规则经 worldToGrid 世界坐标）。查不到触发规则（无 npc 前置的剧本）
+       * 时回退玩家所在格 —— 踩上即遭遇的既有语义。
+       * enemies.originPos 自 STORY-5 起降级为图鉴字段，不再参与任何运行时求值。
+       */
+      const encounterCellOf = (scriptId: string | null, playerCell: Vec2, levelId: string): Vec2 => {
+        const rule = ALL_TRIGGER_RULES.find((r) => r.scriptId === scriptId && r.when.kind === 'npc');
+        if (rule === undefined || rule.when.kind !== 'npc') return playerCell;
+        const ruleLevel = positionalRuleLevelId(rule);
+        if (ruleLevel === undefined) return worldToGrid(rule.when.x, rule.when.y);
+        return ruleLevel === levelId ? { x: rule.when.x, y: rule.when.y } : playerCell;
+      };
+
       const launchBattle = (enemyId: string, tuning: BattleTuning): void => {
         const state = get();
         const enemy = findEnemy(enemyId);
@@ -618,7 +637,8 @@ export const useGameStore = create<GameStore>()(
           .filter((w) => w !== undefined);
 
         const playerEntity = puzzle.entities.find((e) => e.kind === 'player');
-        const enemyGrid = worldToGrid(enemy.originPos.x, enemy.originPos.y);
+        const playerCell: Vec2 = playerEntity !== undefined ? { x: playerEntity.x, y: playerEntity.y } : { x: 0, y: 0 };
+        const enemyGrid = encounterCellOf(state.storyRuntime.scriptId, playerCell, state.segment?.levelId ?? '');
 
         // ---- 布阵战场装配（H1）：尖刺 + BOSS 深渊环 + 战场箱子（箱落攻击弹药） ----
         const hazards = battleHazardsFor(puzzle.geometry.terrain, enemyGrid, enemy.boss);
@@ -758,33 +778,70 @@ export const useGameStore = create<GameStore>()(
       };
 
       /* --------------------------- 剧情触发评估 --------------------------- */
+
+      /** 触发查询上下文的公共切片（旗标/已见事件；坐标按作用域分别注入） */
+      type TriggerCtxBase = Pick<TriggerContext, 'flags' | 'seenEventIds'>;
+
+      /**
+       * 位置类规则（npc/tile）的双坐标求值（STORY-5 分布）：
+       *  - level-scoped 规则（when.levelId 已声明）：x/y 是该关自身网格坐标，
+       *    用玩家「原始网格坐标」求值，且只在对应关卡命中；
+       *  - 旧规则（缺省 levelId）：x/y 是主城世界坐标，只在主城枢纽经
+       *    gridToWorld 世界坐标求值（向后兼容既有触发表）。
+       * 两套命中按 ALL_TRIGGER_RULES 表序取先（数据顺序即优先级，无隐式穿透；
+       * 主城内两套并存：天使① npc/光羽① 的表序先于既有主城羽毛 tile）。
+       */
+      const queryPositionalTrigger = (
+        levelId: string,
+        grid: Vec2,
+        world: Vec2,
+        ctxBase: TriggerCtxBase,
+        kinds: 'npc' | 'npc+tile',
+      ): TriggerRule | null => {
+        const positional = ALL_TRIGGER_RULES.filter((r) =>
+          kinds === 'npc' ? r.when.kind === 'npc' : r.when.kind === 'npc' || r.when.kind === 'tile',
+        );
+        const scopedRules = positional.filter((r) => positionalRuleLevelId(r) === levelId);
+        const hubRules = positional.filter((r) => positionalRuleLevelId(r) === undefined);
+        const scopedHit = queryTrigger(scopedRules, { x: grid.x, y: grid.y, ...ctxBase });
+        const hubHit =
+          levelId === HUB_LEVEL_ID
+            ? queryTrigger(hubRules, { x: world.x, y: world.y, ...ctxBase })
+            : null;
+        if (scopedHit === null || hubHit === null) return scopedHit ?? hubHit;
+        return ALL_TRIGGER_RULES.indexOf(scopedHit) <= ALL_TRIGGER_RULES.indexOf(hubHit)
+          ? scopedHit
+          : hubHit;
+      };
+
       const evaluateTriggersAfterMove = (prevWorld: Vec2, currWorld: Vec2): void => {
         const state = get();
-        if (state.segment?.levelId !== HUB_LEVEL_ID) return;
-        const ctx = {
-          x: currWorld.x,
-          y: currWorld.y,
+        const segment = state.segment;
+        if (segment === null) return;
+        const levelId = segment.levelId;
+        const ctxBase: TriggerCtxBase = {
           flags: { ...state.story.flags, ...state.storyRuntime.flags },
           seenEventIds: state.story.seenEventIds,
         };
+        // level-scoped 规则用玩家原始网格坐标（gridToWorld 的逆映射，与
+        // applyPuzzleAction :847/:888 的世界坐标口径互补 —— 双坐标并存）
+        const grid = worldToGrid(currWorld.x, currWorld.y);
         // npc/tile 类规则：落地即查（小怪 radius 0 = 踩上即遭遇）
-        const hit = queryTrigger(
-          ALL_TRIGGER_RULES.filter((r) => r.when.kind === 'npc' || r.when.kind === 'tile'),
-          ctx,
-        );
+        const hit = queryPositionalTrigger(levelId, grid, currWorld, ctxBase, 'npc+tile');
         if (hit !== null) {
           markTriggerSeen(hit);
           startStoryScript(hit.scriptId);
           return;
         }
-        // 越界缓冲带：边沿触发（从 inside 跨入 buffer 的那一刻）
+        // 越界缓冲带：边沿触发（从 inside 跨入 buffer 的那一刻）；outskirts 保持 HUB-only
+        if (levelId !== HUB_LEVEL_ID) return;
         const prevZone = classifyPosition(prevWorld.x, prevWorld.y);
         const currZone = classifyPosition(currWorld.x, currWorld.y);
         for (const dir of ['north', 'south', 'east', 'west'] as const) {
           if (isOutskirtsTransition(prevZone, currZone, dir, 'buffer')) {
             const rule = queryTrigger(
               ALL_TRIGGER_RULES.filter((r) => r.when.kind === 'outskirts'),
-              ctx,
+              { x: currWorld.x, y: currWorld.y, ...ctxBase },
             );
             if (rule !== null) {
               markTriggerSeen(rule);
@@ -884,7 +941,10 @@ export const useGameStore = create<GameStore>()(
 
         const nextPuzzle = result.state;
         const nextPlayer = nextPuzzle.entities.find((e) => e.kind === 'player');
-        if (nextPlayer !== undefined) {
+        // 结算即场景边界：达标那一拍不评估剧情触发（startStoryScript/结算面板
+        // 会互相覆盖 phase，剧本会被悬空）。once:false 的规则下一拍重触发；
+        // once:true 的规则保持待发（同格后续落格仍会命中），无任何软锁路径。
+        if (nextPlayer !== undefined && !solvedNow) {
           evaluateTriggersAfterMove(prevWorld, gridToWorld(nextPlayer.x, nextPlayer.y));
         }
         if (solvedNow) {
@@ -1094,14 +1154,15 @@ export const useGameStore = create<GameStore>()(
             bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-16' });
             return;
           }
+          const levelId = state.segment?.levelId ?? '';
           const world = gridToWorld(player.x, player.y);
-          const ctx = {
-            x: world.x,
-            y: world.y,
+          const ctxBase: TriggerCtxBase = {
             flags: { ...state.story.flags, ...state.storyRuntime.flags },
             seenEventIds: state.story.seenEventIds,
           };
-          const rule = findInteractableRule(ALL_TRIGGER_RULES, ctx);
+          // E 交互与移动触发共用同一套关级作用域过滤（STORY-5）：level-scoped 用
+          // 网格坐标、主城旧规则用世界坐标；只查 npc 规则（曼哈顿 ≤1，含踩上 radius 0）
+          const rule = queryPositionalTrigger(levelId, { x: player.x, y: player.y }, world, ctxBase, 'npc');
           if (rule === null) {
             bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-2' });
             return;

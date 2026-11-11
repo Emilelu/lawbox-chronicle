@@ -8,6 +8,11 @@
  *    走合并低模 LOD（mergeGeometries，2 draw calls）。
  *  - 全部尺寸由 theme.CELL 派生，深渊外圈把关卡托成浮空岛。
  * 法则之门由 theme.deriveGates 派生，关卡完成时经 GateMesh 溶解开启。
+ * THEME-3 逐关主题：主题经 levelThemes.resolveLevelTheme(levelId, yin) 解析
+ * （12 关 accent/fog/sky/双灯/地面墙，mixHex 派生，L9 per-plane 分支）；
+ * 墙皮 14 阶按关 accent 重采样；theme.ts:384 的 phaseTiles 装饰通道扩为
+ * 按关 deco 格（levelDeco）并入 instancedMesh 合批；每关一座主角装置
+ * （heroProp，纯装饰不占格）。
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
@@ -39,13 +44,18 @@ import {
   gridCenterWorld,
   hash2,
   heightOf,
-  planeTheme,
   selectMountedAreas,
-  wallShadeColor,
   type PlaneTheme,
   type TileField,
   type WorldVec3,
 } from './theme';
+import {
+  levelDeco,
+  levelHeroProp,
+  levelWallShadeColor,
+  resolveLevelTheme,
+  type LevelHeroProp,
+} from './levelThemes';
 import { GateMesh } from './entities/GateMesh';
 
 /* ============================ 通用：合批实例字段 =========================== */
@@ -142,6 +152,8 @@ interface ArenaChunkProps {
   readonly grid: Grid;
   readonly area: AreaId;
   readonly yin: boolean;
+  /** 本块对应的关卡 id（逐关主题解析；远景主区回落主城关） */
+  readonly levelId: string | null;
   /** 引擎海拔层（与 grid 同尺寸；缺省全 0 = 纯平面关） */
   readonly heights?: HeightMap;
   /** 远景低模 LOD（主区在域外时的过场形态） */
@@ -198,12 +210,14 @@ function LowDetailChunk({ field, area, theme, heights }: {
   );
 }
 
-/** 近景完整块：逐格合批（每材质 1 draw call）+ 门体 */
-function FullDetailChunk({ field, grid, area, theme, hazardCells, heights, complete }: {
+/** 近景完整块：逐格合批（每材质 1 draw call）+ 按关装饰格 + 门体 */
+function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heights, complete }: {
   field: TileField;
   grid: Grid;
   area: AreaId;
   theme: PlaneTheme;
+  /** 当前关 id（FullDetailChunk 只渲染当前关所在块） */
+  levelId: string | null;
   hazardCells: readonly Vec2[];
   heights: HeightMap | undefined;
   complete: boolean;
@@ -240,10 +254,11 @@ function FullDetailChunk({ field, grid, area, theme, hazardCells, heights, compl
         const surface = tile.height * HEIGHT_STEP;
         const totalH = surface + h; // 高台墙从地面升起，整柱填实（无悬空）
         const [wx, , wz] = toWorld(tile.x, tile.y);
+        // THEME-3：14 阶墙皮按关 accent 重采样（levelThemes 缓存 ramp）
         return {
           position: [wx, totalH / 2, wz] as WorldVec3,
           scale: [CELL * 0.98, totalH, CELL * 0.98] as WorldVec3,
-          color: wallShadeColor(theme.id === 'yin', tile.shade),
+          color: levelWallShadeColor(theme, tile.shade),
         };
       }),
     [field, toWorld, theme],
@@ -305,6 +320,37 @@ function FullDetailChunk({ field, grid, area, theme, hazardCells, heights, compl
     [field, toWorld, theme],
   );
 
+  // THEME-3：按关装饰格（levelDeco 确定性采样）—— phaseTiles 装饰通道的
+  // 逐关扩展，并入 instancedMesh 合批；贴地/矮小不遮玩法格，阴阳两相均可见
+  //（关卡识别色在默认阳面也要成立；阴面专属浮空石板仍单独成批保留 yin 语义）
+  const deco = useMemo(() => levelDeco(levelId, theme.id === 'yin', field), [levelId, theme, field]);
+  const decoItems = useMemo<FieldItem[]>(() => {
+    if (deco === null) return [];
+    return deco.tiles.map((tile) => {
+      const surface = tile.height * HEIGHT_STEP;
+      const [wx, , wz] = toWorld(tile.x, tile.y);
+      if (deco.kind === 'rune') {
+        return {
+          position: [wx, surface + 0.017, wz] as WorldVec3,
+          scale: [CELL * 0.72, 0.03, CELL * 0.72] as WorldVec3,
+          color: deco.color,
+        };
+      }
+      if (deco.kind === 'crystal') {
+        return {
+          position: [wx, surface + 0.18, wz] as WorldVec3,
+          scale: [CELL * 0.16, CELL * 0.36, CELL * 0.16] as WorldVec3,
+          color: deco.color,
+        };
+      }
+      return {
+        position: [wx, surface + 0.25, wz] as WorldVec3,
+        scale: [CELL * 0.09, CELL * 0.5, CELL * 0.09] as WorldVec3,
+        color: deco.color,
+      };
+    });
+  }, [deco, toWorld]);
+
   const spikeItems = useMemo<FieldItem[]>(
     () =>
       hazardCells.map((cell) => {
@@ -344,6 +390,15 @@ function FullDetailChunk({ field, grid, area, theme, hazardCells, heights, compl
           roughness={0.5}
         />
       </group>
+      {/* 按关装饰格（THEME-3）：独立合批（1 draw call），阴阳两相均可见 */}
+      <InstancedField
+        items={decoItems}
+        shape={deco?.kind === 'crystal' ? 'cone' : deco?.kind === 'pillar' ? 'cylinder' : 'box'}
+        emissive={deco?.color ?? '#000000'}
+        emissiveIntensity={0.4}
+        roughness={0.4}
+        metalness={0.1}
+      />
       <InstancedField items={spikeItems} shape="cone" roughness={0.55} metalness={0.3} />
       {gates.map((gate) => {
         const surface = surfaceAt(gate.x, gate.y);
@@ -363,9 +418,10 @@ function FullDetailChunk({ field, grid, area, theme, hazardCells, heights, compl
 }
 
 function ArenaChunk(props: ArenaChunkProps) {
-  const { grid, area, yin, lowDetail, hazardCells, heights, complete } = props;
+  const { grid, area, yin, levelId, lowDetail, hazardCells, heights, complete } = props;
   const field = useMemo(() => deriveTileField(grid, heights), [grid, heights]);
-  const theme = planeTheme(yin);
+  // THEME-3：位面换肤升级为「位面 × 关卡」双维解析（levelThemes 缓存，引用稳定）
+  const theme = resolveLevelTheme(levelId, yin);
   if (lowDetail) return <LowDetailChunk field={field} area={area} theme={theme} heights={heights} />;
   return (
     <FullDetailChunk
@@ -373,10 +429,87 @@ function ArenaChunk(props: ArenaChunkProps) {
       grid={grid}
       area={area}
       theme={theme}
+      levelId={levelId}
       hazardCells={hazardCells}
       heights={heights}
       complete={complete}
     />
+  );
+}
+
+/* ============================ 主角装置（每关一座） ========================== */
+
+/**
+ * 每关一主角装置（THEME-3）：纯装饰地标，不占格、不参与碰撞；1~5 个基本体
+ * 组合，主体 prop.color、发光件 prop.accent —— 与门缘/玩家点缀同源识别色。
+ */
+function HeroPropMesh({ prop, position }: { prop: LevelHeroProp; position: WorldVec3 }) {
+  const h = prop.height;
+  const body = (extra?: { readonly emissive?: string; readonly intensity?: number }) => (
+    <meshStandardMaterial
+      color={prop.color}
+      emissive={extra?.emissive ?? '#000000'}
+      emissiveIntensity={extra?.intensity ?? 0}
+      roughness={0.5}
+      metalness={0.2}
+    />
+  );
+  const box = (args: [number, number, number]) => <boxGeometry args={args} />;
+  const cone = (args: [number, number, number]) => <coneGeometry args={args} />;
+  return (
+    <group position={position}>
+      {prop.kind === 'obelisk' && (
+        <>
+          <mesh position={[0, h / 2, 0]}>{box([0.34, h, 0.34])}{body()}</mesh>
+          <mesh position={[0, h + 0.05, 0]}>{box([0.46, 0.1, 0.46])}{body({ emissive: prop.accent, intensity: 0.7 })}</mesh>
+        </>
+      )}
+      {prop.kind === 'arch' && (
+        <>
+          <mesh position={[-0.55, h / 2, 0]}>{box([0.22, h, 0.24])}{body()}</mesh>
+          <mesh position={[0.55, h / 2, 0]}>{box([0.22, h, 0.24])}{body()}</mesh>
+          <mesh position={[0, h + 0.09, 0]}>{box([1.32, 0.18, 0.28])}{body({ emissive: prop.accent, intensity: 0.4 })}</mesh>
+        </>
+      )}
+      {prop.kind === 'lantern-post' && (
+        <>
+          <mesh position={[0, h / 2, 0]}>{box([0.12, h, 0.12])}{body()}</mesh>
+          <mesh position={[0, h + 0.13, 0]}>{box([0.22, 0.26, 0.22])}{body({ emissive: prop.accent, intensity: 1.1 })}</mesh>
+        </>
+      )}
+      {prop.kind === 'crystal' && (
+        <>
+          <mesh position={[0, h / 2, 0]}>{cone([0.16, h, 5])}{body({ emissive: prop.accent, intensity: 0.5 })}</mesh>
+          <mesh position={[0.24, h * 0.27, 0.06]} rotation={[0, 0, -0.18]}>
+            {cone([0.1, h * 0.55, 5])}{body({ emissive: prop.accent, intensity: 0.5 })}
+          </mesh>
+        </>
+      )}
+      {prop.kind === 'monolith' && (
+        <>
+          <mesh position={[0, h / 2, 0]} rotation={[0, 0.12, 0.07]}>{box([0.5, h, 0.28])}{body()}</mesh>
+          <mesh position={[0.21, h / 2, 0.02]} rotation={[0, 0.12, 0.07]}>
+            {box([0.08, h * 0.8, 0.3])}{body({ emissive: prop.accent, intensity: 0.55 })}
+          </mesh>
+        </>
+      )}
+      {prop.kind === 'gate-post' && (
+        <>
+          <mesh position={[0, h / 2, 0]}>{box([0.16, h, 0.16])}{body()}</mesh>
+          <mesh position={[0, h * 0.78, 0]}>{box([0.5, 0.1, 0.16])}{body()}</mesh>
+          <mesh position={[0, h + 0.08, 0]}>{box([0.12, 0.12, 0.12])}{body({ emissive: prop.accent, intensity: 0.9 })}</mesh>
+        </>
+      )}
+      {prop.kind === 'throne' && (
+        <>
+          <mesh position={[0, 0.3, 0]}>{box([0.62, 0.14, 0.52])}{body()}</mesh>
+          <mesh position={[0, 0.3 + h * 0.28, -0.2]}>{box([0.62, h * 0.56, 0.12])}{body()}</mesh>
+          <mesh position={[-0.36, 0.45, 0]}>{box([0.1, 0.3, 0.5])}{body()}</mesh>
+          <mesh position={[0.36, 0.45, 0]}>{box([0.1, 0.3, 0.5])}{body()}</mesh>
+          <mesh position={[0, 0.3 + h * 0.56 + 0.1, -0.2]}>{box([0.2, 0.2, 0.06])}{body({ emissive: prop.accent, intensity: 0.8 })}</mesh>
+        </>
+      )}
+    </group>
   );
 }
 
@@ -388,6 +521,8 @@ export interface GridArenaProps {
   readonly currentArea: AreaId;
   /** 位面状态（store.segment.planeShifted 状态驱动换肤） */
   readonly yin: boolean;
+  /** 当前关卡 id（THEME-3 逐关主题/装饰/主角装置；null = 标题页兜底） */
+  readonly levelId?: string | null;
   /** 引擎海拔层（与 grid 同尺寸；缺省全 0 = 纯平面关） */
   readonly heights?: HeightMap;
   /** 尖刺格（terrain 武器扩展字段；engine 数据就绪后传入） */
@@ -400,12 +535,25 @@ export interface GridArenaProps {
  * 区域分块挂载：主区 + 当前外域常驻，其余外域不挂载（进出时挂/卸）。
  * 主区在域外时以低模 LOD 形态常驻（远景过场合并低模）。
  */
-export function GridArena({ grid, currentArea, yin, heights, hazardCells = [], complete }: GridArenaProps) {
+export function GridArena({ grid, currentArea, yin, levelId, heights, hazardCells = [], complete }: GridArenaProps) {
   const mounted = selectMountedAreas(currentArea);
   const mainLevel = useMemo(() => findLevel(LEVELS.find((l) => l.area === 'main')?.id ?? ''), []);
 
   const currentIsMain = currentArea === 'main';
   const showCurrentDomain = mounted.includes(currentArea) && !currentIsMain;
+  // 远景主区低模回落主城关主题；当前块用当前关主题
+  const mainLevelId = currentIsMain ? (levelId ?? null) : (mainLevel?.id ?? null);
+
+  // THEME-3：每关一主角装置 —— 表坐标钳到当前关网格的地板格，落在当前关所在块
+  const heroProp = useMemo(
+    () => levelHeroProp(levelId ?? null, yin, grid),
+    [levelId, yin, grid],
+  );
+  const heroPropPosition = useMemo<WorldVec3 | null>(() => {
+    if (heroProp === null) return null;
+    const [wx, , wz] = cellWorldCenter(heroProp.cell.x, heroProp.cell.y, grid.length, grid[0]?.length ?? 0, currentArea);
+    return [wx, heightOf(heights, heroProp.cell.x, heroProp.cell.y) * HEIGHT_STEP, wz];
+  }, [heroProp, grid, currentArea, heights]);
 
   return (
     <group>
@@ -414,6 +562,7 @@ export function GridArena({ grid, currentArea, yin, heights, hazardCells = [], c
           grid={currentIsMain ? grid : mainLevel.grid}
           area="main"
           yin={yin}
+          levelId={mainLevelId}
           lowDetail={!currentIsMain}
           hazardCells={currentIsMain ? hazardCells : []}
           heights={currentIsMain ? heights : undefined}
@@ -425,12 +574,14 @@ export function GridArena({ grid, currentArea, yin, heights, hazardCells = [], c
           grid={grid}
           area={currentArea}
           yin={yin}
+          levelId={levelId ?? null}
           lowDetail={false}
           hazardCells={hazardCells}
           heights={heights}
           complete={complete}
         />
       )}
+      {heroProp !== null && heroPropPosition !== null && <HeroPropMesh prop={heroProp} position={heroPropPosition} />}
     </group>
   );
 }

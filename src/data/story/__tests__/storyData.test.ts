@@ -21,12 +21,18 @@ import {
   type StoryRuntimeState,
   type StoryScriptDef,
 } from '../../../engine/story/interpreter';
-import { queryTrigger, GATE_MAKEUP_SCRIPTS, type TriggerContext } from '../../../engine/story/triggers';
 import {
+  queryTrigger,
+  GATE_MAKEUP_SCRIPTS,
+  type TriggerContext,
+  type TriggerRule,
+} from '../../../engine/story/triggers';
+import {
+  ANGEL_HUB_FEATHER_SCRIPTS,
+  ANGEL_LIGHTFEATHER_SCRIPTS,
   ANGEL_PARAMS,
   ANGEL_SCRIPTS,
   ANGEL_TRIGGER_RULES,
-  ANGEL_FEATHER_SCRIPT,
 } from '../angels';
 import {
   AUTHOR_PUZZLE_ANSWERS,
@@ -43,6 +49,10 @@ import {
   BOSS_BATTLE_TUNING,
   BOSS_SLAUGHTER_DAMAGE,
   BOSS_TRIGGER_RULES,
+  SHADOW_ECHO_SCRIPT,
+  SHADOW_ECHO_TRIGGER,
+  SHADOW_PROJECTION_SCRIPT,
+  SHADOW_PROJECTION_TRIGGER,
   shadowCount,
 } from '../bossActs';
 import {
@@ -58,21 +68,27 @@ import {
   OUTSKIRT_SCRIPTS,
   OUTSKIRT_TRIGGER_RULES,
 } from '../outskirts';
+import { MOB_SCRIPTS, MOB_TRIGGER_RULES } from '../mobs';
 import { CARDS } from '../../gacha';
 import { WEAPONS } from '../../weapons';
 import { ENEMIES } from '../../enemies';
+import { AREA_LEVEL_IDS, findAreaLevel } from '../../levels/areas';
 
 /* ============================ 剧本总注册表 ================================ */
 
 const ALL_SCRIPTS: readonly StoryScriptDef[] = [
   ...ANGEL_SCRIPTS,
-  ANGEL_FEATHER_SCRIPT,
+  ...ANGEL_LIGHTFEATHER_SCRIPTS,
+  ...ANGEL_HUB_FEATHER_SCRIPTS,
   AUTHOR_PUZZLE_SCRIPT,
   AUTHOR_HINT_SCRIPT,
+  SHADOW_ECHO_SCRIPT,
+  SHADOW_PROJECTION_SCRIPT,
   BOSS_ACTS_SCRIPT,
   HIDDEN_GAME_SCRIPT,
   ...OUTSKIRT_SCRIPTS,
   ...GATE_MAKEUP_SCRIPTS,
+  ...MOB_SCRIPTS,
 ];
 
 const ALL_SCRIPT_IDS = new Set(ALL_SCRIPTS.map((s) => s.id));
@@ -111,8 +127,11 @@ describe('剧本数据 —— 静态体检（K15 数据侧断言）', () => {
 
   it('所有触发规则的 scriptId 都能对应到真实剧本（含门槛补发剧本）', () => {
     const rules = [
+      ...MOB_TRIGGER_RULES,
       ...ANGEL_TRIGGER_RULES,
       ...AUTHOR_TRIGGER_RULES,
+      SHADOW_ECHO_TRIGGER,
+      SHADOW_PROJECTION_TRIGGER,
       ...BOSS_TRIGGER_RULES,
       ...OUTSKIRT_TRIGGER_RULES,
     ];
@@ -153,11 +172,145 @@ describe('剧本数据 —— 静态体检（K15 数据侧断言）', () => {
   });
 });
 
+/* ==================== STORY-5 剧情分布 —— 数据静态断言 ==================== */
+
+/**
+ * STORY-5 新增的 level-scoped 规则全量（16 条）：三怪 ×3 + 天使 npc/光羽 ×8 +
+ * 作者 npc/躺椅 hint ×2 + 残影/投影 ×2 + BOSS ×1。主城残留羽毛（既有规则，
+ * 世界坐标缺省 levelId）不入本集合，另有逐格豁免断言。
+ */
+const LEVEL_SCOPED_RULES: readonly TriggerRule[] = [
+  ...MOB_TRIGGER_RULES,
+  ...ANGEL_TRIGGER_RULES.filter((r) => r.when.kind === 'npc' || (r.when.kind === 'tile' && r.when.levelId !== undefined)),
+  ...AUTHOR_TRIGGER_RULES,
+  SHADOW_ECHO_TRIGGER,
+  SHADOW_PROJECTION_TRIGGER,
+  ...BOSS_TRIGGER_RULES,
+];
+
+describe('STORY-5 剧情分布 —— 数据静态断言', () => {
+  it('level-scoped 规则共 16 条，每条都声明 levelId 且对应关卡真实存在', () => {
+    expect(LEVEL_SCOPED_RULES).toHaveLength(16);
+    for (const rule of LEVEL_SCOPED_RULES) {
+      const levelId = rule.when.kind === 'npc' || rule.when.kind === 'tile' ? rule.when.levelId : undefined;
+      expect(levelId, `规则 ${rule.id} 必须声明 levelId`).toBeDefined();
+      expect(AREA_LEVEL_IDS, `规则 ${rule.id} 的关卡 ${levelId} 应存在`).toContain(levelId);
+    }
+  });
+
+  it('新增 level-scoped 坐标在对应关卡原始网格为 0（可站/可落格触发）', () => {
+    for (const rule of LEVEL_SCOPED_RULES) {
+      if (rule.when.kind !== 'npc' && rule.when.kind !== 'tile') continue;
+      const { x, y, levelId } = rule.when;
+      if (levelId === undefined) continue;
+      const raw = findAreaLevel(levelId)?.grid[y]?.[x];
+      if (rule.id === 'trigger-boss-ylzz') {
+        // 豁免（逐格复核）：BOSS (6,5) 即 L12 王座 2×2 圣坛旗格本体（原始格值 3，
+        // 不可站）—— npc 触发无需玩家可站，其覆盖性由下方「goal 邻格 ⊆ r3 覆盖集」
+        // 断言单列承担
+        expect(raw, 'BOSS (6,5) 应落在王座旗格').toBe(3);
+        continue;
+      }
+      expect(raw, `规则 ${rule.id} @ (${x},${y}) @ ${levelId}`).toBe(0);
+    }
+  });
+
+  it('主城残留羽毛（既有规则）：①③④ 重化网格为 0；羽毛② hub(6,6) 原始格值 4=箱子出生点（评审⑨豁免）', () => {
+    const hub = findAreaLevel('level-sb-01');
+    // 世界 (1,0)/(0,1)/(0,-1) → 重化网格 (8,6)/(7,7)/(7,5)，均为可落格地板
+    expect(hub?.grid[6]?.[8]).toBe(0);
+    expect(hub?.grid[7]?.[7]).toBe(0);
+    expect(hub?.grid[5]?.[7]).toBe(0);
+    // 羽毛② hub(6,6)：原始格值 4=箱子出生点，属既有行为豁免本断言 ——
+    // 箱移开后 tile 才可落格触发（评审⑨；autoPlay 巡游由解路顺路覆盖，不设站）
+    expect(hub?.grid[6]?.[6]).toBe(4);
+  });
+
+  it('作者谜题：requireFlags 三旗（三怪全灭才现身），npc 与躺椅 hint 同格 L9(5,4)', () => {
+    expect(AUTHOR_TRIGGER_RULES).toHaveLength(2);
+    const quiz = AUTHOR_TRIGGER_RULES.find((r) => r.id === 'trigger-author-quiz');
+    const hint = AUTHOR_TRIGGER_RULES.find((r) => r.id === 'trigger-author-hint');
+    expect(quiz?.requireFlags).toEqual([
+      'story:defeated:enemy-caixukun',
+      'story:defeated:enemy-guolaoshi',
+      'story:defeated:enemy-dygg',
+    ]);
+    expect(quiz?.when).toMatchObject({ kind: 'npc', x: 5, y: 4, levelId: 'level-lb-09' });
+    expect(hint?.when).toMatchObject({ kind: 'tile', x: 5, y: 4, levelId: 'level-lb-09' });
+  });
+
+  it('天使双旗（评审⑤）：per-angel unlessFlag + 全局旗双写；光羽/主城羽毛拾取统一置 feather-<seq>', () => {
+    for (const p of ANGEL_PARAMS) {
+      const npcRule = ANGEL_TRIGGER_RULES.find((r) => r.id === `trigger-angel-${p.seq}`);
+      expect(npcRule?.unlessFlag).toBe(`story:angel-met-${p.seq}`);
+      const entry = ANGEL_SCRIPTS.find((s) => s.id === `script-angel-${p.seq}`)?.nodes[0];
+      if (entry === undefined || entry.kind !== 'dialogue') throw new Error(`script-angel-${p.seq} 入口节点缺失`);
+      expect(entry.onEnterEffects).toContainEqual({ kind: 'setFlag', key: `story:angel-met-${p.seq}`, value: true });
+      expect(entry.onEnterEffects).toContainEqual({ kind: 'setFlag', key: 'story:angels-met', value: `angel-${p.seq}` });
+      // 光羽拾取置 per-seq 羽毛旗（L12 彩蛋消费）
+      const lightEntry = ANGEL_LIGHTFEATHER_SCRIPTS.find(
+        (s) => s.id === `script-angel-lightfeather-${p.seq}`,
+      )?.nodes[0];
+      if (lightEntry === undefined || lightEntry.kind !== 'dialogue') {
+        throw new Error(`script-angel-lightfeather-${p.seq} 入口节点缺失`);
+      }
+      expect(lightEntry.onEnterEffects).toContainEqual({ kind: 'setFlag', key: `story:feather-${p.seq}`, value: true });
+    }
+    // 主城羽毛拾取同样置 per-seq 羽毛旗；requireFlag 用全局旗（「至少遇见一位」不失效）
+    for (const rule of ANGEL_TRIGGER_RULES.filter((r) => r.id.endsWith('-feather'))) {
+      expect(rule.requireFlag).toBe('story:angels-met');
+      const seq = rule.id.replace('trigger-angel-', '').replace('-feather', '');
+      const entry = ANGEL_HUB_FEATHER_SCRIPTS.find((s) => s.id === rule.scriptId)?.nodes[0];
+      if (entry === undefined || entry.kind !== 'dialogue') throw new Error(`${rule.scriptId} 入口节点缺失`);
+      expect(entry.onEnterEffects).toContainEqual({ kind: 'setFlag', key: `story:feather-${seq}`, value: true });
+    }
+  });
+
+  it('L12 断言：goal 4-邻格 ⊆ BOSS npc(6,5) r3 覆盖集（评审④ 修法的可测形式）', () => {
+    const level = findAreaLevel('level-lb-12');
+    if (level === undefined) throw new Error('level-lb-12 缺失');
+    // goal 集合（2×2 圣坛）
+    const goals: { x: number; y: number }[] = [];
+    level.grid.forEach((row, y) => {
+      row.forEach((cell, x) => {
+        if (cell === 3) goals.push({ x, y });
+      });
+    });
+    expect(goals).toContainEqual({ x: 6, y: 5 }); // BOSS 坐标即王座旗格
+    // goal 的 4-邻格全集（完成最后一次推箱时玩家必然站在其中之一）
+    const neighbors: { x: number; y: number }[] = [];
+    for (const g of goals) {
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = g.x + dx;
+        const ny = g.y + dy;
+        if (goals.some((o) => o.x === nx && o.y === ny)) continue; // 圣坛内部互邻
+        if (!neighbors.some((n) => n.x === nx && n.y === ny)) neighbors.push({ x: nx, y: ny });
+      }
+    }
+    expect(neighbors.length).toBeGreaterThan(0);
+    for (const n of neighbors) {
+      const dist = Math.abs(n.x - 6) + Math.abs(n.y - 5);
+      expect(dist, `goal 邻格 (${n.x},${n.y}) 到 BOSS (6,5) 曼哈顿距离`).toBeLessThanOrEqual(3);
+    }
+    // 出生点 (1,1) 距 (6,5) 曼哈顿 9 —— 进场不误触
+    expect(Math.abs(1 - 6) + Math.abs(1 - 5)).toBe(9);
+  });
+});
+
 /* ============================== 四天使 ==================================== */
 
-describe('angels —— 同一模板 × 4（Game.java:509-808 数据化）', () => {
-  it('四位天使坐标与 Game.java:48-51 一致', () => {
-    expect(ANGEL_PARAMS.map((p) => [p.x, p.y])).toEqual([
+describe('angels —— 同一模板 × 4（Game.java:509-808 数据化 + STORY-5 迁关分布）', () => {
+  it('四位天使分布（STORY-5）：①留主城 L1(8,6)、②L4(7,4)、③L5(7,3)、④L10(2,7)', () => {
+    expect(ANGEL_PARAMS.map((p) => [p.levelId, p.x, p.y])).toEqual([
+      ['level-sb-01', 8, 6],
+      ['level-sb-04', 7, 4],
+      ['level-lb-05', 7, 3],
+      ['level-lb-10', 2, 7],
+    ]);
+    // 原版出生地（Game.java:48-51）作为「主城残留羽毛」tile 保留（世界坐标）
+    expect(ANGEL_TRIGGER_RULES.filter((r) => r.id.endsWith('-feather')).map((r) =>
+      r.when.kind === 'tile' ? [r.when.x, r.when.y] : [],
+    )).toEqual([
       [1, 0],
       [-1, 0],
       [0, 1],
@@ -203,19 +356,38 @@ describe('angels —— 同一模板 × 4（Game.java:509-808 数据化）', () 
     }
   });
 
-  it('姐妹锁：遇到一位后，其余天使规则被 unlessFlag 封锁，只余羽毛事件', () => {
-    const ctx: TriggerContext = {
-      x: -1,
-      y: 0, // 天使②坐标
-      flags: { 'story:angels-met': 'angel-1' },
+  it('触发锁（STORY-5）：per-angel 旗只锁本人规则；主城羽毛门槛用全局旗', () => {
+    // 遇见天使①后，她本人的 npc 规则被 per-angel 旗封锁 —— 同格 (8,6) 先命中光羽①
+    const met1: TriggerContext = {
+      x: 8,
+      y: 6,
+      flags: { 'story:angel-met-1': true, 'story:angels-met': 'angel-1' },
       seenEventIds: [],
     };
-    const hit = queryTrigger(ANGEL_TRIGGER_RULES, ctx);
-    expect(hit?.scriptId).toBe('script-angel-feather'); // 只剩羽毛
+    expect(queryTrigger(ANGEL_TRIGGER_RULES, met1)?.scriptId).toBe('script-angel-lightfeather-1');
+    // 其余天使规则互不牵连（各居一关）：per-angel 旗①不影响天使③的命中
+    //（(6,3) 是天使③ (7,3) r1 的独占邻格，不在天使② (7,4) r1 内）
+    const met1AtAngel3 = queryTrigger(ANGEL_TRIGGER_RULES, {
+      x: 6,
+      y: 3,
+      flags: { 'story:angel-met-1': true },
+      seenEventIds: [],
+    });
+    expect(met1AtAngel3?.scriptId).toBe('script-angel-3');
+    // 一位都没遇见 → 主城残留羽毛门槛（全局旗）锁死
+    expect(queryTrigger(ANGEL_TRIGGER_RULES, { x: 1, y: 0, flags: {}, seenEventIds: [] })).toBeNull();
+    // 全局旗置位（「至少遇见一位」语义）→ 主城残留羽毛可拾取（per-seq 脚本）
+    const metAny = queryTrigger(ANGEL_TRIGGER_RULES, {
+      x: 1,
+      y: 0,
+      flags: { 'story:angels-met': 'angel-2' },
+      seenEventIds: [],
+    });
+    expect(metAny?.scriptId).toBe('script-angel-feather-1');
   });
 
-  it('未遇到任何天使时，天使①规则可命中（半径 1 内）', () => {
-    const hit = queryTrigger(ANGEL_TRIGGER_RULES, { x: 2, y: 0, flags: {}, seenEventIds: [] });
+  it('未遇到天使①时，天使①规则可命中（半径 1 内，主城网格坐标）', () => {
+    const hit = queryTrigger(ANGEL_TRIGGER_RULES, { x: 8, y: 6, flags: {}, seenEventIds: [] });
     expect(hit?.scriptId).toBe('script-angel-1');
   });
 });
@@ -273,11 +445,11 @@ describe('authorPuzzle —— x-y=(D-1)-z（Game.java:481-491）', () => {
     expect(AUTHOR_PUZZLE_SOLVER('5,5,2', { flags: {}, retries: 0, ownedCardIds: [] }).ok).toBe(false);
   });
 
-  it('作者触发：三怪全灭才现身（Game.java:328-329 的 requireFlags 化）', () => {
-    const atAuthor: TriggerContext = { x: -2, y: 4, flags: {}, seenEventIds: [] };
+  it('作者触发：三怪全灭才现身（Game.java:328-329 的 requireFlags 化，L9 网格 (5,4)）', () => {
+    const atAuthor: TriggerContext = { x: 5, y: 4, flags: {}, seenEventIds: [] };
     expect(queryTrigger(AUTHOR_TRIGGER_RULES, atAuthor)?.scriptId).toBe('script-author-hint');
     const cleared: TriggerContext = {
-      x: -2,
+      x: 5,
       y: 4,
       flags: {
         'story:defeated:enemy-caixukun': true,
@@ -358,10 +530,35 @@ describe('bossActs —— 秒杀演出 / 护盾化 BOSS 战 / 结局（Game.java
     expect(ending && ending.kind === 'showEnding' && ending.closable).toBe(true);
   });
 
-  it('BOSS 触发规则：坐标 (-5,5)（Game.java:58）', () => {
-    const hit = queryTrigger(BOSS_TRIGGER_RULES, { x: -4, y: 5, flags: {}, seenEventIds: [] });
+  it('BOSS 触发规则：L12 王座 (6,5) r3 + once:false + 击败旗封锁（STORY-5 修法）', () => {
+    const rule = BOSS_TRIGGER_RULES[0];
+    expect(rule?.when).toMatchObject({ kind: 'npc', x: 6, y: 5, radius: 3, levelId: 'level-lb-12' });
+    expect(rule?.once).toBe(false);
+    expect(rule?.unlessFlag).toBe('story:boss-defeated');
+    // 王座邻格 (5,4)（曼哈顿 2）命中
+    const hit = queryTrigger(BOSS_TRIGGER_RULES, { x: 5, y: 4, flags: {}, seenEventIds: [] });
     expect(hit?.scriptId).toBe('script-boss-acts');
-    expect(queryTrigger(BOSS_TRIGGER_RULES, { x: 0, y: 0, flags: {}, seenEventIds: [] })).toBeNull();
+    // 击败旗只在信结局置位 → 置位后永不再触发（真战斗收尾语义）
+    expect(
+      queryTrigger(BOSS_TRIGGER_RULES, { x: 5, y: 4, flags: { 'story:boss-defeated': true }, seenEventIds: [] }),
+    ).toBeNull();
+    // once:false 生效：秒杀演出看过（seenEventIds 已记）但未持击败旗 → 再入王座厅可重复触发
+    expect(
+      queryTrigger(BOSS_TRIGGER_RULES, { x: 5, y: 4, flags: {}, seenEventIds: ['trigger-boss-ylzz'] })?.id,
+    ).toBe('trigger-boss-ylzz');
+    // 出生点 (1,1) 距 (6,5) 曼哈顿 9 —— 不误触
+    expect(queryTrigger(BOSS_TRIGGER_RULES, { x: 1, y: 1, flags: {}, seenEventIds: [] })).toBeNull();
+  });
+
+  it('前置演出触发：残影 L10(7,1) / 投影 L11(6,7)，均 once 且关级作用域', () => {
+    expect(SHADOW_ECHO_TRIGGER.when).toMatchObject({ kind: 'npc', x: 7, y: 1, radius: 1, levelId: 'level-lb-10' });
+    expect(SHADOW_ECHO_TRIGGER.once).toBe(true);
+    expect(SHADOW_PROJECTION_TRIGGER.when).toMatchObject({ kind: 'npc', x: 6, y: 7, radius: 1, levelId: 'level-lb-11' });
+    expect(SHADOW_PROJECTION_TRIGGER.once).toBe(true);
+    expect(queryTrigger([SHADOW_ECHO_TRIGGER], { x: 7, y: 1, flags: {}, seenEventIds: [] })?.scriptId).toBe('script-shadow-echo');
+    expect(queryTrigger([SHADOW_PROJECTION_TRIGGER], { x: 6, y: 7, flags: {}, seenEventIds: [] })?.scriptId).toBe('script-shadow-projection');
+    // seen 后不再命中（once 语义）
+    expect(queryTrigger([SHADOW_ECHO_TRIGGER], { x: 7, y: 1, flags: {}, seenEventIds: ['trigger-shadow-echo'] })).toBeNull();
   });
 });
 

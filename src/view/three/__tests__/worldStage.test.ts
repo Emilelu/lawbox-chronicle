@@ -10,20 +10,27 @@ import { describe, expect, it } from 'vitest';
 import { Euler, Vector3 } from 'three';
 import {
   AREA_WORLD_OFFSETS,
+  BASE_CAMERA_FOV,
   CAMERA_ZOOM_LIMITS,
+  FIRST_PERSON_LIMITS,
+  FIRST_PERSON_POSE,
   FACING_RENDER_YAW_LIMIT,
   FACING_YAW,
+  GLOBAL_CAMERA_LIMITS,
   POLAR_MAX,
   POLAR_MIN,
   SLIDE_SECONDS,
   VFX_PARTICLES,
   WALL_SHADE_COUNT,
+  cameraLimitsFor,
   cellWorldCenter,
   clampNpcCell,
   computeExploreResetPose,
   computePose,
+  degToRad,
   deriveGates,
   deriveTileField,
+  easeOutBack,
   easeOutCubic,
   facingRenderYaw,
   gridCenterWorld,
@@ -33,6 +40,7 @@ import {
   selectMountedAreas,
   slidePosition,
   wallShadeColor,
+  widerCameraLimits,
 } from '../theme';
 import {
   ACTOR_SKINS,
@@ -124,6 +132,15 @@ describe('theme · 0.15s 滑动 lerp', () => {
     expect(easeOutCubic(0)).toBe(0);
     expect(easeOutCubic(1)).toBe(1);
     expect(easeOutCubic(0.5)).toBeGreaterThan(0.5); // 先快后慢
+  });
+
+  it('easeOutBack：端点归零归一，中段过冲 >1 再回落（部件落定手感）', () => {
+    expect(easeOutBack(0)).toBeCloseTo(0, 12);
+    expect(easeOutBack(1)).toBeCloseTo(1, 12);
+    expect(easeOutBack(0.5)).toBeGreaterThan(1); // 标准回弹：中段越过目标
+    expect(easeOutBack(0.5)).toBeLessThan(1.15); // 过冲幅度有界（约 +10%）
+    expect(easeOutBack(-0.5)).toBeCloseTo(0, 12); // 越界钳到 [0,1]
+    expect(easeOutBack(1.5)).toBeCloseTo(1, 12);
   });
 });
 
@@ -262,7 +279,7 @@ describe('theme · 镜头位姿', () => {
     expect(combat.azimuth).toBe(0);
   });
 
-  it('explore 回正位姿只收敛方位角，距离/俯仰保持当前值（I2）', () => {
+  it('explore 回正位姿只收敛方位角，距离/俯仰保持当前值（I2，第三人称缺省分支）', () => {
     const pose = computeExploreResetPose(ctx);
     expect(pose.distance).toBeNull(); // 不抢用户的缩放
     expect(pose.polar).toBeNull(); // 不抢用户的俯仰
@@ -272,23 +289,91 @@ describe('theme · 镜头位姿', () => {
     expect(pose.target[1]).toBeCloseTo(0.4, 10);
     expect(pose.target[2]).toBeCloseTo(2, 10);
   });
+
+  it('explore 回正位姿（first 分支）：收敛 FP 头位，方位角保留用户头向', () => {
+    const pose = computeExploreResetPose(ctx, 'first');
+    expect(pose.distance).toBe(FIRST_PERSON_POSE.distance); // 0.55 头位
+    expect(pose.distance).toBeCloseTo(0.55, 12);
+    expect(pose.polar).toBe(FIRST_PERSON_POSE.polar); // FP 极角 78°
+    expect(pose.polar).toBeCloseTo(degToRad(78), 12);
+    expect(pose.azimuth).toBeNull(); // 不拽头向（dialogue/victory→explore 语义）
+    expect(pose.fov).toBe(68); // FP 视场角恢复
+    // 注视点仍走 explore 惯例：玩家头顶 0.4
+    expect(pose.target[0]).toBeCloseTo(1, 10);
+    expect(pose.target[1]).toBeCloseTo(0.4, 10);
+    expect(pose.target[2]).toBeCloseTo(2, 10);
+  });
+
+  it('第一人称头位档常量：distance 0.55 / polar 78°（elevation 12°）/ fov 68', () => {
+    expect(FIRST_PERSON_POSE.distance).toBeCloseTo(0.55, 12);
+    expect(FIRST_PERSON_POSE.polar).toBeCloseTo(degToRad(78), 12);
+    expect(FIRST_PERSON_POSE.fov).toBe(68);
+    expect(BASE_CAMERA_FOV).toBe(50); // fov 收敛回落基准与 WorldCanvas 初始 fov 同源
+  });
+
+  it('cameraLimitsFor 三元分档：仅 first+explore/dialogue 未俯瞰收紧 FP 档', () => {
+    const fp = { polarMin: degToRad(70), polarMax: degToRad(84), distMin: 0.35, distMax: 1.2 };
+    // first + explore/dialogue 未俯瞰 → FP 档
+    expect(cameraLimitsFor('first', 'explore', false)).toEqual(fp);
+    expect(cameraLimitsFor('first', 'dialogue', false)).toEqual(fp);
+    expect(cameraLimitsFor('first', 'explore', false)).toEqual(FIRST_PERSON_LIMITS);
+
+    // first + 演出模式（非 peek）→ 全局档：victory 18 / boss 6.2 / combat 8.2 不受压
+    expect(cameraLimitsFor('first', 'combat', false)).toEqual(GLOBAL_CAMERA_LIMITS);
+    expect(cameraLimitsFor('first', 'victory', false)).toEqual(GLOBAL_CAMERA_LIMITS);
+    expect(cameraLimitsFor('first', 'boss', false)).toEqual(GLOBAL_CAMERA_LIMITS);
+
+    // 任何 peeking 组合 → 全局档（T 俯瞰 8.5 / 35° 极角必须可达）
+    for (const mode of ['explore', 'dialogue', 'combat', 'victory', 'boss'] as const) {
+      expect(cameraLimitsFor('first', mode, true)).toEqual(GLOBAL_CAMERA_LIMITS);
+      expect(cameraLimitsFor('third', mode, true)).toEqual(GLOBAL_CAMERA_LIMITS);
+    }
+
+    // third 全档 → 全局档（现状逐字节一致）
+    for (const mode of ['explore', 'dialogue', 'combat', 'victory', 'boss'] as const) {
+      expect(cameraLimitsFor('third', mode, false)).toEqual(GLOBAL_CAMERA_LIMITS);
+    }
+
+    // 全局档 = POLAR_MIN/MAX + CAMERA_ZOOM_LIMITS 聚合（既有不变量同源）
+    expect(GLOBAL_CAMERA_LIMITS).toEqual({
+      polarMin: POLAR_MIN,
+      polarMax: POLAR_MAX,
+      distMin: CAMERA_ZOOM_LIMITS.min,
+      distMax: CAMERA_ZOOM_LIMITS.max,
+    });
+  });
+
+  it('FP 档极角范围在全局档之外、距离范围在其内（跨档并集过渡的几何前提）', () => {
+    expect(FIRST_PERSON_LIMITS.polarMin).toBeGreaterThan(GLOBAL_CAMERA_LIMITS.polarMax);
+    expect(FIRST_PERSON_LIMITS.polarMax).toBeGreaterThan(FIRST_PERSON_LIMITS.polarMin);
+    expect(FIRST_PERSON_LIMITS.distMin).toBeLessThan(GLOBAL_CAMERA_LIMITS.distMin);
+    expect(FIRST_PERSON_LIMITS.distMax).toBeLessThan(GLOBAL_CAMERA_LIMITS.distMin);
+    // 并集覆盖两档（跨档收敛期 OrbitControls 生效限制）
+    const union = widerCameraLimits(FIRST_PERSON_LIMITS, GLOBAL_CAMERA_LIMITS);
+    expect(union.polarMin).toBe(GLOBAL_CAMERA_LIMITS.polarMin);
+    expect(union.polarMax).toBe(FIRST_PERSON_LIMITS.polarMax);
+    expect(union.distMin).toBe(FIRST_PERSON_LIMITS.distMin);
+    expect(union.distMax).toBe(GLOBAL_CAMERA_LIMITS.distMax);
+  });
 });
 
 describe('theme · 朝向渲染收敛（I4：侧视不再缩成竖条）', () => {
-  it('facingRenderYaw：up/down 保持正/背视，left/right 收敛为 ±45° 3/4 视角', () => {
+  it('facingRenderYaw：up/down 保持正/背视，left/right 收敛为 ±60° 3/4 视角（部件化重制）', () => {
     expect(facingRenderYaw('down')).toBe(0);
     expect(facingRenderYaw('up')).toBe(Math.PI);
     expect(facingRenderYaw('left')).toBe(-FACING_RENDER_YAW_LIMIT);
     expect(facingRenderYaw('right')).toBe(FACING_RENDER_YAW_LIMIT);
-    expect(FACING_RENDER_YAW_LIMIT).toBeCloseTo(Math.PI / 4, 12);
+    expect(FACING_RENDER_YAW_LIMIT).toBeCloseTo(Math.PI / 3, 12);
   });
 
   it('语义真值 FACING_YAW 不变：±90° 方向语义保留，收敛只发生在渲染层', () => {
     expect(FACING_YAW.left).toBe(-Math.PI / 2);
     expect(FACING_YAW.right).toBe(Math.PI / 2);
-    // 3/4 视角下正面剪影宽度保留 cos(45°)≈71%，侧视不再只剩一列侧棱
-    expect(Math.cos(Math.abs(facingRenderYaw('right')))).toBeCloseTo(Math.SQRT1_2, 12);
-    expect(Math.cos(Math.abs(facingRenderYaw('right')))).toBeGreaterThan(0.7);
+    // ±60° 收敛下正面剪影宽度保留 cos(60°)=50%（部件化后取更饱满的侧转，
+    // 四肢/围巾部件方向可辨），仍远好于 ±90° 满侧视的近 0 宽度
+    expect(Math.cos(Math.abs(facingRenderYaw('right')))).toBeCloseTo(0.5, 12);
+    expect(Math.cos(Math.abs(facingRenderYaw('right')))).toBeGreaterThan(0.45);
+    expect(Math.cos(Math.abs(facingRenderYaw('right')))).toBeLessThan(0.75);
   });
 });
 

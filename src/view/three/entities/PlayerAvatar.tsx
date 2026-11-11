@@ -1,17 +1,30 @@
 /**
- * PlayerAvatar —— 玩家体素化身。
+ * PlayerAvatar —— 玩家部件化体素化身（CHAR-2 重制）。
  * ---------------------------------------------------------------------------
  * S5 根治的结构化落点：
- *  - 皮肤表（PLAYER_SKINS，ASCII 掩码 + 色板）只决定「长什么样」；
- *  - 朝向（theme.FACING_YAW）只决定绕 Y 旋转，由 bus 的 anim/slide 事件驱动，
- *    换肤与转向互不触碰对方状态（SanBPushChest changeRole 旋转错位不再可能）。
+ *  - 皮肤表（PLAYER_SKINS，head/body 部件掩码 + 双臂 + 围巾，入 charModels.ts）
+ *    只决定「长什么样」；朝向（theme.FACING_YAW / facingRenderYaw）只决定绕 Y
+ *    旋转，由 bus 的 anim/slide 事件驱动 —— 换肤与转向互不触碰对方状态。
+ * 部件化（CHAR-2）：
+ *  - head/body 小掩码 + 左右臂 box + 围巾 3 节链，几何进 GEOMETRY_CACHE
+ *    （键 actor:player-<id>:<part>）；torso = head+body+双臂合并 1 mesh，
+ *    围巾独立 1 mesh（颈部 pivot 随帧摆动）。
+ *  - flatShading 顶点色材质共享 + drei Edges(threshold 30, accent) 描边。
+ *  - 渲染预算：torso 1 + Edges 1 + 围巾 1 + 接地阴影盘 1 = 4 draw call。
+ * 程序动画（全部有限自终止，demand 下静置零渲染，S18）：
+ *  - useSquashSlide：滑动整组拉伸（y*1.08/xz*0.95）、落定 0.88→1 easeOutBack
+ *    0.12s 回弹；不做常驻 idle 呼吸。
+ *  - 围巾仅在有渲染帧时随帧摆动（不主动请求渲染）。
  * 位移：目标位置来自 store 实体（单一真相源），显示位置按 0.15s lerp 追上；
- * frameloop="demand" 下只在插值未收敛的帧 invalidate，静置零渲染。
+ * frameloop="demand" 下只在插值未收敛的帧 invalidate。
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import type { Group } from 'three';
+import { Edges } from '@react-three/drei';
+import type { BufferGeometry, Group } from 'three';
+import { Color, MeshStandardMaterial } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Dir } from '../../../core/types';
 import { bus } from '../../../core/events/bus';
 import {
@@ -22,92 +35,79 @@ import {
   type PlaneTheme,
   type WorldVec3,
 } from '../theme';
-import { buildVoxelGeometry, parseArtMask } from './ActorMesh';
+import {
+  scarfSwayAt,
+  tintedBox,
+  useSquashSlide,
+  type PlayerSkinDef,
+  playerSkinById,
+} from './charModels';
+import { buildVoxelGeometry, cachedGeometry, GroundShadow, parseArtMask } from './ActorMesh';
 
-/* ============================== 玩家皮肤表 ================================ */
+/* ============================ 皮肤表与部件几何 ============================= */
 
-/**
- * 5 张玩家皮肤（对应 SanBPushChest assets/imgs/roles role1..role5 的重铸）。
- * ASCII 掩码：'#'主色 'o'副色 '+'点缀。与朝向零耦合，替换/新增皮肤不改任何旋转逻辑。
- */
-export interface PlayerSkin {
-  readonly id: number;
-  readonly rows: readonly string[];
-  readonly palette: readonly [string, string, string];
+// 皮肤表住在 charModels.ts（部件掩码/色板数据层）；此处 re-export 维持既有
+// 消费面（worldStage.test / 换肤调用方）不变。
+export { PLAYER_SKINS } from './charModels';
+export type { PlayerSkinDef } from './charModels';
+
+export interface PlayerParts {
+  /** head+body+双臂合并的躯干几何（1 draw call，含 Edges 描边对象） */
+  readonly torso: BufferGeometry;
+  /** 围巾 3 节链几何（pivot 在颈点，rotation.x 随帧摆动） */
+  readonly scarf: BufferGeometry;
+  /** 颈点世界高度（body 掩码顶部 = 围巾挂点） */
+  readonly neckY: number;
 }
 
-export const PLAYER_SKINS: readonly PlayerSkin[] = Object.freeze([
-  {
-    id: 0,
-    rows: [
-      '..###..',
-      '..#o#..',
-      '.#####.',
-      'o#+++#o',
-      '..###..',
-      '.o###o.',
-      '..#.#..',
-      '..#.#..',
-    ],
-    palette: ['#eaf0ff', '#4a559e', '#00e5ff'],
-  },
-  {
-    id: 1,
-    rows: [
-      '..###..',
-      '..#o#..',
-      '.#####.',
-      'o#+++#o',
-      '..###..',
-      '.o###o.',
-      '..#.#..',
-      '..#.#..',
-    ],
-    palette: ['#ffe9c9', '#a4763d', '#ffcf5c'],
-  },
-  {
-    id: 2,
-    rows: [
-      '..###..',
-      '.#####.',
-      'o#####o',
-      '.o+++o.',
-      '..###..',
-      '.o###o.',
-      '..#.#..',
-      '..#.#..',
-    ],
-    palette: ['#efe6ff', '#6f4bb8', '#ff5c9e'],
-  },
-  {
-    id: 3,
-    rows: [
-      '..#o#..',
-      '..###..',
-      '.#####.',
-      'o#+++#o',
-      '..###..',
-      '.#####.',
-      '..#.#..',
-      '.#...#.',
-    ],
-    palette: ['#e2fff2', '#2f8f6b', '#ffe27a'],
-  },
-  {
-    id: 4,
-    rows: [
-      '..#o#..',
-      '.o###o.',
-      '.#####.',
-      'o#+++#o',
-      '..###..',
-      '.o###o.',
-      '..#.#..',
-      '.#..#..',
-    ],
-    palette: ['#ffd9e8', '#b3543f', '#7cf5c8'],
-  },
-]);
+/**
+ * 玩家部件几何构建（缓存键 actor:player-<id>:torso / :scarf，子件键
+ * actor:player-<id>:head / :body 一并入 GEOMETRY_CACHE）。
+ */
+export function buildPlayerParts(skinId: number): PlayerParts {
+  const skin = playerSkinById(skinId);
+  const torso = cachedGeometry(`actor:player-${skin.id}:torso`, () => {
+    const headMask = parseArtMask(skin.head.rows);
+    const bodyMask = parseArtMask(skin.body.rows);
+    const headGeo = buildVoxelGeometry(`actor:player-${skin.id}:head`, headMask, PLAYER_SKIN_CELL, skin.head.palette);
+    const bodyGeo = buildVoxelGeometry(`actor:player-${skin.id}:body`, bodyMask, PLAYER_SKIN_CELL, skin.body.palette);
+    // 头部整体抬升到 body 顶上（部件在掩码表里独立声明，渲染期拼装）
+    const headLift = headGeo.clone();
+    headLift.translate(0, bodyMask.height * PLAYER_SKIN_CELL, 0);
+    // 左右臂：对称双 box，嵌进躯干两侧（微重叠避免侧视缝隙）
+    const armSize = skin.arm.size;
+    const bodySpanX = (bodyMask.width * PLAYER_SKIN_CELL) / 2;
+    const armX = bodySpanX + armSize[0] / 2 - 0.02;
+    const armY = bodyMask.height * PLAYER_SKIN_CELL * 0.62;
+    const armProto = tintedBox(armSize, skin.arm.color);
+    const armL = armProto.clone();
+    armL.translate(-armX, armY, 0);
+    const armR = armProto.clone();
+    armR.translate(armX, armY, 0);
+    armProto.dispose();
+    const merged = mergeGeometries([headLift, bodyGeo, armL, armR], false);
+    if (merged === null) return bodyGeo;
+    merged.computeBoundingSphere();
+    return merged;
+  });
+  const scarf = cachedGeometry(`actor:player-${skin.id}:scarf`, () => {
+    // 3 节 box 链：节 0 颈环（横贯）、节 1/2 胸前垂链；pivot 在颈点（0,0,0）
+    const ring = tintedBox([0.46, 0.09, 0.14], skin.scarf.color);
+    ring.translate(0, 0, 0.02);
+    const drop1 = tintedBox([0.15, 0.15, 0.055], skin.scarf.color);
+    drop1.translate(0.07, -0.12, 0.1);
+    const drop2 = tintedBox([0.13, 0.13, 0.05], skin.scarf.tip);
+    drop2.translate(0.07, -0.26, 0.12);
+    const merged = mergeGeometries([ring, drop1, drop2], false);
+    if (merged === null) return ring;
+    merged.computeBoundingSphere();
+    return merged;
+  });
+  const neckY = playerSkinById(skin.id).body.rows.length * PLAYER_SKIN_CELL;
+  return { torso, scarf, neckY };
+}
+
+/* ================================ 组件 ==================================== */
 
 export interface PlayerAvatarProps {
   /** 段位实体 id（importLevel 固定为 player-1；用于过滤 bus 滑动事件） */
@@ -115,7 +115,7 @@ export interface PlayerAvatarProps {
   /** 目标世界坐标（store 实体位置派生；显示位置向其 lerp） */
   readonly position: WorldVec3;
   readonly facing: Dir;
-  /** 皮肤号 0..4（未来换肤作弊/卡牌接入；缺省 0） */
+  /** 皮肤号 0..4（换肤作弊/卡牌接入；越界自动回退 0） */
   readonly skinId?: number;
   readonly theme: PlaneTheme;
 }
@@ -123,14 +123,31 @@ export interface PlayerAvatarProps {
 export function PlayerAvatar({ entityId, position, facing: facingProp, skinId = 0, theme }: PlayerAvatarProps) {
   const invalidate = useThree((s) => s.invalidate);
   const groupRef = useRef<Group>(null);
+  const scarfRef = useRef<Group>(null);
   const [facing, setFacing] = useState<Dir>(facingProp);
+  const squash = useSquashSlide(entityId, groupRef);
 
-  const geometry = useMemo(() => {
-    const skin = PLAYER_SKINS[skinId] ?? PLAYER_SKINS.find((s) => s.id === 0);
-    if (skin === undefined) throw new Error('玩家皮肤表为空 —— PLAYER_SKINS 必须至少有一张皮肤');
-    const mask = parseArtMask(skin.rows);
-    return buildVoxelGeometry(`player:${skin.id}`, mask, PLAYER_SKIN_CELL, skin.palette);
-  }, [skinId]);
+  const skin: PlayerSkinDef = playerSkinById(skinId);
+  const parts = useMemo(() => buildPlayerParts(skin.id), [skin.id]);
+
+  // torso 与围巾共享单材质实例（1 次状态切换渲染两个部件）
+  const material = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        vertexColors: true,
+        flatShading: true,
+        roughness: 0.66,
+        metalness: 0.14,
+        emissive: new Color(theme.player.accent),
+        emissiveIntensity: 0.1,
+      }),
+    // 材质只创建一次；主题换色走下方 effect
+    [],
+  );
+  useEffect(() => {
+    material.emissive.set(theme.player.accent);
+  }, [material, theme.player.accent]);
+  useEffect(() => () => material.dispose(), [material]);
 
   // 朝向：bus 滑动事件为主驱动；父组件显式传入时同步（两者写同一状态，不交叉污染）
   useEffect(() => {
@@ -174,34 +191,41 @@ export function PlayerAvatar({ entityId, position, facing: facingProp, skinId = 
     invalidate();
   }, [position[0], position[1], position[2], invalidate]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const group = groupRef.current;
     if (group === null) return;
     const slide = slideRef.current;
-    if (slide.t >= 1) return;
+    if (slide.t >= 1) {
+      // 无滑动帧：围巾只随已有渲染帧摆动（不请求渲染），squash 由其自终止
+      if (scarfRef.current !== null) scarfRef.current.rotation.x = scarfSwayAt(state.clock.elapsedTime);
+      return;
+    }
     slide.t = Math.min(1, slide.t + delta / SLIDE_SECONDS);
     group.position.x = slidePosition(slide.fromX, slide.toX, slide.t * SLIDE_SECONDS);
     group.position.y = slidePosition(slide.fromY, slide.toY, slide.t * SLIDE_SECONDS);
     group.position.z = slidePosition(slide.fromZ, slide.toZ, slide.t * SLIDE_SECONDS);
-    if (slide.t < 1) invalidate(); // 未收敛 → 请求下一帧；收敛后归零渲染
+    if (scarfRef.current !== null) scarfRef.current.rotation.x = scarfSwayAt(state.clock.elapsedTime);
+    if (slide.t >= 1) {
+      squash.land(state.clock.elapsedTime); // 滑动收敛 → 切入落定回弹（0.12s 自终止）
+    } else {
+      invalidate(); // 未收敛 → 请求下一帧；收敛后归零渲染
+    }
   });
 
   return (
-    // 渲染走 facingRenderYaw 的 3/4 收敛：左右移动不再侧对相机缩成竖条（I4）
+    // 渲染走 facingRenderYaw 的 3/4 收敛：左右移动不再侧对相机缩成竖条（I4）；
+    // 部件化后侧视剪影由 CAM-1 的 ±60° 收敛保底（theme.FACING_RENDER_YAW_LIMIT）
     <group ref={groupRef} position={[position[0], position[1], position[2]]} rotation={[0, facingRenderYaw(facing), 0]}>
-      <mesh geometry={geometry}>
-        <meshStandardMaterial
-          vertexColors
-          roughness={0.66}
-          metalness={0.14}
-          emissive={theme.player.accent}
-          emissiveIntensity={0.1}
-        />
+      {/* torso：head+body+双臂合并（draw call 1）+ 部件接缝描边（draw call 2） */}
+      <mesh geometry={parts.torso} material={material}>
+        <Edges threshold={30} color={theme.player.accent} />
       </mesh>
-      <mesh position={[0, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.3, 16]} />
-        <meshBasicMaterial color="#000000" transparent opacity={0.32} depthWrite={false} />
-      </mesh>
+      {/* 围巾：颈部 pivot 摆动（draw call 3） */}
+      <group ref={scarfRef} position={[0, parts.neckY, 0]}>
+        <mesh geometry={parts.scarf} material={material} />
+      </group>
+      {/* 接地阴影盘：opacity 随离地高度衰减（draw call 4） */}
+      <GroundShadow worldY={position[1]} radius={0.3} />
     </group>
   );
 }
