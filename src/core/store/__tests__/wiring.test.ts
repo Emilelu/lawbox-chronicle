@@ -659,3 +659,79 @@ describe('A3-1 —— 东侧越界「深入」经 enterChallengeLayer 真实进�
     expect(store().segment?.entities.some((e) => e.kind === 'player')).toBe(true);
   });
 });
+
+/* ================== A3-2 · 南向 beyond 判定路线（深渊坠道可达） ================== */
+
+describe('A3-2 —— 南向 beyond：南缓冲带不可站立，南缘撞墙外推至 beyond 开演', () => {
+  it('玩家立于世界内缘 y=−5 向南撞边界墙 → 虚拟位外推 world −8 → script-outskirt-south', () => {
+    grantLawCard('card-law-feather-chest'); // 主城无关卡门，防干扰
+    store().startLevel('level-sb-01');
+    teleportPlayer(7, 1); // 网格 y=1 = 世界 y=−5（南向最深可站位；row0 全墙不可站）
+    // 网格 up = 世界南（world = grid − STORY_GRID_OFFSET）：撞 row0 边界墙，
+    // reason 是 'wall' 而非 'out-of-bounds' —— 走 A3-2 南向外推分支
+    store().move('up');
+    expect(store().phase).toBe('dialogue');
+    expect(store().storyRuntime.scriptId).toBe('script-outskirt-south');
+    // 越界 beyond 规则 once:false：走「攀住岩壁」撤退 ending 收尾（不进挑战层，
+    // 聚焦判定本身），收尾后回 playing、玩家留在原位可再次触发
+    let guard = 0;
+    while (store().storyRuntime.phase !== 'awaiting-choice' && guard < 8) {
+      store().advanceDialogue();
+      guard += 1;
+    }
+    store().chooseStory('climb');
+    expect(store().phase).toBe('playing');
+  });
+
+  it('非南缘的南向撞墙（世界 y>−5）不外推、不开演（既有撞墙语义零改动）', () => {
+    store().startLevel('level-sb-01');
+    teleportPlayer(4, 6); // 世界 (−3,0)：南邻 (4,5) 是内部墙，远离南缘
+    store().move('up');
+    expect(store().phase).toBe('playing');
+    expect(store().storyRuntime.scriptId).toBeNull();
+  });
+});
+
+/* ================== N-2 · locale 白名单（损坏存档读档不崩渲染树） ================== */
+
+describe('N-2 —— locale 白名单：setLocale/读档双通道非法值回落 zh-Hans', () => {
+  const STORAGE_KEY = 'lawbox-chronicle:v1';
+
+  it('setLocale 传白名单外的值 → 拒绝并回落 zh-Hans（合法值不受影响）', () => {
+    store().setLocale('en');
+    expect(store().locale).toBe('en');
+    // 模拟越权/损坏调用：运行期传入 LOCALES 白名单外的值（如旧版本写入的 'zh'），
+    // 未校验时 tUi 取 UI_TEXT['zh'] → undefined → TypeError 崩渲染树
+    store().setLocale('zh' as never);
+    expect(store().locale).toBe('zh-Hans');
+    store().setLocale('zh-Hans');
+  });
+
+  it('v3 档（版本相等）locale 被改坏 → merge 读档校验回落 zh-Hans', async () => {
+    store().resetSave();
+    // 版本相等时 migrate 不运行，损坏 locale 经 merge 原样灌回——这里是
+    // 「绕过 setLocale 直达渲染树」的主通道
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as {
+      state?: { locale?: string };
+    };
+    raw.state = { ...raw.state, locale: 'zh' };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
+    await useGameStore.persist.rehydrate();
+    expect(store().locale).toBe('zh-Hans');
+  });
+
+  it('v2 旧档 locale 损坏 → migrate 校验回落 zh-Hans，且 legacy storyRuntime 被剥离', async () => {
+    store().resetSave();
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as {
+      state?: Record<string, unknown>;
+      version?: number;
+    };
+    raw.version = 2;
+    raw.state = { ...raw.state, locale: 'xy', storyRuntime: { phase: 'dialogue' } };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
+    await useGameStore.persist.rehydrate();
+    expect(store().locale).toBe('zh-Hans');
+    // 迁移剥离生效：legacy 运行时切片不再经 merge 灌回（否则 phase='dialogue' 幽灵节点）
+    expect(store().storyRuntime.phase).toBe('idle');
+  });
+});

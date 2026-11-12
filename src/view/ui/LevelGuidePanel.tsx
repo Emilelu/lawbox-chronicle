@@ -116,10 +116,10 @@ export function LevelGuidePanel() {
           {guide.known && (
             <>
               <span className="chip" style={{ fontSize: 11, color: 'var(--neon-gold)', borderColor: 'rgba(255,207,92,0.5)' }}>
-                ★★★ ≤ {guide.stars.three} 步
+                {tUi(locale, 'guide.starSteps', { stars: '★★★', n: guide.stars.three })}
               </span>
               <span className="chip" style={{ fontSize: 11 }}>
-                ★★ ≤ {guide.stars.two} 步
+                {tUi(locale, 'guide.starSteps', { stars: '★★', n: guide.stars.two })}
               </span>
             </>
           )}

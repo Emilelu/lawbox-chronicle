@@ -210,6 +210,9 @@ const ZH_HANS_UI = {
   'archive.curveLegendNostalgia': '━ 怀旧池（对照展品）',
   'archive.historyHint': '逐抽记录（最新 {n} 条；最多保留 5000 条，超出自动裁剪最旧）。',
   'archive.historyEmpty': '尚无逐抽记录 —— 去星愿祭坛抽几发试试。',
+  /* ---- 怀旧展品标名 / 对照说明（A4-5 收尾：pullLabel 与曲线页说明句键控） ---- */
+  'archive.nostalgiaStar': '怀旧展品·{n}★',
+  'archive.nostalgiaNote': '这是原作 {source} 行为的对照展品，仅供概率对照。',
   /* ---- 选关面板（A4-5） ---- */
   'levelSelect.title': '选关',
   'levelSelect.hint': '已到达的关卡可直接进入；未到达的关卡置灰（到达进度见 HUD 左上关卡名，通关后对应旗标永久记录）。',
@@ -220,6 +223,8 @@ const ZH_HANS_UI = {
   'guide.reward': '奖励',
   'guide.pushes': '参考推法（{n} 推）',
   'guide.fall': '（坠落）',
+  /* 星级线 chip（{stars}=星图样，{n}=步数线；用词与 result.par 的「步」一致） */
+  'guide.starSteps': '{stars} ≤ {n} 步',
   /* ---- 卡组商店页签（DeckPanel） ---- */
   'tab.shop': '商店',
   /* ---- 清空档案（A4-6：兑现 logbook.ts「设置面板的清空档案才清本片」承诺） ---- */
@@ -414,6 +419,8 @@ const ZH_HANT_UI: UiDict = {
   'archive.curveLegendNostalgia': '━ 懷舊池（對照展品）',
   'archive.historyHint': '逐抽記錄（最新 {n} 條；最多保留 5000 條，超出自動裁剪最舊）。',
   'archive.historyEmpty': '尚無逐抽記錄 —— 去星願祭壇抽幾發試試。',
+  'archive.nostalgiaStar': '懷舊展品·{n}★',
+  'archive.nostalgiaNote': '這是原作 {source} 行為的對照展品，僅供機率對照。',
   /* ---- 選關面板（A4-5） ---- */
   'levelSelect.title': '選關',
   'levelSelect.hint': '已到達的關卡可直接進入；未到達的關卡置灰（到達進度見 HUD 左上關卡名，通關後對應旗標永久記錄）。',
@@ -424,6 +431,7 @@ const ZH_HANT_UI: UiDict = {
   'guide.reward': '獎勵',
   'guide.pushes': '參考推法（{n} 推）',
   'guide.fall': '（墜落）',
+  'guide.starSteps': '{stars} ≤ {n} 步',
   /* ---- 卡組商店頁籤 ---- */
   'tab.shop': '商店',
   /* ---- 清空檔案（A4-6） ---- */
@@ -611,6 +619,8 @@ const EN_UI: UiDict = {
   'archive.curveLegendNostalgia': '━ Nostalgia pool (comparison exhibits)',
   'archive.historyHint': 'Pull history (latest {n}; up to 5000 kept, oldest trimmed).',
   'archive.historyEmpty': 'No pulls recorded — try your luck at the Star-Wish Altar.',
+  'archive.nostalgiaStar': 'Nostalgia exhibit · {n}★',
+  'archive.nostalgiaNote': 'A comparison exhibit of the original {source} behavior — for probability reference only.',
   /* ---- Level select panel (A4-5) ---- */
   'levelSelect.title': 'Levels',
   'levelSelect.hint': 'Reached levels can be entered directly; unreached ones are dimmed (see the level name in the HUD; cleared flags are recorded permanently).',
@@ -621,6 +631,7 @@ const EN_UI: UiDict = {
   'guide.reward': 'Reward',
   'guide.pushes': 'Reference pushes ({n} pushes)',
   'guide.fall': '(fall)',
+  'guide.starSteps': '{stars} ≤ {n} steps',
   /* ---- Deck shop tab ---- */
   'tab.shop': 'Shop',
   /* ---- Clear archive (A4-6) ---- */
@@ -808,6 +819,8 @@ const JA_UI: UiDict = {
   'archive.curveLegendNostalgia': '━ レトロ池（比較展示）',
   'archive.historyHint': '抽選履歴（最新 {n} 件；最大 5000 件保持、超過分は古いものから削除）。',
   'archive.historyEmpty': '抽選履歴なし —— 星願祭壇で何連か回してみよう。',
+  'archive.nostalgiaStar': 'レトロ展示·{n}★',
+  'archive.nostalgiaNote': '原作 {source} の挙動を再現した比較展示であり、確率の照会用です。',
   /* ---- ステージ選択パネル（A4-5） ---- */
   'levelSelect.title': 'ステージ選択',
   'levelSelect.hint': '到達済みステージには直接入場できます。未到達はグレー表示（到達状況は HUD 左上のステージ名を参照。クリア旗は永久記録）。',
@@ -818,6 +831,7 @@ const JA_UI: UiDict = {
   'guide.reward': '報酬',
   'guide.pushes': '参考押し手順（{n} 押し）',
   'guide.fall': '（転落）',
+  'guide.starSteps': '{stars} ≤ {n} 步',
   /* ---- デッキのショップタブ ---- */
   'tab.shop': 'ショップ',
   /* ---- アーカイブ消去（A4-6） ---- */
@@ -1005,6 +1019,8 @@ const RU_UI: UiDict = {
   'archive.curveLegendNostalgia': '━ Ностальгический пул (сравнительные экспонаты)',
   'archive.historyHint': 'История призывов (последние {n}; хранится до 5000, старые обрезаются).',
   'archive.historyEmpty': 'Призывов пока нет — испытайте удачу у Алтара Звёздных Желаний.',
+  'archive.nostalgiaStar': 'Ностальгический экспонат · {n}★',
+  'archive.nostalgiaNote': 'Сравнительный экспонат поведения оригинала ({source}) — только для сверки вероятностей.',
   /* ---- Панель выбора уровня (A4-5) ---- */
   'levelSelect.title': 'Уровни',
   'levelSelect.hint': 'Достигнутые уровни можно запускать напрямую; недостигнутые затемнены (прогресс — имя уровня в HUD слева сверху; флаги прохождения сохраняются навсегда).',
@@ -1015,6 +1031,7 @@ const RU_UI: UiDict = {
   'guide.reward': 'Награда',
   'guide.pushes': 'Эталонные толчки ({n})',
   'guide.fall': '(падение)',
+  'guide.starSteps': '{stars} ≤ {n} шагов',
   /* ---- Вкладка магазина колоды ---- */
   'tab.shop': 'Магазин',
   /* ---- Очистка архива (A4-6) ---- */
@@ -1202,6 +1219,8 @@ const DE_UI: UiDict = {
   'archive.curveLegendNostalgia': '━ Nostalgie-Pool (Vergleichsexponate)',
   'archive.historyHint': 'Ziehungsverlauf (neueste {n}; max. 5000, älteste werden entfernt).',
   'archive.historyEmpty': 'Noch keine Ziehungen — versuche dein Glück am Sternwunsch-Altar.',
+  'archive.nostalgiaStar': 'Nostalgie-Exponat · {n}★',
+  'archive.nostalgiaNote': 'Vergleichsexponat des Originalverhaltens ({source}) — nur zum Wahrscheinlichkeitsvergleich.',
   /* ---- Levelauswahl-Panel (A4-5) ---- */
   'levelSelect.title': 'Level',
   'levelSelect.hint': 'Erreichte Level sind direkt betretbar; unerreichte sind ausgegraut (Fortschritt: Levelname im HUD; Flaggen werden dauerhaft gespeichert).',
@@ -1212,6 +1231,7 @@ const DE_UI: UiDict = {
   'guide.reward': 'Belohnung',
   'guide.pushes': 'Referenzschübe ({n} Schübe)',
   'guide.fall': '(Sturz)',
+  'guide.starSteps': '{stars} ≤ {n} Schritte',
   /* ---- Shop-Tab im Deck ---- */
   'tab.shop': 'Shop',
   /* ---- Archiv leeren (A4-6) ---- */
@@ -1399,6 +1419,8 @@ const FR_UI: UiDict = {
   'archive.curveLegendNostalgia': '━ Bac nostalgique (pièces de comparaison)',
   'archive.historyHint': 'Historique des invocations ({n} dernières ; 5000 conservées au plus, les plus anciennes sont coupées).',
   'archive.historyEmpty': 'Aucune invocation — tentez votre chance à l’Autel des Vœux d’Étoiles.',
+  'archive.nostalgiaStar': 'Pièce nostalgique · {n}★',
+  'archive.nostalgiaNote': 'Pièce de comparaison du comportement de l’original ({source}) — uniquement à titre de comparaison des probabilités.',
   /* ---- Panneau de sélection de niveau (A4-5) ---- */
   'levelSelect.title': 'Niveaux',
   'levelSelect.hint': 'Les niveaux atteints se lancent directement ; les autres sont grisés (progression : nom du niveau en haut à gauche du HUD ; les drapeaux de victoire sont enregistrés pour toujours).',
@@ -1409,6 +1431,7 @@ const FR_UI: UiDict = {
   'guide.reward': 'Récompense',
   'guide.pushes': 'Poussées de référence ({n})',
   'guide.fall': '(chute)',
+  'guide.starSteps': '{stars} ≤ {n} pas',
   /* ---- Onglet boutique du deck ---- */
   'tab.shop': 'Boutique',
   /* ---- Vider les archives (A4-6) ---- */

@@ -73,6 +73,32 @@ describe('uiText · tUi 插值与回落', () => {
   });
 });
 
+describe('uiText · A4-5 收尾新增键（archive.nostalgiaStar / archive.nostalgiaNote / guide.starSteps）', () => {
+  it('七语种插值齐备，无占位符残留', () => {
+    for (const locale of LOCALES) {
+      expect(tUi(locale, 'archive.nostalgiaStar', { n: 4 })).not.toContain('{');
+      expect(tUi(locale, 'archive.nostalgiaNote', { source: 'Lottery.java:40' })).not.toContain('{');
+      expect(tUi(locale, 'guide.starSteps', { stars: '★★★', n: 12 })).not.toContain('{');
+    }
+  });
+
+  it('zh-Hans 逐字保真（与修复前视图硬编码原文一致）', () => {
+    expect(tUi('zh-Hans', 'archive.nostalgiaStar', { n: 4 })).toBe('怀旧展品·4★');
+    expect(tUi('zh-Hans', 'archive.nostalgiaStar', { n: 2 })).toBe('怀旧展品·2★');
+    expect(tUi('zh-Hans', 'archive.nostalgiaNote', { source: 'Lottery.java:40' })).toBe(
+      '这是原作 Lottery.java:40 行为的对照展品，仅供概率对照。',
+    );
+    expect(tUi('zh-Hans', 'guide.starSteps', { stars: '★★★', n: 12 })).toBe('★★★ ≤ 12 步');
+    expect(tUi('zh-Hans', 'guide.starSteps', { stars: '★★', n: 20 })).toBe('★★ ≤ 20 步');
+  });
+
+  it('en 下不再是中文（N-1/A4-5：视图层中文残留收尾）', () => {
+    expect(tUi('en', 'archive.nostalgiaStar', { n: 3 })).toBe('Nostalgia exhibit · 3★');
+    expect(tUi('en', 'archive.nostalgiaNote', { source: 'Lottery.java:40' })).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(tUi('en', 'guide.starSteps', { stars: '★★', n: 9 })).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+});
+
 describe('uiText · 展示工具', () => {
   it('stripBr 清洗遗产句中的 <br>（含大写与自闭合变体）', () => {
     expect(stripBr('a<br>b<BR>c<br/>d< br >e')).toBe('a\nb\nc\nd< br >e');

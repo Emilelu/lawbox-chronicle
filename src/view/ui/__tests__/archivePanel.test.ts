@@ -7,15 +7,21 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import type { CardDef } from '../../../core/types';
 import type { PullRecord, StatsState } from '../../../archive/statsCollector';
+import { useGameStore } from '../../../core/store/gameStore';
+import { tUi } from '../../../data/i18n/uiText';
 import {
+  ArchivePanel,
   achievementRows,
   codexRows,
   curvePolyline,
   latestPulls,
   poolComparison,
   pullLabel,
+  useArchivePanelStore,
 } from '../ArchivePanel';
 
 const CARDS: readonly CardDef[] = [
@@ -127,6 +133,21 @@ describe('pullLabel · 逐抽标签', () => {
     expect(pullLabel(official, CARDS)).toBe('法则A');
     expect(pullLabel(ghost, CARDS)).toBe('ghost');
   });
+
+  it('locale 键控（A4-5 收尾）：en 下怀旧展品标名不再是中文；缺省 zh-Hans 兼容两参调用', () => {
+    const nostalgia3: PullRecord = {
+      uid: 'n2',
+      cardId: 'nostalgia-star-three',
+      rarity: 3,
+      isNew: false,
+      poolId: 'nostalgia-lottery',
+      pullIndex: 2,
+      at: 2,
+    };
+    expect(pullLabel(nostalgia3, CARDS, 'en')).toBe('Nostalgia exhibit · 3★');
+    expect(pullLabel(nostalgia3, CARDS, 'en')).not.toMatch(/怀旧/);
+    expect(pullLabel(nostalgia3, CARDS)).toBe('怀旧展品·3★');
+  });
 });
 
 describe('curvePolyline · SVG 点串', () => {
@@ -146,6 +167,73 @@ describe('curvePolyline · SVG 点串', () => {
     expect(pairs).toHaveLength(2);
     for (const pair of pairs) {
       expect(pair).toMatch(/^\d+(\.\d+)?,\d+(\.\d+)?$/);
+    }
+  });
+});
+
+/* ==================== 页签文案渲染（N-1 回归防线） ==================== */
+
+/**
+ * N-1：页签循环曾直接渲染 tabLabel 的键名字符串（漏包 tUi），全语种把
+ * 'archive.tab.curves' 等键名原文画到页面上。此处挂载真组件断言：按钮文本
+ * 必须等于 tUi 取值，键名原文绝不可出现——键表补得再全、渲染漏包 tUi 的
+ * 同类回归在此被拦下。渲染方式与 panelExclusion.test.tsx 同款（react-dom
+ * createRoot + act，仓库未引入 @testing-library）；本文件是 .ts，用
+ * createElement 代替 JSX。
+ */
+describe('ArchivePanel 页签文案渲染（N-1 回归防线）', () => {
+  const TAB_KEYS = ['tab.codex', 'archive.tab.achievements', 'archive.tab.curves', 'archive.tab.history'] as const;
+
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+  function mountPanel(): { host: HTMLElement; root: Root } {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() => {
+      root.render(createElement(ArchivePanel));
+    });
+    act(() => {
+      useArchivePanelStore.getState().toggle();
+    });
+    return { host, root };
+  }
+
+  function tabTexts(host: HTMLElement): string[] {
+    return [...host.querySelectorAll('button')].map((b) => b.textContent ?? '');
+  }
+
+  it('zh-Hans：页签按钮渲染 tUi 文案，键名原文不出现', () => {
+    const { host, root } = mountPanel();
+    try {
+      const texts = tabTexts(host);
+      for (const key of TAB_KEYS) {
+        expect(texts).toContain(tUi('zh-Hans', key));
+        expect(texts).not.toContain(key);
+      }
+    } finally {
+      act(() => root.unmount());
+      host.remove();
+      useArchivePanelStore.getState().close();
+    }
+  });
+
+  it('en：setLocale 后页签随语种切换，仍是文案而非键名（不污染存档数据，仅切语言并还原）', () => {
+    const { host, root } = mountPanel();
+    try {
+      act(() => {
+        useGameStore.getState().setLocale('en');
+      });
+      const texts = tabTexts(host);
+      for (const key of TAB_KEYS) {
+        expect(texts).toContain(tUi('en', key));
+        expect(texts).not.toContain(key);
+      }
+    } finally {
+      act(() => root.unmount());
+      host.remove();
+      useGameStore.getState().setLocale('zh-Hans');
+      useArchivePanelStore.getState().close();
     }
   });
 });

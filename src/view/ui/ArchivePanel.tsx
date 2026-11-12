@@ -35,7 +35,7 @@ import {
 import { CARDS } from '../../data/gacha';
 import { ACHIEVEMENTS, type AchievementDef } from '../../data/lore/achievements';
 import { NOSTALGIA_POOL_INFO, RATE_DISCLOSURE } from '../../data/gacha/pools';
-import type { CardDef } from '../../core/types';
+import type { CardDef, LocaleId } from '../../core/types';
 import { formatPercent, tUi } from '../../data/i18n/uiText';
 import { rarityColor, rarityStars } from './GachaOverlay';
 
@@ -112,10 +112,13 @@ export function latestPulls(pullHistory: readonly PullRecord[], limit: number): 
   return pullHistory.slice(-limit).reverse();
 }
 
-/** 逐抽记录的可读标签：怀旧展品按稀有度标名；正式卡回落到卡名 */
-export function pullLabel(record: PullRecord, cards: readonly CardDef[]): string {
+/**
+ * 逐抽记录的可读标签：怀旧展品按稀有度标名（键控 archive.nostalgiaStar，A4-5 收尾）；
+ * 正式卡回落到卡名。locale 缺省 zh-Hans——保持两参调用（纯逻辑测试）语义不变。
+ */
+export function pullLabel(record: PullRecord, cards: readonly CardDef[], locale: LocaleId = 'zh-Hans'): string {
   if (record.cardId.startsWith('nostalgia-star-')) {
-    return record.rarity === 4 ? '怀旧展品·4★' : record.rarity === 3 ? '怀旧展品·3★' : '怀旧展品·2★';
+    return tUi(locale, 'archive.nostalgiaStar', { n: record.rarity });
   }
   return cards.find((c) => c.id === record.cardId)?.name ?? record.cardId;
 }
@@ -308,7 +311,7 @@ export function ArchivePanel() {
             }}
             onClick={() => setTab(key)}
           >
-            {tabLabel[key]}
+            {tUi(locale, tabLabel[key])}
           </button>
         ))}
       </div>
@@ -397,7 +400,7 @@ export function ArchivePanel() {
               <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{tUi(locale, 'archive.nostalgiaHint')}</span>
             </div>
             <span style={{ fontSize: 12, color: 'var(--neon-violet)' }}>
-              {NOSTALGIA_POOL_INFO.name} —— 这是原作 {NOSTALGIA_POOL_INFO.source} 行为的对照展品，仅供概率对照。
+              {NOSTALGIA_POOL_INFO.name} —— {tUi(locale, 'archive.nostalgiaNote', { source: NOSTALGIA_POOL_INFO.source })}
             </span>
             {RATE_DISCLOSURE.nostalgia.lines.map((line) => (
               <span key={line} style={{ fontSize: 11.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>
@@ -416,7 +419,7 @@ export function ArchivePanel() {
             <span style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>{tUi(locale, 'archive.historyEmpty')}</span>
           ) : (
             history.map((record) => {
-              const label = pullLabel(record, CARDS);
+              const label = pullLabel(record, CARDS, locale);
               return (
                 <div key={record.uid} className="glass" style={{ padding: '7px 14px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <span className="chip" style={{ fontSize: 10.5, padding: '1px 8px' }}>

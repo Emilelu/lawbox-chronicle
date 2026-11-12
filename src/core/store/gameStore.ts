@@ -42,7 +42,7 @@ import type {
   TerrainCell,
   Vec2,
 } from '../types';
-import { DIAG_VECTORS, DIR_VECTORS, SPIKE_CELL } from '../types';
+import { DIAG_VECTORS, DIR_VECTORS, LOCALES, SPIKE_CELL } from '../types';
 import { DEFAULT_RULE_SET } from '../lawRegistry';
 import { bus, type FxEvent } from '../events/bus';
 import { createRng } from '../rng';
@@ -58,6 +58,7 @@ import {
   classifyPosition,
   checkLevelEntryDeck,
   isOutskirtsTransition,
+  MAIN_MAP_HALF_EXTENT,
   positionalRuleLevelId,
   queryTrigger,
   type TriggerContext,
@@ -178,6 +179,18 @@ export function gridToWorld(x: number, y: number): Vec2 {
 /** 主地图世界坐标 → 网格坐标 */
 export function worldToGrid(x: number, y: number): Vec2 {
   return { x: x + STORY_GRID_OFFSET.x, y: y + STORY_GRID_OFFSET.y };
+}
+
+/* ============================== 多语言白名单 =============================== */
+
+/**
+ * N-2：locale 运行期判别（LOCALES 白名单，core/types.ts 现成常量）。
+ * 损坏存档会把白名单外的值（如 'zh'）经 persist 原样灌回内存——tUi 取
+ * UI_TEXT[locale] 直接 TypeError 崩渲染树。三条通道（setLocale / migrate /
+ * merge 读档）统一走本守卫：非法值一律回落 'zh-Hans'，绝不进渲染树。
+ */
+function isLocaleId(value: unknown): value is LocaleId {
+  return typeof value === 'string' && (LOCALES as readonly string[]).includes(value);
 }
 
 /* ============================== 初始状态 ================================== */
@@ -1012,11 +1025,40 @@ export const useGameStore = create<GameStore>()(
         if (!result.ok) {
           bus.publish({ type: 'anim/blocked', reason: result.reason });
           bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-3' });
-          // 出界 + 主图枢纽 → 越界 beyond 事件的入场判定（玩家不位移，剧情开演）
-          if (allowOutskirts && result.reason === 'out-of-bounds' && state.segment?.levelId === HUB_LEVEL_ID) {
+          // 出界 + 主图枢纽 → 越界 beyond 事件的入场判定（玩家不位移，剧情开演）。
+          // A3-2 南向判定路线：南缓冲带（world −6/−7）受「网格 row0 全墙 + 网格
+          // 非负索引」双重限制不可站立（areas.ts 数据补行不可行），玩家最深立于
+          // 世界内缘 y=−5，南向被拒是「撞上边界墙」（reason 'wall'，而非
+          // 'out-of-bounds'），单步虚拟位最深只到 −6（buffer）——beyond（≥|8|）
+          // 结构性不可达，script-outskirt-south（深渊坠道）沦为死内容。故玩家
+          // 立于南缘被墙拒绝时，从虚拟位沿被拒方向逐格外推、穿过不可站的缓冲带
+          // 到 beyond 再求值；北/西/东三向的被拒虚拟位本就直达 beyond，不进
+          // 外推分支，「先 buffer 警示、再 beyond」的两段式既有语义零改动。
+          // 「立于南缘」必须是主图内（classifyPosition inside，|x|≤5）：南缘行
+          // 的东西两端延伸进东/西缓冲带（如出生点 (13,1) = 世界 (6,−5) 是东
+          // 缓冲带），从缓冲带格子上南向撞墙不承载「主图南缘越界」语义，不外推
+          //（否则出生点按 W 就误开 script-outskirt-south 并冻结后续移动）。
+          const southEdgeRejected =
+            result.reason === 'wall' &&
+            fxDir === 'up' && // 网格 up 即世界南（world = grid − STORY_GRID_OFFSET，−y 向）
+            prevWorld.y === -MAIN_MAP_HALF_EXTENT &&
+            classifyPosition(prevWorld.x, prevWorld.y).kind === 'inside';
+          if (
+            allowOutskirts &&
+            (result.reason === 'out-of-bounds' || southEdgeRejected) &&
+            state.segment?.levelId === HUB_LEVEL_ID
+          ) {
             const step = DIR_VECTORS[fxDir];
-            const beyond = { x: prevWorld.x + step.x, y: prevWorld.y + step.y };
-            const zone = classifyPosition(beyond.x, beyond.y);
+            let beyond = { x: prevWorld.x + step.x, y: prevWorld.y + step.y };
+            let zone = classifyPosition(beyond.x, beyond.y);
+            // 仅「南缘被墙拒」外推：南缓冲带深度 2（|6|~|7|），至多两步即达
+            // beyond；循环上限防御非正交步进的病态输入，不影响既有方向。
+            if (southEdgeRejected && zone.kind === 'buffer') {
+              for (let i = 0; zone.kind === 'buffer' && i < 4; i++) {
+                beyond = { x: beyond.x + step.x, y: beyond.y + step.y };
+                zone = classifyPosition(beyond.x, beyond.y);
+              }
+            }
             if (zone.kind === 'beyond') {
               const rule = queryTrigger(
                 ALL_TRIGGER_RULES.filter((r) => r.when.kind === 'outskirts'),
@@ -1543,6 +1585,12 @@ export const useGameStore = create<GameStore>()(
         },
 
         setLocale(locale) {
+          // N-2：白名单校验 —— 非法值（越权调用/损坏数据传入白名单外的 locale）
+          // 拒绝并回落 'zh-Hans'，不让 UI_TEXT[locale] 在渲染树拿到 undefined。
+          if (!isLocaleId(locale)) {
+            set({ locale: 'zh-Hans' });
+            return;
+          }
           set({ locale });
         },
 
@@ -1647,7 +1695,18 @@ export const useGameStore = create<GameStore>()(
         const legacy = persisted as Partial<GameState> & { visitCount?: number };
         const { storyRuntime: droppedRuntime, ...rest } = legacy;
         void droppedRuntime;
+        // N-2：旧档迁移通道同样校验 locale —— 损坏存档的非法值回落 'zh-Hans'
+        //（与下方 merge 的读档校验同一白名单，两条读档通道闭环）。
+        if (!isLocaleId(rest.locale)) rest.locale = 'zh-Hans';
         return rest as GameState & { visitCount: number };
+      },
+      // N-2：读档通道校验 —— migrate 只在版本不匹配时运行，版本相等的损坏档
+      //（locale 被绕过 setLocale 直接改写落盘）经 zustand 默认 merge 原样灌回
+      // 内存。这里替换为带 locale 白名单校验的等价浅合并：非法值回落
+      // 'zh-Hans'，堵住「损坏存档 locale 直达渲染树」的最后一条通道。
+      merge: (persisted, current) => {
+        const persistedLocale = (persisted as { locale?: unknown } | null | undefined)?.locale;
+        return { ...current, ...(persisted as object), locale: isLocaleId(persistedLocale) ? persistedLocale : 'zh-Hans' };
       },
     },
   ),
