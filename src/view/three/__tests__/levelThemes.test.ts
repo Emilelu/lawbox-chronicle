@@ -4,11 +4,13 @@
  * hex 全部合法（正则断言）、L9 per-plane 双分支、对比度守则（goal/门体不被
  * 关卡混色）、墙皮 14 阶按关重采样、提灯（L3 双位面 / L9 仅阴面且 ≥3 格）、
  * Sparkles 参数、装饰格与主角装置落格（确定性 + 地板子集）。
+ * 另含量化对比度回归（A2-3/A2-4/A2-5：crate/pedestal/heroProp vs 解析地板）
+ * 与墙皮重掷 epoch（A2-2）的确定性断言。
  */
 
 import { describe, expect, it } from 'vitest';
 import { AREA_LEVELS } from '../../../data/levels/areas';
-import { deriveTileField, planeTheme, WALL_SHADE_COUNT, type PlaneTheme } from '../theme';
+import { YANG_THEME as YANG, YIN_THEME as YIN, deriveTileField, mixHex, planeTheme, WALL_SHADE_COUNT, type PlaneTheme } from '../theme';
 import {
   LEVEL_THEMES,
   levelDeco,
@@ -251,6 +253,109 @@ describe('levelThemes · 装饰格（deco）', () => {
       expect(deco?.tiles.length ?? 0).toBeLessThanOrEqual(field.floors.length / 2);
     }
     expect(levelDeco(null, false, deriveTileField(AREA_LEVELS[0]?.grid ?? []))).toBeNull();
+  });
+});
+
+/* ==================== WCAG 对比度助手（A2-3/4/5 量化回归） ================== */
+
+/** sRGB 相对亮度（WCAG 2.x 公式；与选色复核脚本同一实现） */
+function relativeLuminance(hex: string): number {
+  const body = hex.replace('#', '');
+  const int = Number.parseInt(body.length === 3 ? body.split('').map((c) => c + c).join('') : body, 16);
+  const channels = [(int >> 16) & 255, (int >> 8) & 255, int & 255].map((c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * (channels[0] ?? 0) + 0.7152 * (channels[1] ?? 0) + 0.0722 * (channels[2] ?? 0);
+}
+
+/** WCAG 对比度（1~21） */
+function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+describe('levelThemes · 对比度量化回归（A2-3/A2-4/A2-5）', () => {
+  /** 12 关在指定位面的解析地板色（渲染实际消费的 mixHex 派生值） */
+  const floorBases = (planeShifted: boolean): readonly string[] =>
+    AREA_LEVELS.map((level) => resolveLevelTheme(level.id, planeShifted).floor.base);
+
+  /** min(候选色 vs 全 12 关解析地板) */
+  const minContrast = (color: string, floors: readonly string[]): number =>
+    Math.min(...floors.map((floor) => contrastRatio(color, floor)));
+
+  it('A2-3：阴面石板侧面/顶面 vs 解析地板 ≥3:1（推箱核心对象任何位面可辨）', () => {
+    const yinFloors = floorBases(true);
+    expect(minContrast(YIN.crate.body, yinFloors)).toBeGreaterThanOrEqual(3);
+    expect(minContrast(YIN.crate.top, yinFloors)).toBeGreaterThanOrEqual(3);
+    // body<top 的明暗层级保持（顶面仍比侧面亮）
+    expect(relativeLuminance(YIN.crate.top)).toBeGreaterThan(relativeLuminance(YIN.crate.body));
+  });
+
+  it('A2-3：阳面石板不低于现状基线（body ≥2.8 / top ≥3.0，回归保护）', () => {
+    const yangFloors = floorBases(false);
+    expect(minContrast(YANG.crate.body, yangFloors)).toBeGreaterThanOrEqual(2.8);
+    expect(minContrast(YANG.crate.top, yangFloors)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('A2-5：goal 基座柱身 vs 解析地板 ≥2:1（双位面；顶冠保持全场最高梯队）', () => {
+    expect(minContrast(YANG.goal.pedestal, floorBases(false))).toBeGreaterThanOrEqual(2);
+    expect(minContrast(YIN.goal.pedestal, floorBases(true))).toBeGreaterThanOrEqual(2);
+  });
+
+  it('A2-4：每关主角装置主体 vs 解析地板 ≥3:1（双位面；L12 王座不再隐形）', () => {
+    for (const level of AREA_LEVELS) {
+      for (const planeShifted of [false, true]) {
+        const theme = resolveLevelTheme(level.id, planeShifted);
+        const prop = LEVEL_THEMES[level.id]?.heroProp;
+        expect(prop).toBeDefined();
+        expect(contrastRatio(prop!.color, theme.floor.base)).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it('A2-4：L12 王座主体不再与墙顶同值（余烬红场景里有轮廓可辨）', () => {
+    const spec = LEVEL_THEMES['level-lb-12'];
+    expect(spec).toBeDefined();
+    expect(spec!.heroProp.color).not.toBe(spec!.wall.top);
+  });
+});
+
+describe('levelThemes · 墙皮重掷 epoch（A2-2）', () => {
+  const theme = resolveLevelTheme('level-sb-01', false);
+
+  it('epoch 缺省 = 基线 ramp：三参缺省与显式 0 逐字节一致（不重掷不改观感）', () => {
+    for (let i = 0; i < WALL_SHADE_COUNT; i++) {
+      const baseline = mixHex(theme.wall.base, theme.wall.top, i % 2 === 0
+        ? 0.08 + (i / (WALL_SHADE_COUNT - 1)) * 0.8
+        : 0.16 + (i / (WALL_SHADE_COUNT - 1)) * 0.76);
+      expect(levelWallShadeColor(theme, i)).toBe(baseline);
+      expect(levelWallShadeColor(theme, i, 0)).toBe(baseline);
+    }
+  });
+
+  it('epoch 自增即确定性重掷：墙皮真的会变、同 epoch 复现恒定', () => {
+    const rolled = Array.from({ length: WALL_SHADE_COUNT }, (_, i) => levelWallShadeColor(theme, i, 1));
+    const baseline = Array.from({ length: WALL_SHADE_COUNT }, (_, i) => levelWallShadeColor(theme, i, 0));
+    // 重掷生效：至少存在阶位色值变化（非「按了没反应」）
+    expect(rolled.some((color, i) => color !== baseline[i])).toBe(true);
+    // 确定性：同 epoch 重复调用一致
+    for (let i = 0; i < WALL_SHADE_COUNT; i++) {
+      expect(levelWallShadeColor(theme, i, 1)).toBe(rolled[i]);
+    }
+    // 相邻 epoch 各自成相（重掷两次结果不同，作弊可连续重摇）
+    expect(rolled.some((color, i) => color !== levelWallShadeColor(theme, i, 2))).toBe(true);
+  });
+
+  it('epoch>0 下 hex 合法且越界回绕仍稳定（渲染管线契约不变）', () => {
+    for (const epoch of [1, 2, 7]) {
+      for (let i = 0; i < WALL_SHADE_COUNT; i++) {
+        expect(levelWallShadeColor(theme, i, epoch)).toMatch(/^#[0-9a-f]{6}$/);
+      }
+      expect(levelWallShadeColor(theme, -1, epoch)).toBe(levelWallShadeColor(theme, WALL_SHADE_COUNT - 1, epoch));
+      expect(levelWallShadeColor(theme, WALL_SHADE_COUNT, epoch)).toBe(levelWallShadeColor(theme, 0, epoch));
+    }
   });
 });
 

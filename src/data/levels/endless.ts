@@ -129,7 +129,19 @@ interface PullRecord {
   readonly dir: Dir;
 }
 
-/** 逆向散箱：K 次拉箱（间隙穿插走位），返回散箱后的状态、实际拉箱数与拉箱轨迹 */
+/**
+ * 逆向散箱：K 次拉箱（间隙穿插走位），返回散箱后的状态、实际拉箱数与拉箱轨迹。
+ * A3-3①：原循环只受「连续 idle < 64」约束——玩家 wander 一直成功时 idle 恒为 0，
+ * 而 pulls 又可能长期不增长（拉不动的局面），循环没有全局终点（实测同一种子
+ * >200s 不返回）。补全局迭代上限 maxTicks = pullsWanted × 64：达到上限即视作
+ * 「本轮打散不足」交由 attempt 循环按 pulls 门槛重试，任何调用都有界返回。
+ * A3-3②：停机条件在「拉满 K 次」之上追加「净态」（箱子全部离旗、玩家不在
+ * 旗上）——图例网格一格一值，旗格被实体占据就无法在 parse 层表达「旗」与
+ * 「实体」，箱=旗不变量必被破坏。净态达成后循环才停；未能达成（ticks 上限）
+ * 则由 attempt 循环的旗位重叠拒绝兜底换种子重试。
+ */
+const SCRAMBLE_MAX_TICK_FACTOR = 64;
+
 function scramble(
   initial: ScrambleState,
   rng: Rng,
@@ -139,8 +151,14 @@ function scramble(
   let state = initial;
   let pulls = 0;
   let idle = 0;
+  let ticks = 0;
+  const maxTicks = Math.max(pullsWanted, 1) * SCRAMBLE_MAX_TICK_FACTOR;
   const records: PullRecord[] = [];
-  while (pulls < pullsWanted && idle < 64) {
+  const onGoal = (p: Vec2): boolean => state.goals.some((gp) => gp.x === p.x && gp.y === p.y);
+  const dirty = (): boolean =>
+    pulls < pullsWanted || onGoal(state.player) || state.chests.some(onGoal);
+  while (dirty() && idle < 64 && ticks < maxTicks) {
+    ticks += 1;
     const pulled = tryPull(state, rng, dirs);
     if (pulled !== undefined) {
       // 记录拉箱前的玩家位；箱子在 playerBefore + dir（dir 由玩家退步方向反推）
@@ -170,7 +188,12 @@ function pulledDir(before: Vec2, after: Vec2): Dir {
   return 'down';
 }
 
-/** 图例网格合成（旗位 = 初始箱位；玩家/箱子取散箱后的位置） */
+/**
+ * 图例网格合成（旗位 = 初始箱位；玩家/箱子取散箱后的位置）。
+ * 图例一格一值（0/1/2/3/4），此处互斥赋值的正确性由 attempt 循环的
+ * 「旗位/实体重叠拒绝」（A3-3②）保证：进入本函数时玩家/箱子绝不压旗格，
+ * 故「箱数 = 旗数」的 parse 不变量恒成立。
+ */
 function synthesizeGrid(state: ScrambleState): TerrainCell[][] {
   const goalKeys = new Set(state.goals.map(key));
   const rows: TerrainCell[][] = [];
@@ -193,8 +216,11 @@ function synthesizeGrid(state: ScrambleState): TerrainCell[][] {
 
 /**
  * 生成一层无尽回廊：随机布局 → 全箱就位 → 逆向散箱 → solver 求解 + 回放验证。
- * 任一尝试失败（拉箱不足 / 求解超时 / 回放失败——理论上仅由引擎缺陷触发）
- * 则换派生子种子重试；attempts 用尽返回 ok:false（绝不静默放行未验证层）。
+ * 任一尝试失败（拉箱不足 / 旗位重叠 / 求解超时 / 回放失败）则换派生子种子
+ * 重试；attempts 用尽返回 ok:false（绝不静默放行未验证层）。A3-3③：解析/
+ * 回放是「理论上不该发生」的系统性失败（净态散箱 + 重叠拒绝之后解析必过），
+ * 同因连续 3 次即提前短路——不再空烧剩余尝试；打散/重叠属采样波动，交给
+ * 重试机制本身，不做早停（避免把高概率采样失败误判成系统性失败）。
  */
 export function generateEndlessFloor(runSeed: string, floorIndex: number): EndlessFloorResult {
   const t = ENDLESS_TUNING;
@@ -202,6 +228,22 @@ export function generateEndlessFloor(runSeed: string, floorIndex: number): Endle
   const size = Math.min(t.maxSize, t.baseSize + growth);
   const chestCount = Math.min(t.maxChests, t.chestsBase + Math.floor(Math.max(0, floorIndex - 1) / t.chestsEvery));
   const pullsWanted = Math.min(t.maxPulls, t.pullsBase + t.pullsPerFloor * Math.max(0, floorIndex - 1));
+
+  // A3-3③：系统性失败（解析/回放）连续计数，≥3 短路
+  let systemicStreak = 0;
+  let systemicReason: string | null = null;
+  let lastSamplingReason: string | null = null;
+  const failSystemic = (reason: string): boolean => {
+    if (reason === systemicReason) systemicStreak += 1;
+    else {
+      systemicReason = reason;
+      systemicStreak = 1;
+    }
+    return systemicStreak >= 3;
+  };
+  const failSampling = (reason: string): void => {
+    lastSamplingReason = reason;
+  };
 
   for (let attempt = 1; attempt <= t.attempts; attempt++) {
     const rng = createRng(`endless:${runSeed}:f${floorIndex}:a${attempt}`);
@@ -221,7 +263,10 @@ export function generateEndlessFloor(runSeed: string, floorIndex: number): Endle
         if (!walls.has(`${x},${y}`)) freeCells.push({ x, y });
       }
     }
-    if (freeCells.length < chestCount * 3 + 4) continue; // 太挤，重试
+    if (freeCells.length < chestCount * 3 + 4) {
+      failSampling('布局过挤（可用格不足）');
+      continue; // 太挤，重试
+    }
 
     // 2. 全箱就位：随机挑 chestCount 个格作旗位并放箱；玩家另取一格
     const shuffled = [...freeCells];
@@ -236,7 +281,10 @@ export function generateEndlessFloor(runSeed: string, floorIndex: number): Endle
     const goals = shuffled.slice(0, chestCount);
     const rest = shuffled.slice(chestCount);
     const playerStart = rest[0];
-    if (playerStart === undefined) continue;
+    if (playerStart === undefined) {
+      failSampling('无可用出生格');
+      continue;
+    }
     const initial: ScrambleState = {
       walls,
       player: playerStart,
@@ -246,11 +294,26 @@ export function generateEndlessFloor(runSeed: string, floorIndex: number): Endle
       height: size,
     };
 
-    // 3. 逆向散箱（记录拉箱轨迹，其逆序即一组合法推箱解）
+    // 3. 逆向散箱（记录拉箱轨迹，其逆序即一组合法推箱解）：停机即净态
     const { state, pulls, records } = scramble(initial, rng, pullsWanted);
-    if (pulls < Math.ceil(pullsWanted / 2)) continue; // 打散不足，重试
-    const allSeated = state.chests.every((c) => goals.some((gp) => gp.x === c.x && gp.y === c.y));
-    if (allSeated) continue; // 散完还在原位 = 平凡层，重试
+    if (pulls < Math.ceil(pullsWanted / 2)) {
+      failSampling(`打散不足（${pulls}/${Math.ceil(pullsWanted / 2)} 拉箱）`);
+      continue; // 打散不足，重试
+    }
+
+    // 3.5 旗位/实体重叠拒绝（A3-3② 兜底闸门）：散箱通常已达成净态（箱子全离
+    // 旗、玩家不在旗），此处只在 ticks 上限截断的病态采样下才会命中。图例
+    // 一格一值——旗格被实体占据时无法同时表达「旗(3)」与「实体(2/4)」，解析
+    // 的「箱数=旗数+有玩家」不变量必被破坏；构造解只要求「拉箱序列的逆」可
+    // 回放，换一次采样不损失任何语义，绝不合成不可解析的网格。
+    const onGoal = (p: Vec2): boolean => goals.some((gp) => gp.x === p.x && gp.y === p.y);
+    const overlap =
+      onGoal(state.player) || state.chests.some(onGoal) ||
+      state.chests.some((c) => c.x === state.player.x && c.y === state.player.y);
+    if (overlap) {
+      failSampling('旗位与玩家/箱子重叠');
+      continue;
+    }
 
     // 4. 合成图例网格 → 解析 → 构造解回放验证（硬闸门）→ 推数标注（软标注）
     const grid = synthesizeGrid(state);
@@ -264,7 +327,10 @@ export function generateEndlessFloor(runSeed: string, floorIndex: number): Endle
       reward: { starStones: 0 },
     };
     const parsed = parseLevelGeometry(def);
-    if (!parsed.ok) continue;
+    if (!parsed.ok) {
+      if (failSystemic(`网格解析失败：${parsed.error}`)) break;
+      continue;
+    }
 
     // 拉箱序列的逆 = 一组合法推箱解（构造性可解）；用实机引擎逐格回放验证
     const pushSteps: readonly SolveStep[] = [...records]
@@ -281,7 +347,10 @@ export function generateEndlessFloor(runSeed: string, floorIndex: number): Endle
         } satisfies SolveStep;
       });
     const replay = replaySolution(parsed.geometry, pushSteps);
-    if (!replay.ok) continue;
+    if (!replay.ok) {
+      if (failSystemic(`构造解回放失败：${replay.error ?? ''}`)) break;
+      continue;
+    }
 
     // 最短推数标注：小预算求解，超时则如实标注 optimal=false
     const solved = solveGeometry(parsed.geometry, { maxStates: 150_000, maxMs: 4_000 });
@@ -302,7 +371,11 @@ export function generateEndlessFloor(runSeed: string, floorIndex: number): Endle
       },
     };
   }
-  return { ok: false, error: `无尽回廊生成失败：runSeed=${runSeed} floor=${floorIndex}（${ENDLESS_TUNING.attempts} 次尝试均未通过回放校验）` };
+  const reason =
+    systemicReason !== null && systemicStreak >= 3
+      ? `同一系统性失败原因连续出现，提前短路：${systemicReason}`
+      : `${ENDLESS_TUNING.attempts} 次尝试均未通过校验${lastSamplingReason !== null ? `（末次原因：${lastSamplingReason}）` : ''}`;
+  return { ok: false, error: `无尽回廊生成失败：runSeed=${runSeed} floor=${floorIndex}（${reason}）` };
 }
 
 /** 一整段无尽回廊（连续 floorCount 层，层层独立验证） */

@@ -12,7 +12,10 @@
  *  2. 途中遇到剧情对话/选择/作者谜题输入自动推进（选择优先「送回」，
  *     谜题回答 5,5,1）；遭遇战自动装备武器并攻击；结算面板自动进下一关；
  *  3. 演示期使用"满武器 + 高攻高血"的临时角色，保证剧情战不打断观看；
- *     演示结束（或停止）后恢复进入演示前的玩家/抽卡/进度状态，不污染存档；
+ *     演示结束（或停止）后恢复进入演示前的玩家/抽卡/进度状态，不污染存档：
+ *     演示期间 persist 走黑洞 storage（K6/A3-5，崩溃窗口也不落盘演示态），
+ *     restore 时回写备份并清掉 result 这类备份外的会话浮层态（防进度旗
+ *     订阅重盖章 cleared:*）；
  *  4. 顶栏实时显示当前关卡与推数进度，可随时点「停止」（回到标题）；
  *  5. 失败自恢复（F2）：走位被挡即重规划不盲走；停滞 60s（看门狗）或推箱
  *     落空 → 本关重置重试（连败计数跨重试保留，上限 DEMO_MAX_LEVEL_RESETS）；
@@ -46,7 +49,8 @@ import { DIR_VECTORS, type Dir, type GameState, type Vec2 } from '../core/types'
      L1 主城：天使①（radius 1）+ 羽毛①③④（tile 同/邻格）+ 东侧越界彩蛋；
        羽毛② hub(6,6) 是箱子出生点（原始格值 4），箱子推开后才能落格触发，
        由解路过程顺路覆盖，不设巡游站；
-     L2/L3/L6：三小怪（radius 0，必须踩上触发格）；
+     L2/L3/L6：三小怪（郭老师/冬泳怪鸽 radius 0 踩格触发；蔡徐坤 radius 1
+       邻格触发——遭遇点 (12,3) 被守卫实体占位，巡游站取邻格 (13,3)）；
      L4/L5/L10：天使②③④（radius 1）；
      L9：作者谜题（radius 1，需三小怪旗齐 —— 故作者关必须排在三怪关之后）；
      L11：影流之主投影（radius 1）；
@@ -72,16 +76,15 @@ interface TourStop {
  * 巡游步数为 walkDirs BFS 实测（单测逐关核算并钉值，见 autoPlay.test.ts），
  * 预算核算（巡游 + 从巡游终点起步的解路实走，对照 parSteps[1] 2☆ 阈值）：
  *   L1  巡游 54 + 解路 133 = 187 < 222（2☆ 硬指标达标）；
- *   L2  巡游 0（遭遇点被守卫占位跳过，见下注）+ 解路 131 = 131 < 236；
+ *   L2  巡游 2（N1：radius 1 邻格站 (13,3) 触发遭遇，见下注）+ 解路 131 = 133 < 236；
  *   L3 11 + 179 = 190 < 339；L4 10 + 41 = 51 < 92；
  *   L5 8 + 13 = 21（>17，见下注）；L6 4 + 16 = 20 < 33；
  *   L9 7 + 17 = 24 < 44；L10 7 + 56 = 63 < 92；L11 11 + 73 = 84 < 134；
  *   L12 8 + 73 = 81 < 135。
  * 例外一 L2：MECH-4 把「蔡徐坤守卫」实体放在遭遇点 (12,3) 同格堵东廊箱道，
- * 而该格四向皆不可推（上/下让路格是墙、左是箱、右推位是箱）——巡游推入
- * 不可行，站点按实机规则优雅跳过（planTourPushIn 单测钉死该负例）；遭遇
- * 触发依赖 STORY-5/MECH-4 的联动语义（触碰遭遇/regen 敌推），demo 完成性
- * 不受影响（解路不经过 (12,3)）。
+ * 该格四向皆不可推（上/下让路格是墙、左是箱、右推位是箱）——踩格推入均
+ * 不可行（planTourPushIn 单测钉死该负例）；N1 radius 1 修法后遭遇改为
+ * 「走到守卫邻格即触发」，巡游站取自然路径上的邻格地板 (13,3)，到站即遭遇。
  * 例外二 L5（阶下回音，par 最小的一关）：天使③被剧情分布放在关卡最东
  * (7,3)，而解路首发力位在西侧 (2,2)，巡游到访的往返成本 ≈12 步 → 全程
  * 21 步必落 1☆。这是 STORY-5 放置的结构性代价，任何巡游站位（r1 内）都
@@ -97,10 +100,11 @@ export const LEVEL_TOURS: Record<string, readonly TourStop[]> = {
     { label: '残留的羽毛·④', target: { x: 7, y: 5 } },
     { label: '东侧彩蛋·神秘法阵', target: { x: 14, y: 10 }, edgePush: 'right' },
   ],
-  // L2 蔡徐坤遭遇点 (12,3) 被 MECH-4 守卫实体同格占位且四向不可推：巡游
-  // 推入不可行时按实机规则优雅跳过（planTourPushIn 负例），遭遇触发交给
-  // STORY-5/MECH-4 联动语义；站点坐标保持 STORY-5 分布不动。
-  'level-sb-02': [{ label: '蔡徐坤', target: { x: 12, y: 3 } }],
+  // L2 蔡徐坤（N1 radius 1 修法后）：遭遇点 (12,3) 本体仍被 MECH-4 守卫同格
+  // 占位（踩格不可达），但 radius 1 = 「走到守卫邻格」即遭遇。巡游站取自然
+  // 路径上的邻格地板 (13,3)（出生点 (13,1) 南行两步），到站即触发遭遇剧情，
+  // 演示不再缺这段剧情；(12,3) 推入仍不可行（planTourPushIn 负例保留）。
+  'level-sb-02': [{ label: '蔡徐坤', target: { x: 13, y: 3 } }],
   'level-sb-03': [{ label: '郭老师', target: { x: 7, y: 5 } }],
   'level-sb-04': [{ label: '导航天使②', target: { x: 7, y: 4 } }],
   'level-lb-05': [{ label: '导航天使③', target: { x: 7, y: 3 } }],
@@ -244,6 +248,84 @@ export function takeOverViewPreference(): () => void {
   };
 }
 
+/* ------------------- 存档护栏（K6/A3-5「演示不污染存档」） ------------------- */
+
+/**
+ * persist 的黑洞 PersistStorage：读恒空、写恒弃。演示期间经
+ * persist.setOptions({ storage }) 换上它，把 zustand persist 对主存档分片的
+ * 实时落盘通道整体掐断——演示中每次 setState（AUTO DEMO 角色/演示剧情旗）
+ * 都不再写进 localStorage，浏览器崩溃/断电等无 beforeunload 的退出路径下，
+ * 玩家存档保持进入演示前的原样。
+ */
+const BLACK_HOLE_STORAGE = {
+  getItem: (): null => null,
+  setItem: (): void => undefined,
+  removeItem: (): void => undefined,
+};
+
+export interface DemoSaveGuard {
+  /** 恢复进入演示前的玩家/抽卡/保底/剧情状态；幂等（完成/停止/卸载多路退出安全） */
+  restore: () => void;
+}
+
+/**
+ * 存档护栏：备份 → 掐断 persist → 注入演示态，restore 一次性回写。
+ *  - A3-5：先挂黑洞再写演示态（顺序不能反，否则首帧演示态会被 persist），
+ *    restore 先恢复原 storage 再回写备份（后续正常游玩重新落盘）；
+ *  - K6：restore 同时清掉 result 这类「备份外」的会话浮层态——结算面板开着
+ *    时收尾，cheatRegistry 的进度旗订阅（result.levelId 非空即盖章
+ *    cleared:<levelId>）会在恢复写回的 setState 上把演示进度重新盖进已还原
+ *    的 story 并落盘；清空 result 后订阅看到 resultLevelId === undefined，
+ *    不再盖章，存档不残留 cleared:level-lb-12 这类演示旗。
+ */
+export function takeOverSaveGuard(): DemoSaveGuard {
+  const initial = useGameStore.getState();
+  const backup = {
+    player: initial.player,
+    activeLaws: initial.gacha.activeLaws,
+    gacha: initial.gacha,
+    pity: initial.pity,
+    story: initial.story,
+    storyRuntime: initial.storyRuntime,
+  };
+  // A3-5：换黑洞 storage。原 storage 取自 persist 当前配置（gameStore 以
+  // createJSONStorage(() => localStorage) 构建，必存在）；zustand v4 newImpl
+  // 的 setOptions 按 newOptions.storage 换写（getStorage 仅旧实现消费）。
+  const originalStorage = useGameStore.persist.getOptions().storage;
+  if (originalStorage !== undefined) {
+    useGameStore.persist.setOptions({ storage: BLACK_HOLE_STORAGE });
+  }
+  useGameStore.setState({
+    player: demoPlayer(),
+    gacha: { ...initial.gacha, activeLaws: [] }, // 不激活法则卡，保持 solver 标准语义
+  });
+  let restored = false;
+  return {
+    restore: (): void => {
+      if (restored) return;
+      restored = true;
+      // 先恢复 persist（写回的备份与后续正常游玩重新落盘），再回写备份
+      if (originalStorage !== undefined) {
+        useGameStore.persist.setOptions({ storage: originalStorage });
+      }
+      const s = useGameStore.getState();
+      useGameStore.setState({
+        player: backup.player,
+        gacha: {
+          ...s.gacha,
+          activeLaws: backup.activeLaws,
+          owned: backup.gacha.owned,
+          starStones: backup.gacha.starStones,
+        },
+        pity: backup.pity,
+        story: backup.story,
+        storyRuntime: backup.storyRuntime,
+        result: null, // K6：result 不在备份内，必须显式清理（见上注释）
+      });
+    },
+  };
+}
+
 export function AutoPlayLayer() {
   const [config] = useState<AutoPlayConfig>(() =>
     readAutoPlayConfig(typeof window === 'undefined' ? '' : window.location.search),
@@ -257,38 +339,16 @@ export function AutoPlayLayer() {
     if (!config.enabled) return;
 
     /* ------------------------- 备份：不污染玩家存档 ------------------------- */
-    const initial = useGameStore.getState();
-    const backup = {
-      player: initial.player,
-      activeLaws: initial.gacha.activeLaws,
-      gacha: initial.gacha,
-      pity: initial.pity,
-      story: initial.story,
-      storyRuntime: initial.storyRuntime,
-    };
-    useGameStore.setState({
-      player: demoPlayer(),
-      gacha: { ...initial.gacha, activeLaws: [] }, // 不激活法则卡，保持 solver 标准语义
-    });
+    // 存档护栏（K6/A3-5）：备份 + persist 黑洞 + 演示态注入收拢在 takeOverSaveGuard，
+    // restore 时回写备份并清理 result（演示不污染存档纪律的唯一入口）
+    const saveGuard = takeOverSaveGuard();
 
     // 演示期强制第三人称视角（CAM-1 viewStore），结束/停止/卸载恢复前值
     const restoreView = takeOverViewPreference();
 
     const restore = (): void => {
       restoreView(); // viewPreference 恢复进入演示前的值（不污染偏好）
-      const s = useGameStore.getState();
-      useGameStore.setState({
-        player: backup.player,
-        gacha: {
-          ...s.gacha,
-          activeLaws: backup.activeLaws,
-          owned: backup.gacha.owned,
-          starStones: backup.gacha.starStones,
-        },
-        pity: backup.pity,
-        story: backup.story,
-        storyRuntime: backup.storyRuntime,
-      });
+      saveGuard.restore(); // 玩家/抽卡/保底/剧情回写 + result 清理 + persist 恢复
     };
 
     /* --------------------------- 演示运行状态 ----------------------------- */
@@ -334,6 +394,9 @@ export function AutoPlayLayer() {
       setFinished(true);
       setStatus(message);
       restore();
+      // K6 收尾：restore 已清 result，不能停在「result 相但无浮层」的悬置画面；
+      // 与「停止」同款回标题，完成/失败统一落在标题页 + 演示横幅
+      useGameStore.getState().backToTitle();
     };
 
     const nextLevelAfter = (currentId: string): { id: string; name: string } | undefined => {
@@ -439,7 +502,11 @@ export function AutoPlayLayer() {
         if (now - lastDialogueAt < 900) return;
         const choices = visibleChoices(ALL_SCRIPTS, runtime);
         // 外域选择优先「送回」——留在主线，不跳进程序生成的无尽回廊
-        const back = choices.find((c) => c.label.includes('送回') || c.label.includes('回到') || c.label.includes('返回'));
+        //（A3-1 接线后「深入」会真实生成挑战层进关；东侧「让法阵送你回」的
+        // label 是「送你回」句式，单独匹配避免误选「深入」 derail 演示）
+        const back = choices.find(
+          (c) => c.label.includes('送回') || c.label.includes('送你回') || c.label.includes('回到') || c.label.includes('返回'),
+        );
         const pick = back ?? choices[0];
         if (pick !== undefined) {
           s.chooseStory(pick.id);

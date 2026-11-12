@@ -365,12 +365,7 @@ export function installStatsCollector(): () => void {
   return off;
 }
 
-/** 卸载收集器（若已安装）；返回是否真的卸载了 */
-export function uninstallStatsCollector(): boolean {
-  if (unsubscribeCollector === null) return false;
-  unsubscribeCollector();
-  return true;
-}
-
-/* 模块加载即安装：统计不依赖任何视图挂载点，随包加载即开始记录 */
+/* 模块加载即安装：统计不依赖任何视图挂载点，随包加载即开始记录。
+   卸载走 installStatsCollector 的返回值（此前零引用的 uninstallStatsCollector
+   导出已删，A4-8 死代码清理；测试隔离用返回的 off 函数即可）。 */
 installStatsCollector();

@@ -22,11 +22,13 @@ import {
   type StoryScriptDef,
 } from '../../../engine/story/interpreter';
 import {
+  classifyPosition,
   queryTrigger,
   GATE_MAKEUP_SCRIPTS,
   type TriggerContext,
   type TriggerRule,
 } from '../../../engine/story/triggers';
+import { gridToWorld } from '../../../core/store/gameStore';
 import {
   ANGEL_HUB_FEATHER_SCRIPTS,
   ANGEL_LIGHTFEATHER_SCRIPTS,
@@ -785,5 +787,117 @@ describe('outskirts —— 四方向越界（Game.java:121-284 的事件表化�
       endingId: 'outskirt-north-transit',
       closable: true,
     });
+  });
+
+  it('A3-1 接线：东/南/西「进入」分支经中转节点显式发射 enterChallengeLayer（不再无声返回主城）', () => {
+    const cases = [
+      { scriptId: 'script-outskirt-east', choice: 'enter', layerId: 'east-endless', transitId: 'outskirt-east-transit' },
+      { scriptId: 'script-outskirt-south', choice: 'accept', layerId: 'south-abyss', transitId: 'outskirt-south-transit' },
+      { scriptId: 'script-outskirt-west', choice: 'challenge', layerId: 'west-end-wall', transitId: 'outskirt-west-transit' },
+    ] as const;
+    for (const c of cases) {
+      const script = findScript(c.scriptId);
+      const s0 = startStory([script], script.id);
+      const s1 = walk(script, s0.state).state;
+      expect(s1.nodeId, `${c.scriptId} 应停在选项节点`).toBe(
+        `${c.scriptId.replace('script-outskirt-', 'outskirt-')}-choice`,
+      );
+      const stepped = chooseStory([script], s1, c.choice);
+      // 中转对话节点进入即发射 enterChallengeLayer（解释器产出 → gameStore 消费）
+      expect(stepped.state.nodeId, `${c.scriptId} 应进入中转节点`).toBe(c.transitId);
+      expect(stepped.state.phase).toBe('dialogue');
+      expect(stepped.effects, `${c.scriptId} 必须发射 enterChallengeLayer`).toContainEqual({
+        kind: 'enterChallengeLayer',
+        layerId: c.layerId,
+      });
+      // 中转节点显式连到收尾 ending（生成失败的回退路径），图无悬空边
+      const transit = script.nodes.find((n) => n.id === c.transitId);
+      expect(transit?.kind).toBe('dialogue');
+      if (transit !== undefined && transit.kind === 'dialogue') {
+        expect(transit.onEnterEffects).toContainEqual({ kind: 'enterChallengeLayer', layerId: c.layerId });
+        expect(script.nodes.some((n) => n.id === transit.next)).toBe(true);
+      }
+      // 收尾 ending 仍在（closable，失败路径可关闭回到原地）
+      const ending = script.nodes.find((n) => n.kind === 'ending' && n.id === `${c.scriptId.replace('script-outskirt-', 'outskirt-')}-enter`);
+      expect(ending?.kind).toBe('ending');
+    }
+  });
+
+  it('A3-1 接线：东「送回」/南「爬回」/西「后退」分支不发射 enterChallengeLayer（留在主线语义不变）', () => {
+    const cases = [
+      { scriptId: 'script-outskirt-east', choice: 'leave' },
+      { scriptId: 'script-outskirt-south', choice: 'climb' },
+      { scriptId: 'script-outskirt-west', choice: 'retreat' },
+    ] as const;
+    for (const c of cases) {
+      const script = findScript(c.scriptId);
+      const s0 = startStory([script], script.id);
+      const s1 = walk(script, s0.state).state;
+      const stepped = chooseStory([script], s1, c.choice);
+      expect(stepped.effects.some((e) => e.kind === 'enterChallengeLayer'), `${c.scriptId} 撤退分支不得进层`).toBe(false);
+    }
+  });
+});
+
+/* ==================== A3-2 · HUB 越界几何（缓冲带行） ==================== */
+/* 方向约定以 classifyPosition 为准（world y>0 = north，时空裂缝/隐藏关一侧）；
+ * 网格底部新增行让该侧真实可达；网格顶部（world −y = 深渊坠道一侧）受网格
+ * 非负索引限制无法用数据补行，属 gameStore 判定路线的 G4 协调项。 */
+
+describe('outskirts —— HUB 越界几何（A3-2：缓冲带行让时空裂缝一侧 beyond 真实可达）', () => {
+  const hub = findAreaLevel('level-sb-01');
+  if (hub === undefined) throw new Error('level-sb-01 缺失');
+
+  it('HUB 网格 15×14：缓冲带行 (row13) 与 row12 开口逐格对齐，heights 同尺寸', () => {
+    expect(hub.grid.length).toBe(14);
+    expect(hub.heights?.length).toBe(14);
+    expect(hub.grid[12]?.slice(11, 14)).toEqual([0, 0, 0]); // 既有开口 (11..13,12)
+    expect(hub.grid[13]?.slice(11, 14)).toEqual([0, 0, 0]); // 缓冲带逐格对齐
+    expect(hub.grid[13]?.filter((c) => c === 0)).toHaveLength(3); // 不向东西额外开口
+  });
+
+  it('时空裂缝侧（world +y）beyond 自此可达：站 (13,13)（world +7 buffer）被拒移动的虚拟位 world +8 命中 beyond north', () => {
+    const stand = gridToWorld(13, 13);
+    expect(stand).toEqual({ x: 6, y: 7 });
+    expect(classifyPosition(stand.x, stand.y)).toMatchObject({ kind: 'buffer', dir: 'north' });
+    const virtual = { x: stand.x, y: stand.y + 1 }; // 被拒移动的虚拟位 = prevWorld + 一步
+    const zone = classifyPosition(virtual.x, virtual.y);
+    expect(zone).toMatchObject({ kind: 'beyond', dir: 'north', depth: 1 });
+    const hit = queryTrigger(OUTSKIRT_TRIGGER_RULES, { x: virtual.x, y: virtual.y, flags: {}, seenEventIds: [] });
+    expect(hit?.scriptId).toBe('script-outskirt-north');
+    expect(hit?.when).toMatchObject({ kind: 'outskirts', dir: 'north', zone: 'beyond' });
+  });
+
+  it('既有可达性回归：东 beyond（(14,11) 虚拟位 world +8）与 row12 缓冲进入（世界 +6）不受影响', () => {
+    // 东：既有语义（越界 east 实机已验证）
+    const eastStand = gridToWorld(14, 11);
+    expect(eastStand).toEqual({ x: 7, y: 5 });
+    expect(classifyPosition(eastStand.x + 1, eastStand.y)).toMatchObject({ kind: 'beyond', dir: 'east' });
+    // 缓冲带进入：row12（世界 +6）即 buffer，警示剧本命中语义不变
+    const bufferCell = gridToWorld(13, 12);
+    expect(bufferCell).toEqual({ x: 6, y: 6 });
+    expect(classifyPosition(bufferCell.x, bufferCell.y)).toMatchObject({ kind: 'buffer', dir: 'north' });
+  });
+
+  it('西侧（E N D 之壁）beyond 自此可达：站 (0,11)（world −7 buffer）被拒西移的虚拟位 world −8 命中 beyond west', () => {
+    expect(hub.grid[11]?.[0]).toBe(0); // 西缓冲格已开（此前第 0 列全墙）
+    const stand = gridToWorld(0, 11);
+    expect(stand).toEqual({ x: -7, y: 5 });
+    expect(classifyPosition(stand.x, stand.y)).toMatchObject({ kind: 'buffer', dir: 'west' });
+    const virtual = { x: stand.x - 1, y: stand.y };
+    expect(classifyPosition(virtual.x, virtual.y)).toMatchObject({ kind: 'beyond', dir: 'west', depth: 1 });
+    const hit = queryTrigger(OUTSKIRT_TRIGGER_RULES, { x: virtual.x, y: virtual.y, flags: {}, seenEventIds: [] });
+    expect(hit?.scriptId).toBe('script-outskirt-west');
+    expect(hit?.when).toMatchObject({ kind: 'outskirts', dir: 'west', zone: 'beyond' });
+  });
+
+  it('深渊坠道侧（world −y）beyond 仍不可达（row0 全墙，最北可站 world −5 → 虚拟 −6 仅 buffer）——判定路线属 gameStore（G4 协调项）', () => {
+    expect(hub.grid[0]?.every((c) => c === 1)).toBe(true); // 该侧首行全墙，无可站格
+    const deepStanding = gridToWorld(1, 1); // 该侧最深可站格（世界 (−6,−5)）
+    expect(deepStanding).toEqual({ x: -6, y: -5 });
+    const virtual = { x: deepStanding.x, y: deepStanding.y - 1 };
+    expect(classifyPosition(virtual.x, virtual.y)).toMatchObject({ kind: 'buffer', dir: 'south' });
+    const hit = queryTrigger(OUTSKIRT_TRIGGER_RULES, { x: virtual.x, y: virtual.y, flags: {}, seenEventIds: [] });
+    expect(hit?.when).toMatchObject({ zone: 'buffer' }); // 只命中警示，不命中坠道
   });
 });

@@ -1,16 +1,19 @@
 /**
- * demand 画布后台节流初始化兜底（N5）单测。
+ * demand 画布后台节流初始化兜底（N5 + K5）单测。
  * ---------------------------------------------------------------------------
  * 背景：react-use-measure 的 ResizeObserver 初次回调依赖渲染帧投递，rAF 停摆
  * 的后台标签页里 containerRect 恒 {0,0,0,0}，R3F Canvas 的 width>0 守卫永不
  * 通过 → 画布停在 300×150、data-engine 缺失、root 不建立；回前台补发一次
  * window resize（react-use-measure 的 resize 兜底监听不依赖渲染帧）即恢复。
  * 覆盖（全部真实 jsdom 事件/组件，零模块 mock）：
- *  1. installDemandCanvasWake：hidden→visible / focus 且 root 未建立 → 恰好
- *     补发一次 resize；visible→hidden / root 已建立 → 不发；卸载后全静默。
+ *  1. installDemandCanvasWake：安装时 root 未建立 → 立即补发一次 resize
+ *     （K5：后台打开且一直不回前台的标签页里 visibilitychange/focus 兜底
+ *     永不触发，只有挂载即补发能初始化）；hidden→visible / focus 且 root
+ *     未建立 → 各补发一次；visible→hidden / root 已建立 → 不发；卸载后全静默。
  *  2. WorldCanvas 接线：jsdom 无 ResizeObserver/无布局/无 WebGL，真实 R3F
  *     Canvas 挂载后容器量取恒 0 —— 恰好复刻「守卫不通过 ⇒ root 不建立 ⇒
- *     探针不 mount」的后台节流态：回前台补发一次 resize，卸载后不再补发。
+ *     探针不 mount」的后台节流态：挂载即补发一次（K5），回前台再补发一次，
+ *     卸载后不再补发。
  *  3. RootReadyProbe mount 回执契约：mount 即 onReady 恰好一次（与
  *     「R3F root 已建立」一一对应；同一 onReady 重复提交不重复回报）。
  */
@@ -55,9 +58,37 @@ const fireFocus = (): void => {
 /* ------------------- 1. installDemandCanvasWake 补发时机 ------------------ */
 
 describe('installDemandCanvasWake —— 补发时机', () => {
-  it('root 未建立：切回前台（visible 态收到 visibilitychange）补发恰好一次 resize', () => {
+  it('K5：安装时 root 未建立 → 立即补发恰好一次 resize（后台打开、不回前台也能初始化）', () => {
     const probe = listenResize();
     const uninstall = installDemandCanvasWake(() => false);
+    try {
+      expect(probe.count()).toBe(1);
+      // K5 场景不受可见性限制：hidden 态下打开的标签页恰恰是本用例的目标
+      setVisibility('hidden');
+      fireVisibilityChange();
+      fireFocus();
+      expect(probe.count()).toBe(1); // hidden 下事件兜底不发（安装补发只此一次）
+    } finally {
+      restoreVisibility();
+      uninstall();
+      probe.restore();
+    }
+  });
+
+  it('K5：安装时 root 已建立 → 不补发（前台正常挂载是幂等空操作）', () => {
+    const probe = listenResize();
+    const uninstall = installDemandCanvasWake(() => true);
+    try {
+      expect(probe.count()).toBe(0);
+    } finally {
+      uninstall();
+      probe.restore();
+    }
+  });
+
+  it('root 未建立：切回前台（visible 态收到 visibilitychange）补发恰好一次 resize', () => {
+    const uninstall = installDemandCanvasWake(() => false);
+    const probe = listenResize(); // 安装补发（K5）先于监听：本用例只计事件兜底
     try {
       fireVisibilityChange();
       expect(probe.count()).toBe(1);
@@ -71,8 +102,8 @@ describe('installDemandCanvasWake —— 补发时机', () => {
   });
 
   it('root 未建立且页面可见：window focus 补发 resize', () => {
-    const probe = listenResize();
     const uninstall = installDemandCanvasWake(() => false);
+    const probe = listenResize(); // 同上：只计 focus 事件兜底
     try {
       fireFocus();
       expect(probe.count()).toBe(1);
@@ -83,8 +114,8 @@ describe('installDemandCanvasWake —— 补发时机', () => {
   });
 
   it('切走（visible→hidden）不发 resize：后台期间无事可做', () => {
-    const probe = listenResize();
     const uninstall = installDemandCanvasWake(() => false);
+    const probe = listenResize(); // 同上：安装补发不计入，断言事件兜底为 0
     try {
       setVisibility('hidden');
       fireVisibilityChange();
@@ -97,22 +128,9 @@ describe('installDemandCanvasWake —— 补发时机', () => {
     }
   });
 
-  it('root 已建立：visible/focus 全静默（量取与重绘回归 ResizeObserver 管线）', () => {
-    const probe = listenResize();
-    const uninstall = installDemandCanvasWake(() => true);
-    try {
-      fireVisibilityChange();
-      fireFocus();
-      expect(probe.count()).toBe(0);
-    } finally {
-      uninstall();
-      probe.restore();
-    }
-  });
-
   it('卸载函数拆除全部监听：visible/focus 均不再补发', () => {
-    const probe = listenResize();
     const uninstall = installDemandCanvasWake(() => false);
+    const probe = listenResize(); // 同上：安装补发不计入
     uninstall();
     try {
       fireVisibilityChange();
@@ -165,6 +183,27 @@ describe('WorldCanvas 后台节流接线（jsdom 复刻「root 不建立」态�
     }
     container.remove();
     restoreVisibility();
+  });
+
+  it('K5：挂载即补发一次 resize（jsdom 无布局 = root 不建立的后台节流态）', async () => {
+    // 独立容器/root：beforeEach 已在同一 root 上挂过 WorldCanvas，重复 render
+    // 会被 reconcile 视为同一组件（effect 不重跑），无法复现「挂载」时机
+    const probe = listenResize();
+    const container2 = document.createElement('div');
+    document.body.appendChild(container2);
+    const root2 = createRoot(container2);
+    try {
+      await act(async () => {
+        root2.render(createElement(WorldCanvas));
+      });
+      expect(probe.count()).toBe(1);
+    } finally {
+      probe.restore();
+      await act(async () => {
+        root2.unmount();
+      });
+      container2.remove();
+    }
   });
 
   it('画布未初始化时切回前台补发恰好一次 resize（jsdom 无布局：守卫不通过、探针不 mount）', async () => {

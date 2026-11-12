@@ -328,12 +328,7 @@ export function installLogbookCollector(): () => void {
   return off;
 }
 
-export function uninstallLogbookCollector(): boolean {
-  if (unsubscribeLogbook === null) return false;
-  unsubscribeLogbook();
-  unsubscribeLogbook = null;
-  return true;
-}
-
-/* 模块加载即安装：档案不依赖视图挂载点，随包加载即开始记录 */
+/* 模块加载即安装：档案不依赖视图挂载点，随包加载即开始记录。
+   卸载走 installLogbookCollector 的返回值（此前零引用的 uninstallLogbookCollector
+   导出已删，A4-8 死代码清理；测试隔离用返回的 off 函数即可）。 */
 installLogbookCollector();

@@ -60,11 +60,12 @@ function grantLawCard(cardId: string): void {
 }
 
 /** 走蔡徐坤遭遇战开战（flow.test.ts 同链路）：布阵相战斗就位。
- *  STORY-5：蔡徐坤迁至 L2 双廊回环 (12,3)，不再在主城触发。 */
+ *  STORY-5：蔡徐坤迁至 L2 双廊回环 (12,3)，不再在主城触发。
+ *  N1：遭遇规则 triggerRadius=1，邻格即遭遇——teleport 到遭遇格必在半径内。 */
 function launchMobBattle(): void {
   grantLawCard('card-law-feather-chest'); // L2 入口法则门免打扰
   store().startLevel('level-sb-02');
-  teleportPlayer(12, 3); // 蔡徐坤遭遇格（L2 网格坐标，radius 0 踩上即遭遇）
+  teleportPlayer(12, 3); // 蔡徐坤遭遇格（L2 网格坐标，radius 1 内即遭遇）
   useGameStore.setState({ player: { ...store().player, weapons: ['weapon-dagger'] } });
   store().interact();
   store().advanceDialogue();
@@ -83,11 +84,11 @@ describe('STORY-5 · 触发评估按关卡求值（双坐标）', () => {
     grantLawCard('card-law-feather-chest'); // L2 入口法则门免打扰
     store().startLevel('level-sb-02');
     expect(store().segment?.levelId).toBe('level-sb-02');
-    // MECH-4 twist：蔡徐坤守卫实体与遭遇点同格 (12,3)（北侧 (12,2) 是墙，
-    // 必须先侧移让开）。路径：站 (11,2) 下推箱让位 → 右推守卫 → 玩家落 (12,3)
+    // MECH-4 twist：蔡徐坤守卫实体与遭遇点同格 (12,3)；N1 后规则 triggerRadius=1，
+    // 故第一格落 (11,3)（守卫邻格）即触发遭遇——无需完成两步推箱前置。
     teleportPlayer(11, 2);
-    store().move('down'); // 箱 (11,3)→(11,4)，玩家落 (11,3)
-    store().move('right'); // 守卫实体 (12,3)→(13,3)，玩家落 (12,3) → 真实落格触发
+    store().move('down'); // 箱 (11,3)→(11,4)，玩家落 (11,3) → 守卫邻格触发遭遇
+    store().move('right'); // 对话相 move 被相位门禁拦下（无位移，剧情继续）
     expect(store().phase).toBe('dialogue');
     expect(store().storyRuntime.scriptId).toBe('script-mob-caixukun');
     // 入场对白已结算：推进到 battle 节点开战（遭遇战接线回归）
@@ -97,6 +98,25 @@ describe('STORY-5 · 触发评估按关卡求值（双坐标）', () => {
     expect(selectBattleState(store())?.enemyId).toBe('enemy-caixukun');
     // 战场敌人落点 = 遭遇发生的 npc 规则格（不再派生自 originPos 世界坐标）
     expect(selectBattleState(store())?.formation?.entities.find((e) => e.id === selectBattleState(store())?.enemyId)).toMatchObject({ x: 12, y: 3 });
+  });
+
+  it('K1 复核：自然路径（零推箱）从出生点 (13,1) 南行两步到守卫邻格 (13,3) 即触发遭遇', () => {
+    grantLawCard('card-law-feather-chest'); // L2 入口法则门免打扰
+    store().startLevel('level-sb-02');
+    expect(store().segment?.levelId).toBe('level-sb-02');
+    // 出生点 (13,1) → (13,2)：距遭遇点 (12,3) 曼哈顿 2 > radius 1，不触发
+    store().move('down');
+    expect(store().phase).toBe('playing');
+    expect(store().storyRuntime.scriptId).toBeNull();
+    // (13,2) → (13,3)：距 (12,3) 曼哈顿 1 = radius 内 → 遭遇开演（无需推箱前置）
+    store().move('down');
+    expect(store().phase).toBe('dialogue');
+    expect(store().storyRuntime.scriptId).toBe('script-mob-caixukun');
+    // 推进到遭遇战开战：完整遭遇链路自然路径可达（K1 关闭依据）
+    store().advanceDialogue();
+    store().advanceDialogue();
+    expect(store().phase).toBe('combat');
+    expect(selectBattleState(store())?.enemyId).toBe('enemy-caixukun');
   });
 
   it('同坐标 L3 不触发：蔡徐坤规则是 level-sb-02 作用域，L3 的 (12,3) 落格无剧情', () => {
@@ -607,5 +627,35 @@ describe('F 位面切换全链路（R6 实机验证的存档态接线）', () =>
     expect(store().segment?.planeShifted).toBe(false);
     expect(events.some((e) => e.type === 'ui/toast' && e.messageKey.includes('位面未解锁'))).toBe(true);
     expect(events.some((e) => e.type === 'fx/planeShift')).toBe(false);
+  });
+});
+
+/* ================== A3-1 · 越界挑战层接线（store 端到端） ================== */
+
+describe('A3-1 —— 东侧越界「深入」经 enterChallengeLayer 真实进层（不再无声回主城）', () => {
+  it('beyond east 剧情 → 选「深入」→ 中转节点效果被 store 消费 → 注册会话层并 beginLevel', () => {
+    grantLawCard('card-law-feather-chest'); // 主城无关卡门，防干扰
+    store().startLevel('level-sb-01');
+    expect(store().segment?.levelId).toBe('level-sb-01');
+    teleportPlayer(14, 11); // 东缘地板（world +7 缓冲带）
+    store().move('right'); // 出界 → 虚拟位 world +8 = beyond east → script-outskirt-east
+    expect(store().phase).toBe('dialogue');
+    expect(store().storyRuntime.scriptId).toBe('script-outskirt-east');
+    // 读完结场对白 → 停在选项节点
+    let guard = 0;
+    while (store().storyRuntime.phase !== 'awaiting-choice' && guard < 8) {
+      store().advanceDialogue();
+      guard += 1;
+    }
+    expect(store().storyRuntime.phase).toBe('awaiting-choice');
+    // 选择「深入」：中转节点 onEnterEffects 发射 enterChallengeLayer →
+    // gameStore 消费 → generateEndlessFloor 成功 → beginLevel 进层
+    store().chooseStory('enter');
+    expect(store().phase).toBe('playing');
+    expect(store().puzzle).not.toBeNull();
+    expect(store().segment?.levelId).toContain('endless-challenge-east-endless');
+    expect(store().segment?.levelId ?? '').toMatch(/-f1$/);
+    // 会话层不在 LEVELS 静态表内（注册表注入），且是可解析的完整关卡
+    expect(store().segment?.entities.some((e) => e.kind === 'player')).toBe(true);
   });
 });

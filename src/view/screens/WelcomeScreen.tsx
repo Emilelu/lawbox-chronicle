@@ -3,11 +3,16 @@
  * 全屏 R3F Canvas（浮空的「法则箱」+ 星野 + 轨道视角）打底，
  * framer-motion 驱动 2D overlay 文案动效；语言切换即写 store（持久化探针）。
  * 「最近抽卡」槽位经 pullCardLabel 显示本地化卡名，与档案·逐抽记录同口径。
+ * A2-6：frameloop="demand" 与 N5/K5 后台唤醒兜底（installDemandCanvasWake 复用）
+ * 与 WorldCanvas 同一套纪律 —— 静置零渲染；LawBox 的常驻自转改为有限时长
+ * 入场演出（角速度与摆幅随 easeOut 收敛到 0，结束即冻结），Stars/Float 在
+ * demand 下只随已有渲染帧更新（drei 不主动 invalidate），拖拽视角仍由
+ * OrbitControls 的 change 事件驱动重绘。
  */
 
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense, useCallback, useEffect, useRef } from 'react';
 import type { Group } from 'three';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Float, OrbitControls, Stars } from '@react-three/drei';
 import { motion } from 'framer-motion';
 import { useGameStore } from '../../core/store/gameStore';
@@ -17,16 +22,27 @@ import { CARDS, GACHA_FLAVOR } from '../../data/gacha';
 import { LEVELS } from '../../data/levels';
 import { LOCALE_NAMES, t } from '../../data/i18n';
 import { bus } from '../../core/events/bus';
+import { installDemandCanvasWake, RootReadyProbe } from '../three/WorldCanvas';
 
 /* ------------------------------- 3D 部分 --------------------------------- */
 
+/** 法则箱入场演出时长（s）：有限自终止，结束后 demand 画布静置零渲染 */
+const LAW_BOX_INTRO_SECONDS = 2.4;
+
 function LawBox() {
   const group = useRef<Group>(null);
+  const invalidate = useThree((s) => s.invalidate);
+  const introRef = useRef(0); // 入场已渲染时长（秒；demand 下按真实帧间 delta 累积）
   useFrame((state, delta) => {
-    if (group.current !== null) {
-      group.current.rotation.y += delta * 0.45;
-      group.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.4) * 0.12;
-    }
+    const g = group.current;
+    if (g === null) return;
+    const t = Math.min(1, introRef.current / LAW_BOX_INTRO_SECONDS);
+    introRef.current += delta;
+    // 入场演出：转速与摆幅随进度收敛到 0 —— 终帧角速度为零，姿态自然静止；
+    // 演出结束后不再 invalidate，画布回归静置零渲染（S18 纪律覆盖标题页）
+    g.rotation.y += delta * 0.45 * (1 - t);
+    g.rotation.x = Math.sin(state.clock.elapsedTime * 0.4) * 0.12 * (1 - t);
+    if (t < 1) invalidate();
   });
   return (
     <group ref={group}>
@@ -106,6 +122,18 @@ export function WelcomeScreen() {
     useGameStore.setState((s) => ({ visitCount: s.visitCount + 1 }));
   }, []);
 
+  // A2-6/N5/K5：标题页 demand 画布的后台节流兜底，与 WorldCanvas 同一套管线。
+  // root 建立回执（RootReadyProbe mount）置位后兜底永久静默；安装时 root 仍未
+  // 建立则立即补发一次 resize（K5：后台打开且一直不回前台时，visibilitychange/
+  // focus 兜底永不触发，react-use-measure 的 resize 兜底监听是普通事件任务，
+  // 不依赖渲染帧 —— 后台也能完成画布初始化）。effect 晚于 Canvas 子树 effect
+  // 运行，补发时 resize 监听已就位。
+  const rootReadyRef = useRef(false);
+  const markRootReady = useCallback(() => {
+    rootReadyRef.current = true;
+  }, []);
+  useEffect(() => installDemandCanvasWake(() => rootReadyRef.current), [markRootReady]);
+
   const startGame = () => {
     useGameStore.getState().startLevel(LEVELS[0]?.id ?? '');
   };
@@ -116,8 +144,13 @@ export function WelcomeScreen() {
 
   return (
     <div style={{ position: 'fixed', inset: 0 }}>
-      <Canvas camera={{ position: [4.2, 2.6, 6.2], fov: 46 }} dpr={[1, 2]}>
+      {/* A2-6：demand 渲染 —— 静置零渲染纪律覆盖标题页（此前 frameloop 缺省
+          'always'，挂机时每帧重绘 2400 星点 + 三 mesh，GPU 常驻负载） */}
+      <Canvas camera={{ position: [4.2, 2.6, 6.2], fov: 46 }} dpr={[1, 2]} frameloop="demand">
         <Suspense fallback={null}>
+          {/* N5/K5：root 建立回执 —— 只有 R3F 真正 createRoot 并 render 子树时
+              才会 mount，markRootReady 置位后后台节流兜底即永久静默 */}
+          <RootReadyProbe onReady={markRootReady} />
           <Scene />
         </Suspense>
       </Canvas>

@@ -14,7 +14,8 @@
  *   - K3：exit/未知输入永远走 META 终端回显，绝不被解释成移动。
  *   - I3：全屏浮层（卡组/抽卡/设置/手册）打开时世界冻结 —— 移动/推挤、
  *     撤销/重玩/位面切换、法则动作与 E 交互统一过 activePanel 门禁，
- *     与 META 终端「终端开着时世界冻结」同一语义（Esc 关浮层后恢复）。
+ *     与 META 终端「终端开着时世界冻结」同一语义（Esc 关浮层后恢复）；
+ *     触屏入口（TouchPad.dispatchTouchMove）消费同一门禁与相机映射。
  */
 
 import { useEffect } from 'react';
@@ -306,10 +307,13 @@ export function useKeyActions(): void {
       const binding = KEY_CODE_TO_ACTION[event.code];
       const cheatId = CHEAT_HOTKEYS[event.code];
       if (binding === undefined && cheatId === undefined) return; // 未知输入：不解释成任何游戏指令（K3/K4）
-      if (event.repeat) return; // 连推由自管理计时器负责，浏览器自动重复忽略
+      // 先拦默认行为再决定是否派发指令（A1-6）：浏览器自动重复（repeat=true）的
+      // Tab/Space/方向键同样必须 preventDefault —— 否则长按 Tab 的每一拍都会把
+      // 焦点移出游戏到 HUD 按钮（焦点逃逸），Space 长按可滚动页面
       if (event.code === 'Tab' || event.code === 'Space' || event.code.startsWith('Arrow')) {
-        event.preventDefault(); // Tab 焦点逃逸 / 空格滚动 / 方向键滚动
+        event.preventDefault();
       }
+      if (event.repeat) return; // 连推由自管理计时器负责，浏览器自动重复忽略
       if (binding === undefined) {
         // 未被玩法键占用的 code 才轮到作弊热键（K/[/]/R/G）；
         // 即便如此仍必过 CheatRegistry 的解锁谓词（S9：热键无特权）
@@ -341,6 +345,9 @@ export function useKeyActions(): void {
 
     const onBlur = () => {
       repeater.releaseAll(); // 切窗/失焦兜底，杜绝「回过神来角色还在走」
+      // KeyT 按住态一并释放（A1-4）：失焦时 keyup 永不到达，peeking 不释放会让
+      // 战术俯瞰永久粘滞（切窗回来画面锁死在俯瞰位）
+      useViewStore.getState().setPeeking(false);
     };
 
     window.addEventListener('keydown', onKeyDown);

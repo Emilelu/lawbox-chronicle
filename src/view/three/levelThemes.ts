@@ -12,9 +12,11 @@
  *     （阳面暖沙回廊 / 阴面冰晶捷径）。
  *
  * 对比度守则：goal 基座/法则之门主体（pillar/portal）与 abyss/phase/spike/
- * crate/actor 一律继承位面基础主题、不随关混色 —— 金色基座与顶冠在全部
- * 12 关里保持全场最高对比；关卡识别色只进入氛围层（雾/天/灯/地面/墙）与
- * 点缀位（gate.rim / player.accent / vfx.spark / vfx.plane）。
+ * crate/actor 一律继承位面基础主题、不随关混色 —— 金色顶冠（cap）与提亮后的
+ * 基座（pedestal，A2-5 起 ≥2:1）在全部 12 关里保持全场最高对比梯队；关卡
+ * 识别色只进入氛围层（雾/天/灯/地面/墙）与点缀位（gate.rim / player.accent /
+ * vfx.spark / vfx.plane）。量化回归线见 levelThemes.test.ts（pedestal ≥2:1、
+ * crate 阴面 ≥3:1、heroProp ≥3:1）。
  *
  * 本文件纯数据 + 纯函数（零 React / 零 three 运行时依赖），vitest 直测。
  */
@@ -270,7 +272,10 @@ export const LEVEL_THEMES: Readonly<Record<string, LevelThemeSpec>> = Object.fre
     wall: { base: '#4e2230', top: '#8a3a4a' },
     sparkles: { count: 70, color: '#ff9f8a', size: 2.6, speed: 0.4, opacity: 0.5, scale: [14, 4, 12], lift: 1.8 },
     deco: { kind: 'crystal', color: '#ff7a6a', every: 8 },
-    heroProp: { kind: 'throne', x: 6, y: 3, color: '#8a3a4a', height: 2.0 },
+    // A2-4：王座旧色 '#8a3a4a' 与 wall.top 同值、对解析后地板对比度仅 1.80
+    // （12 关中唯一隐形地标）—— 换 '#c96a7a' 玫红（与余烬红氛围同族提亮），
+    // 对 L12 双位面地板实测 3.77/3.90，且不再与 wall.top 同色。
+    heroProp: { kind: 'throne', x: 6, y: 3, color: '#c96a7a', height: 2.0 },
   },
 });
 
@@ -369,8 +374,15 @@ const shadeCache = new WeakMap<PlaneTheme, readonly string[]>();
  * 14 阶墙皮按关重采样：在「解析后主题」的 wall.base→wall.top 渐变上按
  * theme.makeWallShades 同款奇偶错位采样 —— 墙皮随关卡识别色（accent 经
  * LEVEL_MIX 混入 wall 色）整体重着色，仍保持 14 阶可分辨的确定性 ramp。
+ *
+ * epoch（A2-2，「墙皮重掷」作弊的视图消费者）：缺省 0 = 基线 ramp，逐字节
+ * 等同旧行为；epoch>0 时各阶沿 ramp 平移一个 hash2(idx, epoch) 偏移 ——
+ * 同一 epoch 恒定（确定性重采样，不随机闪烁）、epoch 自增即整墙重排（作弊
+ * 语义「按需重掷一次」），重掷结果仍是 ramp 上的有效采样（墙面依旧协调）。
+ * S18 不破：重掷由 cheatRegistry 的 wallSkinEpoch 状态驱动，demand 画布随
+ * React 提交自动 invalidate 一帧即停，无常驻定时器。
  */
-export function levelWallShadeColor(theme: PlaneTheme, shadeIndex: number): string {
+export function levelWallShadeColor(theme: PlaneTheme, shadeIndex: number, epoch = 0): string {
   let shades = shadeCache.get(theme);
   if (shades === undefined) {
     const built: string[] = [];
@@ -384,7 +396,11 @@ export function levelWallShadeColor(theme: PlaneTheme, shadeIndex: number): stri
     shadeCache.set(theme, shades);
   }
   const idx = ((shadeIndex % WALL_SHADE_COUNT) + WALL_SHADE_COUNT) % WALL_SHADE_COUNT;
-  return shades[idx] ?? theme.wall.base;
+  // epoch 重采样：偏移量由 (阶号, epoch) 的稳定 hash 决定 —— 同格同 epoch
+  // 永远同阶（确定性），epoch 变化才重排（gridArena 按需透传 wallSkinEpoch）
+  const rolled =
+    epoch === 0 ? idx : (idx + (hash2(idx, epoch) % WALL_SHADE_COUNT)) % WALL_SHADE_COUNT;
+  return shades[rolled] ?? theme.wall.base;
 }
 
 /* ============================== 装饰格（deco） ============================= */

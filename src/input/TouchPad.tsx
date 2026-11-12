@@ -4,6 +4,9 @@
  * 源自 SanBPushChest 的触屏玩法（原作只有四个方向键位图，swipe 从未兑现，
  * 见设计文档 ST8：函数名错位/无 swipe → {dx,dy} 语义动作 + swipe 手势）。
  * 与键盘同一条路：一切输入归一为语义 move 进 store，绝无 DOM 直改。
+ * 十字键/swipe 的世界移动统一走 dispatchTouchMove 唯一入口 —— 门禁（META
+ * 终端/全屏浮层冻结，I3）与相机偏航映射（cameraYawToGridDir）都与键盘
+ * dispatchBinding 的 move 分支同源，斜置相机下触屏「▲」= 键盘 W 的网格路。
  *
  * 对话冲突处理（uiRedesign 契约）：DialogueBox 激活（phase==='dialogue'）
  * 时十字键收起为右下角半透明迷你浮窗——对话自带继续/快进按钮，迷你浮窗
@@ -17,7 +20,10 @@ import type { CSSProperties } from 'react';
 import type { Dir } from '../core/types';
 import { useGameStore } from '../core/store/gameStore';
 import { bus } from '../core/events/bus';
+import { cameraYawToGridDir } from '../view/three/theme';
+import { useViewStore } from '../view/three/viewStore';
 import { createHoldRepeater } from './useKeyActions';
+import { isMetaTerminalOpen } from './MetaTerminal';
 
 /** swipe 触发阈值（px）：跨过一次派发一步并重设锚点，可连续滑动连推 */
 export const SWIPE_THRESHOLD_PX = 28;
@@ -38,6 +44,24 @@ function dominantDir(dx: number, dy: number): Dir | null {
   if (dx === 0 && dy === 0) return null;
   if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? 'right' : 'left';
   return dy > 0 ? 'down' : 'up';
+}
+
+/**
+ * 触屏世界移动唯一入口（A1-1/A1-2）：十字键 repeater fire 与 swipe 派发共用，
+ * 与键盘 dispatchBinding 的 move 分支完全同语义 ——
+ *   1. 门禁：META 终端 / 全屏浮层（卡组/抽卡/设置/手册）打开时世界冻结，
+ *      防止浮层后面盲走（I3；键盘侧 useKeyActions.ts:204-205 同款）；
+ *   2. 相机映射：方向随相机偏航旋转（cameraYawToGridDir 纯函数），斜置相机下
+ *      十字键「▲」与键盘 W 走出同一条网格路，单一映射源在 theme。
+ * 模块级函数（不依赖组件状态）：fire 内现取 store，无闭包过期问题，可直接单测。
+ */
+export function dispatchTouchMove(dir: Dir): void {
+  const store = useGameStore.getState();
+  if (isMetaTerminalOpen()) return; // 终端开着时世界冻结，防误走
+  if (store.activePanel !== 'none') return; // 全屏浮层打开时世界冻结，防盲走（I3）
+  if (store.phase !== 'playing' || store.segment === null) return;
+  // 画面方向 → 网格方向：camYaw=0 时映射恒等（默认视角语义零变化）
+  store.move(cameraYawToGridDir(dir, useViewStore.getState().camYaw));
 }
 
 /** 粗指针（触屏）探测：触屏设备默认显示虚拟键，也可在设置里手动开启 */
@@ -127,26 +151,12 @@ export function TouchPad() {
   const touchControls = useGameStore((s) => s.settings.touchControls);
   const coarse = useCoarsePointer();
 
-  // 长按连推：fire 只在游玩阶段生效（fire 内现取 store，避免闭包过期）
-  const repeater = useMemo(
-    () =>
-      createHoldRepeater<Dir>((dir) => {
-        const store = useGameStore.getState();
-        if (store.phase !== 'playing' || store.segment === null) return;
-        store.move(dir);
-      }),
-    [],
-  );
+  // 长按连推：fire 走 dispatchTouchMove 唯一入口（门禁 + 相机映射与键盘同路）
+  const repeater = useMemo(() => createHoldRepeater<Dir>((dir) => dispatchTouchMove(dir)), []);
   useEffect(() => () => repeater.dispose(), [repeater]);
 
   // swipe 状态：锚点即最近一次派发位置，跨过阈值连推
   const anchorRef = useRef<Pt | null>(null);
-
-  const dispatchMove = (dir: Dir) => {
-    const store = useGameStore.getState();
-    if (store.phase !== 'playing' || store.segment === null) return;
-    store.move(dir);
-  };
 
   if (phase === 'title' || phase === 'gacha' || phase === 'result' || phase === 'combat') {
     return null;
@@ -217,7 +227,7 @@ export function TouchPad() {
         const dy = e.clientY - anchor.y;
         if (Math.hypot(dx, dy) < SWIPE_THRESHOLD_PX) return;
         const dir = dominantDir(dx, dy);
-        if (dir !== null) dispatchMove(dir);
+        if (dir !== null) dispatchTouchMove(dir); // swipe 主轴方向同过唯一入口（门禁 + 相机映射）
         anchorRef.current = { x: e.clientX, y: e.clientY };
       }}
       onPointerUp={() => {

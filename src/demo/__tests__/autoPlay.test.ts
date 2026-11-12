@@ -15,10 +15,13 @@ import {
   levelRetryPlan,
   planTourPushIn,
   readAutoPlayConfig,
+  takeOverSaveGuard,
   takeOverViewPreference,
 } from '../autoPlay';
+import '../../input/cheatRegistry'; // 进度旗订阅：真实「cleared 盖章」路径参与 K6 回归
+import { useGameStore, HUB_LEVEL_ID } from '../../core/store/gameStore';
+import { MOB_TRIGGER_RULES } from '../../data/story/mobs';
 import { useViewStore } from '../../view/three/viewStore';
-import { HUB_LEVEL_ID } from '../../core/store/gameStore';
 import { DIR_VECTORS, type Vec2 } from '../../core/types';
 import { LEVELS } from '../../data/levels';
 import { PRECOMPUTED_SOLUTIONS } from '../../data/levels/solutionSteps';
@@ -94,7 +97,9 @@ describe('autoplay —— 步数预算（N2：重试路径不得无限累计步�
 
 /* ====================== per-level 剧情巡游表（STORY-5） ====================== */
 
-/** 各关期望站点（label + 网格坐标）—— 与 STORY-5 触发分布逐点对齐 */
+/** 各关期望站点（label + 网格坐标）—— 与 STORY-5 触发分布逐点对齐。
+ *  例外：sb-02 站 (13,3) 是遭遇点 (12,3) 的邻格（N1 radius 1：遭遇点本体被
+ *  MECH-4 守卫实体占位不可站，巡游站取自然路径上的守卫邻格，到站即遭遇）。 */
 const EXPECTED_STOPS: Record<string, readonly (readonly [string, number, number])[]> = {
   [HUB_LEVEL_ID]: [
     ['导航天使①', 8, 6],
@@ -103,7 +108,7 @@ const EXPECTED_STOPS: Record<string, readonly (readonly [string, number, number]
     ['残留的羽毛·④', 7, 5],
     ['东侧彩蛋·神秘法阵', 14, 10],
   ],
-  'level-sb-02': [['蔡徐坤', 12, 3]],
+  'level-sb-02': [['蔡徐坤', 13, 3]],
   'level-sb-03': [['郭老师', 7, 5]],
   'level-sb-04': [['导航天使②', 7, 4]],
   'level-lb-05': [['导航天使③', 7, 3]],
@@ -294,24 +299,20 @@ describe('autoplay —— 巡游可达性与步数预算（实测钉值）', () 
   it('每站可达或可推入（两者皆否会被 driveTour 静默跳过，剧情断链风险须显式记录）', () => {
     for (const id of Object.keys(LEVEL_TOURS)) {
       const sim = simulateTour(id);
-      // 已知缝隙：sb-02 蔡徐坤遭遇点 (12,3) 被 MECH-4 守卫同格占位且四向
-      // 不可推（上/下让路格是墙、左是箱、右推位是箱）——遭遇触发依赖
-      // STORY-5/MECH-4 的联动语义（踩点/触碰遭遇、regen 敌推），巡游对其
-      // 优雅跳过。除该缝隙外不允许出现静默跳过。
-      expect(sim.skipped, `${id} 被跳过的巡游站`).toEqual(
-        id === 'level-sb-02' ? ['蔡徐坤'] : [],
-      );
+      // N1（radius 1）后 L2 蔡徐坤站取守卫邻格 (13,3)（自然路径地板），零跳过：
+      // 巡游到站即落入遭遇 radius，演示完整覆盖这段剧情。
+      expect(sim.skipped, `${id} 被跳过的巡游站`).toEqual([]);
     }
   });
 
   it('巡游步数实测钉值（改动巡游表/网格后需重测并复核预算核算）', () => {
     // walkDirs BFS 实测（含箱子/敌人/祭坛占位；reEnter 计跨出+回踩 2 步）。
-    // sb-02 记 0：蔡徐坤遭遇点 (12,3) 被 MECH-4 守卫同格占位且四向不可推，
-    // 当前数据下该站被优雅跳过（0 步）——遭遇语义合入后须重测。
+    // sb-02 记 2：蔡徐坤站为守卫邻格 (13,3)，出生点 (13,1) 南行两步（N1 前
+    // 站点 (12,3) 被守卫占位跳过记 0）。
     // 评审预算式记 L12 最小 7，BFS 实测 8（(1,1)→(6,4) 曼哈顿即 8），以实测为准。
     const measured: Record<string, number> = {
       [HUB_LEVEL_ID]: 54,
-      'level-sb-02': 0,
+      'level-sb-02': 2,
       'level-sb-03': 11,
       'level-sb-04': 10,
       'level-lb-05': 8,
@@ -378,7 +379,7 @@ describe('autoplay —— 推入到站（planTourPushIn：站点被可推实体�
     expect(plan?.walkTo).toEqual({ x: 3, y: 6 });
   });
 
-  it('sb-02 蔡徐坤遭遇点 (12,3) 被守卫同格占位且四向不可推 → null（实机优雅跳过）', () => {
+  it('sb-02 蔡徐坤遭遇点 (12,3) 被守卫同格占位且四向不可推 → null（N1 后巡游站已改走邻格 (13,3)，本负例保留纯函数契约）', () => {
     const geometry = geometryOf('level-sb-02');
     // 上/下让路格 (12,2)/(12,2 推位) 是墙，左让路格 (11,3) 是箱子，右推位 (11,3) 是箱子
     const plan = planTourPushIn(
@@ -432,5 +433,91 @@ describe('autoplay —— 视角接管（CAM-1 viewStore：强制 third，结束
     restore();
     restore();
     expect(readView()).toBe('first');
+  });
+});
+
+/* ============ K1 · L2 蔡徐坤遭遇可达（N1 radius 1 与巡游站联动） ============ */
+
+describe('autoplay —— L2 蔡徐坤巡游站落在遭遇规则 radius 内（K1/N1 联动）', () => {
+  it('巡游站 (13,3) 与遭遇点 (12,3) 曼哈顿 ≤ triggerRadius（到站即遭遇）', () => {
+    const rule = MOB_TRIGGER_RULES.find((r) => r.id === 'trigger-mob-caixukun');
+    expect(rule?.when.kind).toBe('npc');
+    if (rule === undefined || rule.when.kind !== 'npc') return;
+    expect(rule.when.radius).toBe(1); // N1 修法：邻格即遭遇
+    const stop = LEVEL_TOURS['level-sb-02']?.[0];
+    expect(stop?.target).toEqual({ x: 13, y: 3 });
+    const dist = Math.abs((stop?.target.x ?? 0) - rule.when.x) + Math.abs((stop?.target.y ?? 0) - rule.when.y);
+    expect(dist, '巡游站必须在遭遇半径内，否则演示永远缺这段剧情').toBeLessThanOrEqual(rule.when.radius ?? 0);
+  });
+});
+
+/* ============ K6/A3-5 · 演示不污染存档（纪律回归：真实 store/persist/订阅） ============ */
+
+describe('autoplay —— 演示不污染存档（K6/A3-5 纪律回归）', () => {
+  const STORAGE_KEY = 'lawbox-chronicle:v1';
+  const store = () => useGameStore.getState();
+
+  it('A3-5：演示期 persist 走黑洞 storage——演示态实时落盘通道被掐断（崩溃窗口安全）', () => {
+    store().resetSave();
+    useGameStore.setState({ player: { ...store().player, name: 'BaselineHero', hp: 77 } });
+    const snapshot = localStorage.getItem(STORAGE_KEY);
+    expect(snapshot).not.toBeNull();
+    expect(snapshot).toContain('BaselineHero');
+
+    const guard = takeOverSaveGuard(); // 备份 → persist 黑洞 → 注入 AUTO DEMO
+    expect(store().player.name).toBe('AUTO DEMO'); // 演示态已注入（内存）
+
+    // 演示中的多次 setState（含剧情旗与结算盖章）——都不允许落到分片
+    useGameStore.setState({ result: { levelId: 'level-lb-12', stars: 3, steps: 90 } });
+    useGameStore.setState({
+      story: { ...store().story, flags: { ...store().story.flags, 'demo:journey': true } },
+    });
+    expect(store().story.flags['cleared:level-lb-12']).toBe(true); // 订阅在内存盖章（真实路径）
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(snapshot); // 分片一字节未动
+    expect(localStorage.getItem(STORAGE_KEY)).not.toContain('AUTO DEMO');
+
+    guard.restore();
+    // 恢复后分片回写的是备份态（不是演示态）
+    const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as {
+      state?: { player?: { name?: string }; story?: { flags?: Record<string, unknown> } };
+    };
+    expect(persisted.state?.player?.name).toBe('BaselineHero');
+    expect(persisted.state?.story?.flags?.['demo:journey']).toBeUndefined();
+    expect(persisted.state?.story?.flags?.['cleared:level-lb-12']).toBeUndefined();
+  });
+
+  it('K6：restore 清空 result 会话态——进度旗订阅不再重盖章 cleared:*（演示旗不进存档）', () => {
+    store().resetSave();
+    useGameStore.setState({ player: { ...store().player, name: 'K6Hero' } });
+    const guard = takeOverSaveGuard();
+    // 演示中通关 L12：result 打开 → 订阅盖章 cleared + reached（演示态，黑洞不落盘）
+    useGameStore.setState({ result: { levelId: 'level-lb-12', stars: 3, steps: 81 } });
+    expect(store().story.flags['cleared:level-lb-12']).toBe(true);
+    expect(store().player.name).toBe('AUTO DEMO');
+
+    guard.restore(); // finish/停止/卸载的收尾动作
+    // result 被清空：订阅看到 resultLevelId === undefined，恢复写回上不再盖章
+    expect(store().result).toBeNull();
+    expect(store().player.name).toBe('K6Hero'); // 玩家态回写
+    expect(store().story.flags['cleared:level-lb-12']).toBeUndefined(); // 演示旗不残留
+    expect(store().player.hp).toBe(100); // 演示的 9999HP 不残留
+
+    // 双保险：即使此后再有 setState，result 已空 → 无 cleared 来源可盖
+    useGameStore.setState({ visitCount: 1 });
+    expect(store().story.flags['cleared:level-lb-12']).toBeUndefined();
+  });
+
+  it('restore 幂等：完成/停止/卸载多路退出重复调用不串值', () => {
+    store().resetSave();
+    useGameStore.setState({ player: { ...store().player, name: 'IdemHero' } });
+    const guard = takeOverSaveGuard();
+    guard.restore();
+    guard.restore();
+    guard.restore();
+    expect(store().player.name).toBe('IdemHero');
+    // persist 已恢复：继续 setState 正常落盘
+    useGameStore.setState({ visitCount: 3 });
+    const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as { state?: { visitCount?: number } };
+    expect(persisted.state?.visitCount).toBe(3);
   });
 });

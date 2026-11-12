@@ -5,11 +5,18 @@
  * 机制提示 + 法则门 + 星级线 + 奖励 + 预计算推法序列（与 docs/game-guide.html 同源同真相）。
  * 入口：HUD 左上「💡 攻略」（当前关）与选关面板每行的「💡 攻略」。
  * 定位沿用 L3 教训：居中位移并入 motion 的 x/y 百分比，绝不用 CSS transform。
+ * Esc / closeOverlay 经总线统一关闭本面板（A4-3：此前漏订阅 ui/closePanels，
+ * 键位表「Esc 关闭浮层」对攻略面板失效）；openFor 打开时广播同事件完成
+ * 三分片面板互斥（A4-4，与档案/选关面板互不叠开）。
  */
 
+import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { create } from 'zustand';
 import { buildLevelGuide } from '../../data/levels/levelGuide';
+import { bus } from '../../core/events/bus';
+import { useGameStore } from '../../core/store/gameStore';
+import { tUi } from '../../data/i18n/uiText';
 
 /* ============================== 面板开关分片 =============================== */
 
@@ -23,7 +30,12 @@ interface GuidePanelStore {
 export const useGuidePanelStore = create<GuidePanelStore>()((set) => ({
   open: false,
   levelId: null,
-  openFor: (levelId) => set({ open: true, levelId }),
+  // A4-4 互斥：先广播 ui/closePanels（关掉档案/选关等其它分片面板），再开自己。
+  // 广播同步送达订阅者，本面板即便已开也会先 close 再 set open，终态正确。
+  openFor: (levelId) => {
+    bus.publish({ type: 'ui/closePanels' });
+    set({ open: true, levelId });
+  },
   close: () => set({ open: false }),
 }));
 
@@ -33,6 +45,16 @@ export function LevelGuidePanel() {
   const open = useGuidePanelStore((s) => s.open);
   const levelId = useGuidePanelStore((s) => s.levelId);
   const close = useGuidePanelStore((s) => s.close);
+  const locale = useGameStore((s) => s.locale);
+
+  // Esc / closeOverlay 经总线统一关闭本面板（A4-3：与 ArchivePanel 同款订阅）
+  useEffect(
+    () =>
+      bus.subscribe((e) => {
+        if (e.type === 'ui/closePanels') close();
+      }),
+    [close],
+  );
 
   if (!open || levelId === null) return null;
 
@@ -61,10 +83,10 @@ export function LevelGuidePanel() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h3 style={{ fontSize: 18, letterSpacing: '0.14em' }}>💡 攻略 · {guide.name}</h3>
+          <h3 style={{ fontSize: 18, letterSpacing: '0.14em' }}>{tUi(locale, 'guide.entry')} · {guide.name}</h3>
           <span style={{ flex: 1 }} />
           <button className="chip" style={{ cursor: 'pointer' }} onClick={close}>
-            ✕ 关闭
+            ✕ {tUi(locale, 'ui.close')}
           </button>
         </div>
 
@@ -102,7 +124,7 @@ export function LevelGuidePanel() {
             </>
           )}
           <span className="chip" style={{ fontSize: 11, color: 'var(--neon-cyan)', borderColor: 'rgba(0,229,255,0.5)' }}>
-            奖励 {guide.rewardText}
+            {tUi(locale, 'guide.reward')} {guide.rewardText}
           </span>
         </div>
 
@@ -121,7 +143,7 @@ export function LevelGuidePanel() {
         {guide.known ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.1em' }}>
-              参考推法（{guide.pushes.length} 推）
+              {tUi(locale, 'guide.pushes', { n: guide.pushes.length })}
             </span>
             <ol
               style={{
@@ -141,7 +163,7 @@ export function LevelGuidePanel() {
                 <li key={p.index}>
                   <span style={{ color: 'var(--neon-cyan)', fontWeight: 700 }}>{p.arrow}</span>{' '}
                   {p.label}
-                  {p.isFall ? <span style={{ color: 'var(--neon-gold)' }}>（坠落）</span> : null}
+                  {p.isFall ? <span style={{ color: 'var(--neon-gold)' }}>{tUi(locale, 'guide.fall')}</span> : null}
                 </li>
               ))}
             </ol>

@@ -255,14 +255,14 @@ export function HudBar() {
           </button>
         </div>
 
-        {/* 当前关卡攻略（与选关面板每行「💡 攻略」同源同数据） */}
+        {/* 当前关卡攻略（与选关面板每行攻略按钮同源同数据；A4-5 键控文案） */}
         <button
           className="chip"
           style={{ cursor: 'pointer', pointerEvents: 'auto' }}
           onClick={() => useGuidePanelStore.getState().openFor(useGameStore.getState().segment?.levelId ?? 'level-sb-01')}
-          title="当前关卡攻略"
+          title={tUi(locale, 'guide.entry')}
         >
-          💡 攻略
+          {tUi(locale, 'guide.entry')}
         </button>
       </div>
 
@@ -286,10 +286,10 @@ export function HudBar() {
         <button style={CIRCLE_BTN} onClick={() => store().openPanel('deck')} title={tUi(locale, 'tab.deck')}>
           🃏
         </button>
-        <button style={CIRCLE_BTN} onClick={() => useLevelSelectStore.getState().toggle()} title="选关">
+        <button style={CIRCLE_BTN} onClick={() => useLevelSelectStore.getState().toggle()} title={tUi(locale, 'levelSelect.title')}>
           🗺
         </button>
-        <button style={CIRCLE_BTN} onClick={() => useArchivePanelStore.getState().toggle()} title="档案">
+        <button style={CIRCLE_BTN} onClick={() => useArchivePanelStore.getState().toggle()} title={tUi(locale, 'archive.title')}>
           📖
         </button>
         <button style={CIRCLE_BTN} onClick={() => store().openPanel('rulebook')} title={tUi(locale, 'tab.rulebook')}>

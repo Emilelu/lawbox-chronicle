@@ -255,3 +255,40 @@ describe('STORY-5 ③ hub 回归：缺省 levelId 的旧规则仍走世界坐标
     }
   });
 });
+
+/* ======================= A3-4 · 法则门表述与事实一致 ======================= */
+
+describe('A3-4 —— 法则门 note/补发台词按「增益」口径（零法则亦可解已由 solver 校验）', () => {
+  it('LAW_GATES note 不再声称「依赖推程 +1 才有解」，长臂两条目均为增益表述', () => {
+    expect(LAW_GATES.length).toBe(3);
+    for (const gate of LAW_GATES) {
+      expect(gate.note, gate.levelId).not.toContain('才有解');
+      expect(gate.note, gate.levelId).not.toContain('依赖推程');
+    }
+    const widerPushGates = LAW_GATES.filter((g) => g.requiredCardIds.includes('card-law-wider-push'));
+    expect(widerPushGates.map((g) => g.levelId).sort()).toEqual(['level-sb-03', 'level-sb-04']);
+    for (const gate of widerPushGates) {
+      expect(gate.note, gate.levelId).toContain('增益');
+      expect(gate.note, gate.levelId).toContain('亦可解');
+    }
+  });
+
+  it('长臂补发台词不再暗示「不激活就无解」，按推程增益陈述', () => {
+    const script = GATE_MAKEUP_SCRIPTS.find((s) => s.id === 'script-gate-wider-push');
+    const entry = script?.nodes[0];
+    expect(entry?.kind).toBe('dialogue');
+    if (entry === undefined || entry.kind !== 'dialogue') return;
+    const text = entry.lines.map((l) => l.text).join('\n');
+    expect(text).not.toContain('才有解');
+    expect(text).not.toContain('再推箱'); // 旧句「请在卡组中激活后再推箱」的必要性暗示已移除
+    expect(text).toContain('推程 +1');
+    expect(text).toContain('更短更省');
+  });
+
+  it('补发机制本身不变：缺卡仍 100% 补发（增益 ≠ 取消兜底）', () => {
+    const result = checkLevelEntryDeck('level-sb-03', []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.makeUpScriptId).toBe('script-gate-wider-push');
+    expect(checkLevelEntryDeck('level-sb-03', ['card-law-wider-push']).ok).toBe(true);
+  });
+});

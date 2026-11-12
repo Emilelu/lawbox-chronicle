@@ -54,7 +54,12 @@ interface ArchivePanelStore {
 export const useArchivePanelStore = create<ArchivePanelStore>()((set) => ({
   open: false,
   tab: 'codex',
-  toggle: () => set((s) => ({ open: !s.open })),
+  // A4-4 互斥：打开（非关闭）时先广播 ui/closePanels 关掉选关/攻略等其它分片
+  // 面板，再翻转自己。广播同步送达订阅者，本面板若已开不受影响（willOpen=false）。
+  toggle: () => {
+    if (!useArchivePanelStore.getState().open) bus.publish({ type: 'ui/closePanels' });
+    set((s) => ({ open: !s.open }));
+  },
   close: () => set({ open: false }),
   setTab: (tab) => set({ tab }),
 }));
@@ -176,6 +181,7 @@ interface RateCurveProps {
 }
 
 function RateCurve({ official, nostalgia, officialCurve, nostalgiaCurve }: RateCurveProps) {
+  const locale = useGameStore((s) => s.locale);
   const maxRate = Math.max(
     0.2,
     ...officialCurve.map((p) => p.fourStarRate),
@@ -187,27 +193,27 @@ function RateCurve({ official, nostalgia, officialCurve, nostalgiaCurve }: RateC
     <div className="glass" style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', gap: 14, fontSize: 12, flexWrap: 'wrap' }}>
         <span>
-          <b style={{ color: 'var(--neon-gold)' }}>正式池</b>：{official.pulls} 抽 · 4★ 率 {rateText(official.fourStarRate)} · 3★+ 率{' '}
+          <b style={{ color: 'var(--neon-gold)' }}>{tUi(locale, 'archive.poolOfficial')}</b>：{tUi(locale, 'archive.pullsUnit', { n: official.pulls })} ·{' '}
+          {tUi(locale, 'archive.fourStarRate')} {rateText(official.fourStarRate)} · {tUi(locale, 'archive.threePlusRate')}{' '}
           {rateText(official.threeStarPlusRate)}
         </span>
         <span>
-          <b style={{ color: 'var(--neon-violet)' }}>怀旧池</b>：{nostalgia.pulls} 抽 · 4★ 率 {rateText(nostalgia.fourStarRate)} · 3★+ 率{' '}
+          <b style={{ color: 'var(--neon-violet)' }}>{tUi(locale, 'archive.poolNostalgia')}</b>：{tUi(locale, 'archive.pullsUnit', { n: nostalgia.pulls })} ·{' '}
+          {tUi(locale, 'archive.fourStarRate')} {rateText(nostalgia.fourStarRate)} · {tUi(locale, 'archive.threePlusRate')}{' '}
           {rateText(nostalgia.threeStarPlusRate)}
         </span>
       </div>
       {empty ? (
-        <span style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>
-          尚无出货记录 —— 正式池由抽卡自动记录，怀旧池点下方按钮跑一回十连即可生成对照数据。
-        </span>
+        <span style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>{tUi(locale, 'archive.curveEmptyHint')}</span>
       ) : (
-        <svg width={CURVE_W} height={CURVE_H} style={{ maxWidth: '100%' }} role="img" aria-label="双池累计 4★ 出货率曲线">
+        <svg width={CURVE_W} height={CURVE_H} style={{ maxWidth: '100%' }} role="img" aria-label={tUi(locale, 'archive.curveAria')}>
           <polyline points={curvePolyline(officialCurve, CURVE_W, CURVE_H, CURVE_PAD, maxRate)} fill="none" stroke="var(--neon-gold)" strokeWidth={2} />
           <polyline points={curvePolyline(nostalgiaCurve, CURVE_W, CURVE_H, CURVE_PAD, maxRate)} fill="none" stroke="var(--neon-violet)" strokeWidth={2} />
         </svg>
       )}
       <div style={{ display: 'flex', gap: 12, fontSize: 11.5, color: 'var(--text-dim)' }}>
-        <span style={{ color: 'var(--neon-gold)' }}>━ 正式池</span>
-        <span style={{ color: 'var(--neon-violet)' }}>━ 怀旧池（对照展品）</span>
+        <span style={{ color: 'var(--neon-gold)' }}>{tUi(locale, 'archive.curveLegendOfficial')}</span>
+        <span style={{ color: 'var(--neon-violet)' }}>{tUi(locale, 'archive.curveLegendNostalgia')}</span>
       </div>
     </div>
   );
@@ -245,11 +251,12 @@ export function ArchivePanel() {
   const unlockedCount = achRows.filter((r) => r.unlocked).length;
 
   const tabKeys: readonly ArchiveTab[] = ['codex', 'achievements', 'curves', 'history'];
-  const tabLabel: Record<ArchiveTab, string> = {
-    codex: '图鉴',
-    achievements: '成就',
-    curves: '双池曲线',
-    history: '逐抽记录',
+  // A4-5：页签键控（tab.codex 复用既有键，其余为本次补的 archive.tab.* 键）
+  const tabLabel: Record<ArchiveTab, Parameters<typeof tUi>[1]> = {
+    codex: 'tab.codex',
+    achievements: 'archive.tab.achievements',
+    curves: 'archive.tab.curves',
+    history: 'archive.tab.history',
   };
 
   return (
@@ -277,9 +284,10 @@ export function ArchivePanel() {
     >
       {/* 头部 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <h3 style={{ fontSize: 18, letterSpacing: '0.14em' }}>档案</h3>
+        <h3 style={{ fontSize: 18, letterSpacing: '0.14em' }}>{tUi(locale, 'archive.title')}</h3>
         <span className="chip" style={{ fontSize: 11.5 }}>
-          图鉴 {Object.keys(codexCards).length}/{CARDS.length} · 成就 {unlockedCount}/{achRows.length}
+          {tUi(locale, 'tab.codex')} {Object.keys(codexCards).length}/{CARDS.length} · {tUi(locale, 'archive.tab.achievements')}{' '}
+          {unlockedCount}/{achRows.length}
         </span>
         <span style={{ flex: 1 }} />
         <button className="chip" style={{ cursor: 'pointer' }} onClick={close}>
@@ -308,7 +316,7 @@ export function ArchivePanel() {
       {/* 图鉴：首获 / 获得次数 */}
       {tab === 'codex' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>全卡表目录 —— 首获时刻与累计获得次数（未获得显示为暗色）。</span>
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{tUi(locale, 'archive.codexHint')}</span>
           {rows.map((row) => (
             <div
               key={row.card.id}
@@ -333,10 +341,10 @@ export function ArchivePanel() {
                 <span style={{ flex: 1 }} />
                 {row.obtained ? (
                   <span style={{ fontSize: 11.5, color: 'var(--neon-cyan)' }}>
-                    首获 {formatAt(row.firstSeenAt ?? 0)} · 获得 {row.obtainedCount} 次
+                    {tUi(locale, 'archive.firstSeen')} {formatAt(row.firstSeenAt ?? 0)} · {tUi(locale, 'archive.obtainTimes', { n: row.obtainedCount })}
                   </span>
                 ) : (
-                  <span style={{ fontSize: 11.5, color: 'var(--text-dim)' }}>未获得</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-dim)' }}>{tUi(locale, 'archive.notObtained')}</span>
                 )}
               </div>
               <span style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.5 }}>{row.card.description}</span>
@@ -348,7 +356,9 @@ export function ArchivePanel() {
       {/* 成就列表 */}
       {tab === 'achievements' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>成就（{unlockedCount}/{achRows.length}）—— 隐藏成就解锁前显示为「？？？」。</span>
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+            {tUi(locale, 'archive.tab.achievements')}（{unlockedCount}/{achRows.length}）—— {tUi(locale, 'archive.achSecretHint')}
+          </span>
           {achRows.map((row) => (
             <div key={row.def.id} className="glass" style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 4, opacity: row.unlocked ? 1 : 0.55 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -356,14 +366,14 @@ export function ArchivePanel() {
                 <span style={{ flex: 1 }} />
                 {row.unlocked ? (
                   <span className="chip" style={{ fontSize: 10.5, color: 'var(--neon-cyan)', borderColor: 'rgba(0,229,255,0.5)' }}>
-                    ✓ 已解锁 · {formatAt(row.unlockedAt ?? 0)}
+                    ✓ {tUi(locale, 'archive.unlocked')} · {formatAt(row.unlockedAt ?? 0)}
                   </span>
                 ) : (
-                  <span className="chip" style={{ fontSize: 10.5 }}>{row.def.secret === true ? '隐藏成就' : '未解锁'}</span>
+                  <span className="chip" style={{ fontSize: 10.5 }}>{row.def.secret === true ? tUi(locale, 'archive.hiddenAch') : tUi(locale, 'archive.locked')}</span>
                 )}
               </div>
               <span style={{ fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.5 }}>
-                {row.unlocked || row.def.secret !== true ? row.def.description : '继续探索，谜底自会揭晓。'}
+                {row.unlocked || row.def.secret !== true ? row.def.description : tUi(locale, 'archive.achLockedDesc')}
               </span>
             </div>
           ))}
@@ -382,9 +392,9 @@ export function ArchivePanel() {
           <div className="glass" style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <button className="btn-neon" style={{ padding: '0.5em 1.4em' }} onClick={() => store().runNostalgiaGacha()}>
-                🎰 跑一回怀旧对照十连
+                {tUi(locale, 'archive.runNostalgia')}
               </button>
-              <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>不消耗星石、不产出可用卡，只更新怀旧池实测曲线。</span>
+              <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{tUi(locale, 'archive.nostalgiaHint')}</span>
             </div>
             <span style={{ fontSize: 12, color: 'var(--neon-violet)' }}>
               {NOSTALGIA_POOL_INFO.name} —— 这是原作 {NOSTALGIA_POOL_INFO.source} 行为的对照展品，仅供概率对照。
@@ -401,11 +411,9 @@ export function ArchivePanel() {
       {/* 逐抽记录列表 */}
       {tab === 'history' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-            逐抽记录（最新 {history.length} 条；最多保留 5000 条，超出自动裁剪最旧）。
-          </span>
+          <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{tUi(locale, 'archive.historyHint', { n: history.length })}</span>
           {history.length === 0 ? (
-            <span style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>尚无逐抽记录 —— 去星愿祭坛抽几发试试。</span>
+            <span style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>{tUi(locale, 'archive.historyEmpty')}</span>
           ) : (
             history.map((record) => {
               const label = pullLabel(record, CARDS);
@@ -415,7 +423,7 @@ export function ArchivePanel() {
                     #{record.pullIndex}
                   </span>
                   <span className="chip" style={{ fontSize: 10.5, color: record.poolId === POOL_NOSTALGIA ? 'var(--neon-violet)' : 'var(--neon-cyan)' }}>
-                    {record.poolId === POOL_NOSTALGIA ? '怀旧池' : '正式池'}
+                    {record.poolId === POOL_NOSTALGIA ? tUi(locale, 'archive.poolNostalgia') : tUi(locale, 'archive.poolOfficial')}
                   </span>
                   <span style={{ color: rarityColor(record.rarity), letterSpacing: '0.12em', fontSize: 12 }}>{rarityStars(record.rarity)}</span>
                   <span style={{ fontSize: 13 }}>{label}</span>

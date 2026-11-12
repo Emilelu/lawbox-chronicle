@@ -160,6 +160,8 @@ interface ArenaChunkProps {
   readonly lowDetail: boolean;
   readonly hazardCells: readonly Vec2[];
   readonly complete: boolean;
+  /** 墙皮重掷纪元（A2-2 透传链：GridArena → ArenaChunk → FullDetailChunk） */
+  readonly wallSkinEpoch: number;
 }
 
 /** 单格换算闭包（rows/cols 在派生后固定） */
@@ -211,7 +213,7 @@ function LowDetailChunk({ field, area, theme, heights }: {
 }
 
 /** 近景完整块：逐格合批（每材质 1 draw call）+ 按关装饰格 + 门体 */
-function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heights, complete }: {
+function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heights, complete, wallSkinEpoch }: {
   field: TileField;
   grid: Grid;
   area: AreaId;
@@ -221,6 +223,8 @@ function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heigh
   hazardCells: readonly Vec2[];
   heights: HeightMap | undefined;
   complete: boolean;
+  /** 墙皮重掷纪元（A2-2：cheatRegistry.wallSkinEpoch 透传；0 = 基线 ramp） */
+  wallSkinEpoch: number;
 }) {
   const toWorld = useMemo(() => makeToWorld(field, area), [field, area]);
   const gates = useMemo(() => deriveGates(grid), [grid]);
@@ -254,14 +258,15 @@ function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heigh
         const surface = tile.height * HEIGHT_STEP;
         const totalH = surface + h; // 高台墙从地面升起，整柱填实（无悬空）
         const [wx, , wz] = toWorld(tile.x, tile.y);
-        // THEME-3：14 阶墙皮按关 accent 重采样（levelThemes 缓存 ramp）
+        // THEME-3：14 阶墙皮按关 accent 重采样（levelThemes 缓存 ramp）；
+        // A2-2：wallSkinEpoch 参与确定性重采样 —— 重掷作弊按键后墙皮才真的重排
         return {
           position: [wx, totalH / 2, wz] as WorldVec3,
           scale: [CELL * 0.98, totalH, CELL * 0.98] as WorldVec3,
-          color: levelWallShadeColor(theme, tile.shade),
+          color: levelWallShadeColor(theme, tile.shade, wallSkinEpoch),
         };
       }),
-    [field, toWorld, theme],
+    [field, toWorld, theme, wallSkinEpoch],
   );
 
   const abyssItems = useMemo<FieldItem[]>(
@@ -418,7 +423,7 @@ function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heigh
 }
 
 function ArenaChunk(props: ArenaChunkProps) {
-  const { grid, area, yin, levelId, lowDetail, hazardCells, heights, complete } = props;
+  const { grid, area, yin, levelId, lowDetail, hazardCells, heights, complete, wallSkinEpoch } = props;
   const field = useMemo(() => deriveTileField(grid, heights), [grid, heights]);
   // THEME-3：位面换肤升级为「位面 × 关卡」双维解析（levelThemes 缓存，引用稳定）
   const theme = resolveLevelTheme(levelId, yin);
@@ -433,6 +438,7 @@ function ArenaChunk(props: ArenaChunkProps) {
       hazardCells={hazardCells}
       heights={heights}
       complete={complete}
+      wallSkinEpoch={wallSkinEpoch}
     />
   );
 }
@@ -529,13 +535,15 @@ export interface GridArenaProps {
   readonly hazardCells?: readonly Vec2[];
   /** 关卡完成（全部箱落基座）→ 法则之门溶解开启 */
   readonly complete: boolean;
+  /** 墙皮重掷纪元（A2-2：cheatRegistry.wallSkinEpoch；0 = 基线 ramp，缺省不改观感） */
+  readonly wallSkinEpoch?: number;
 }
 
 /**
  * 区域分块挂载：主区 + 当前外域常驻，其余外域不挂载（进出时挂/卸）。
  * 主区在域外时以低模 LOD 形态常驻（远景过场合并低模）。
  */
-export function GridArena({ grid, currentArea, yin, levelId, heights, hazardCells = [], complete }: GridArenaProps) {
+export function GridArena({ grid, currentArea, yin, levelId, heights, hazardCells = [], complete, wallSkinEpoch = 0 }: GridArenaProps) {
   const mounted = selectMountedAreas(currentArea);
   const mainLevel = useMemo(() => findLevel(LEVELS.find((l) => l.area === 'main')?.id ?? ''), []);
 
@@ -567,6 +575,7 @@ export function GridArena({ grid, currentArea, yin, levelId, heights, hazardCell
           hazardCells={currentIsMain ? hazardCells : []}
           heights={currentIsMain ? heights : undefined}
           complete={currentIsMain && complete}
+          wallSkinEpoch={wallSkinEpoch}
         />
       )}
       {showCurrentDomain && (
@@ -579,6 +588,7 @@ export function GridArena({ grid, currentArea, yin, levelId, heights, hazardCell
           hazardCells={hazardCells}
           heights={heights}
           complete={complete}
+          wallSkinEpoch={wallSkinEpoch}
         />
       )}
       {heroProp !== null && heroPropPosition !== null && <HeroPropMesh prop={heroProp} position={heroPropPosition} />}

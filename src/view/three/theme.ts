@@ -280,7 +280,11 @@ export const YANG_THEME: PlaneTheme = Object.freeze({
   floor: { base: '#2b335f', alt: '#232a52' },
   wall: { base: '#2a3162', top: '#4a559e' },
   abyss: { base: '#0c0f22', deep: '#05060f' },
-  goal: { pedestal: '#3c3f7d', cap: '#ffcf5c', halo: '#ffcf5c' },
+  // A2-5：goal.pedestal 提亮一档 —— 旧值 '#3c3f7d' 对 12 关阳面解析地板对比度
+  // 仅 1.19~1.50（顶冠 cap 达标、柱身与地板同融，未落箱旗位只剩小顶冠可辨）。
+  // '#6064b0' 的柱身对比度实测 ≥2.13（WCAG，esbuild 直算源码复核），色相保持
+  // 靛蓝紫一档提亮，与 cap '#ffcf5c' 仍拉开层级。
+  goal: { pedestal: '#6064b0', cap: '#ffcf5c', halo: '#ffcf5c' },
   phase: { tile: '#00e5ff', opacity: 0.4 },
   spike: { base: '#8b93b8' },
   gate: { pillar: '#464f96', portal: '#7c5cff', rim: '#00e5ff' },
@@ -308,11 +312,17 @@ export const YIN_THEME: PlaneTheme = Object.freeze({
   floor: { base: '#41243f', alt: '#331a33' },
   wall: { base: '#3c1f47', top: '#7a3f8f' },
   abyss: { base: '#1a0716', deep: '#0b030a' },
-  goal: { pedestal: '#5f3c72', cap: '#7cf5c8', halo: '#7cf5c8' },
+  // A2-5（阴面同批）：goal.pedestal '#5f3c72' 对阴面解析地板对比度 1.36~1.71，
+  // 同样不达标 —— 提亮到 '#83589a'（实测 ≥2.20），玫紫色相与阴面基调一致。
+  goal: { pedestal: '#83589a', cap: '#7cf5c8', halo: '#7cf5c8' },
   phase: { tile: '#ffcf5c', opacity: 0.5 },
   spike: { base: '#d8a6b8' },
   gate: { pillar: '#6f3560', portal: '#ff5c9e', rim: '#ffcf5c' },
-  crate: { body: '#7a4d63', top: '#a86e83' },
+  // A2-3：crate 双提亮 —— 旧 body '#7a4d63' 对 12 关阴面解析地板对比度仅
+  // 1.76~2.21（低于 3:1 图形下限），推箱唯一操作对象的侧面几乎融入地板；
+  // top '#a86e83' 也只勉强 3.00。定稿 body '#b0778e'（≥3.37）、top '#c98ba0'
+  // （≥4.41，esbuild 直算源码复核），body<top 的明暗层级保持，玫灰色相不变。
+  crate: { body: '#b0778e', top: '#c98ba0' },
   player: { primary: '#ffe9f4', secondary: '#6f3560', accent: '#ff5c9e' },
   actor: { npc: '#ff9fd0', enemy: '#7cffd4', boss: '#ffcf5c' },
   vfx: {

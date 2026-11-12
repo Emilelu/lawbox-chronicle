@@ -214,16 +214,19 @@ export const LAW_GATES: readonly LawGateDef[] = [
     levelId: 'level-sb-03',
     requiredCardIds: ['card-law-wider-push'],
     makeUpScriptId: 'script-gate-wider-push',
-    note: 'level-sb-03 的长廊十字依赖推程 +1 才有解（solver 校验前置）；该卡同时是本关通关奖励，入口缺卡必补发。',
+    // A3-4（表述修正）：零法则默认规则（pushRange=1、无拉箱/斜推/穿行）下
+    // solver 已校验本关可解，「长臂」是增益卡而非可解性硬门槛——note 按
+    // 增益口径书写，避免误导玩家以为不激活该卡就无解。
+    note: 'level-sb-03 的长廊十字零法则默认规则亦可解（solver 已校验）；「法则·长臂」为增益卡，持卡推程 +1、解路更短更省。该卡同时是本关通关奖励，入口缺卡必补发（软锁兜底）。',
   },
   {
     // STORY-5（评审③修法）：sb-04 是 sb-03 十字回廊的四星变体关（同款长廊布局，
-    // areas.ts 数据同构），同样依赖推程 +1 才有解；补发剧本复用 script-gate-wider-push
-    //（零新剧本），levelGuide 的 gateHint 由本条目自动消费。
+    // areas.ts 数据同构），零法则默认规则同样可解，长臂为增益卡；补发剧本复用
+    // script-gate-wider-push（零新剧本），levelGuide 的 gateHint 由本条目自动消费。
     levelId: 'level-sb-04',
     requiredCardIds: ['card-law-wider-push'],
     makeUpScriptId: 'script-gate-wider-push',
-    note: 'level-sb-04（星陨间奏）是 sb-03 长廊十字的变体关：布局同构、同样依赖推程 +1 才有解，本关无卡奖励（纯星石），直接选关进入时缺卡即入口补发（复用 script-gate-wider-push，零新剧本）。',
+    note: 'level-sb-04（星陨间奏）是 sb-03 长廊十字的变体关：布局同构、零法则默认规则亦可解，「法则·长臂」为增益卡（推程 +1、解路更短更省）。本关无卡奖励（纯星石），直接选关进入时缺卡即入口补发（复用 script-gate-wider-push，零新剧本）。',
   },
 ];
 
@@ -309,9 +312,11 @@ export const GATE_MAKEUP_SCRIPTS: readonly StoryScriptDef[] = [
           { kind: 'grantCard', cardId: 'card-law-wider-push', source: 'law-gate' },
         ],
         lines: [
-          { speakerId: SPEAKER_ALTAR, text: '碎星十字的长廊比手臂更长。检测到你还没有「法则·长臂」——' },
-          { speakerId: SPEAKER_ALTAR, text: '现在有了。主线法则门槛，一律必发，绝无例外。' },
-          { speakerId: SPEAKER_SYSTEM, text: '获得法则卡：法则·长臂（入口补发 · 必发）。请在卡组中激活后再推箱。' },
+          // A3-4（表述修正）：零法则下长廊十字亦可解，「长臂」是增益卡——台词按
+          // 增益口径书写，不再暗示「不激活就无解」。
+          { speakerId: SPEAKER_ALTAR, text: '碎星十字的长廊比手臂更长。带上「法则·长臂」，推程 +1，同样的长廊走得更快更省——' },
+          { speakerId: SPEAKER_ALTAR, text: '检测到你还没有它，现在有了。入口补发，一律必发，绝无例外。' },
+          { speakerId: SPEAKER_SYSTEM, text: '获得法则卡：法则·长臂（入口补发 · 必发）。激活后推程 +1，解路更短更省。' },
         ],
         next: 'gate-wp-close',
       },
@@ -320,7 +325,7 @@ export const GATE_MAKEUP_SCRIPTS: readonly StoryScriptDef[] = [
         id: 'gate-wp-close',
         endingId: 'gate-make-up-done',
         closable: true,
-        lines: [{ speakerId: SPEAKER_SYSTEM, text: '长臂入卡，十字回廊在你面前缓缓展开。' }],
+        lines: [{ speakerId: SPEAKER_SYSTEM, text: '长臂入卡——长廊还是那条长廊，只是你的手臂更长了。' }],
       },
     ],
   },

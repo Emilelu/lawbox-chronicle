@@ -396,7 +396,6 @@ export interface SettingsState {
 export interface GachaState {
   readonly starStones: number;
   readonly totalPulls: number;
-  readonly pullsSinceFourStar: number;
   readonly owned: readonly CardInstance[];
   readonly activeLaws: readonly string[];
   readonly lastResult: GachaPullResult | null;
@@ -432,9 +431,14 @@ export interface GameState {
   readonly puzzle: unknown | null;
   /** 战斗引擎状态（combat-engine BattleState；combat 是它的 core 投影） */
   readonly battle: unknown | null;
-  /** gacha 三层保底计数器（pullsSinceNewLaw/shards/totalPulls，持久化） */
+  /** gacha 三层保底计数器（pullsSinceFourStar/pullsSinceNewLaw/shards/totalPulls；保底进度唯一真相，UI 直接读这里） */
   readonly pity: { readonly pullsSinceFourStar: number; readonly pullsSinceNewLaw: number; readonly shards: number; readonly totalPulls: number };
-  /** 剧情解释器运行时（story-weaver；持久化，剧本中断可续） */
+  /**
+   * 剧情解释器运行时（story-weaver）。会话态：不落盘（A4-2）——「剧本中断可续」
+   * 的承诺已撤销：剧本中断（刷新/关页）即视为未触发，配合触发封印延迟到剧本
+   * 正常收尾（gameStore 的 pendingSeen 通道），中断后重走原坐标可再次开演，
+   * 不再出现 once 触发被 seenEventIds 永久封印的主线软锁。
+   */
   readonly storyRuntime: {
     readonly scriptId: string | null;
     readonly nodeId: string | null;

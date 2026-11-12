@@ -14,8 +14,11 @@
  *                           redeemCost（正式池 60）碎片直购任一未持有法则卡
  *
  * 三层计数器（pullsSinceFourStar / pullsSinceNewLaw）各自独立累计、互不复位；
- * 碎片余额 shards 随计数器一并持久化（zustand persist 经 PITY_STORAGE_KEY 对接，
- * 引擎侧只提供注入式 adapter，不碰浏览器 IO，保持纯度）。
+ * 碎片余额 shards 随计数器一并持久化。持久化的生产通道是主存档的 partialize
+ * （gameStore pity 字段，随 lawbox-chronicle:v1 落盘）；本文件底部的 adapter /
+ * 序列化 API 是引擎侧的注入式纯函数持久化原语（不碰浏览器 IO，保持纯度），
+ * 供 roller 测试与未来 pity 独立分片化复用 —— 生产代码不引用（A4-7 如实化，
+ * 原「zustand persist 经 PITY_STORAGE_KEY 对接」注释与实现不符，已纠正）。
  */
 
 import { z } from 'zod';
@@ -241,6 +244,11 @@ function clamp01(v: number): number {
 }
 
 /* ================================ 持久化 ================================== */
+/**
+ * 注入式持久化原语（A4-7 定位说明）：生产存档不经此段 —— pity 由 gameStore
+ * partialize 随主档落盘；本段提供给 roller 测试做存取往返校验，并作为未来
+ * pity 独立分片化（若主档体积需要拆分）的现成原语。全部纯函数 + 注入 adapter。
+ */
 
 const PITY_COUNTERS_SCHEMA = z.object({
   pullsSinceFourStar: z.number().int().min(0),

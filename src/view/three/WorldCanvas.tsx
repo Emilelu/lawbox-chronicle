@@ -6,10 +6,11 @@
  *  - store 状态变化 → React 提交 → R3F 自动 invalidate（fiber 内置行为）；
  *  - OrbitControls 拖拽/缩放 → drei 控件自带 invalidate；
  *  - 滑动/溶解/粒子等有限时长动画在未收敛帧内自行 invalidate，结束即停。
- *  - 后台节流兜底（N5）：rAF 停摆的后台标签页里 react-use-measure 的
+ *  - 后台节流兜底（N5/K5）：rAF 停摆的后台标签页里 react-use-measure 的
  *    ResizeObserver 初次回调永不投递，画布停在 300×150 不初始化 —— 回前台
  *    （visibilitychange→visible / focus）时若 R3F root 仍未建立，补发一次
- *    window resize 借其 resize 兜底监听重新量取，画布即按容器尺寸初始化。
+ *    window resize 借其 resize 兜底监听重新量取；后台打开且一直不回前台时
+ *    （K5），安装即补发一次，画布在后台也能完成初始化。
  * 场景内容：灯光 + 指数雾 + 渐变天空穹（零纹理，1 draw call）、GridArena
  * （体素竞技场）、玩家/石板/NPC/门实体、Vfx 粒子层、CameraRig 运镜。
  * THEME-3 逐关主题：主题/灯光/雾经 levelThemes.resolveLevelTheme(levelId, yin)
@@ -22,10 +23,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import type { ComponentProps, CSSProperties } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Sparkles } from '@react-three/drei';
-import type { ShaderMaterial } from 'three';
+import type { Points, ShaderMaterial } from 'three';
 import { BackSide, Color, ShaderMaterial as ShaderMaterialClass } from 'three';
 import type { Vec2 } from '../../core/types';
 import {
@@ -43,6 +44,7 @@ import {
 } from '../../core/store/gameStore';
 import { selectLevelComplete } from '../../core/store/selectors';
 import { positionalRuleLevelId } from '../../engine/story/triggers';
+import { useCheatVisualState } from '../../input/cheatRegistry';
 import { findEnemy } from '../../data/enemies';
 import { ALL_SCRIPTS, ALL_SPEAKERS, ALL_TRIGGER_RULES } from '../../data/storyScripts';
 import { findLevel } from '../../data/levels';
@@ -50,6 +52,7 @@ import {
   CELL,
   COMBAT_STAGE,
   HEIGHT_STEP,
+  PLAYER_SKIN_COUNT,
   cellWorldCenter,
   clampNpcCell,
   computeExploreResetPose,
@@ -137,6 +140,31 @@ function SkyDome({ theme }: { theme: PlaneTheme }) {
 
 /* ============================== 派生辅助 ================================== */
 
+type SparklesProps = ComponentProps<typeof Sparkles>;
+
+/**
+ * FrozenSparkles —— drei Sparkles 的 demand 帧时间包装（A2-7 根治）。
+ * 病灶：Sparkles 内部 useFrame 无条件 `material.time = clock.elapsedTime`
+ * （墙钟），demand 下相邻两次渲染帧的真实间隔可达数秒 —— 交互唤醒首帧 time
+ * 一次跳变，uTime×speed 噪声场换相位，整片粒子云瞬移（「闪变/跳位」观感）。
+ * 修法：自维护「渲染帧 dt 累积量」并覆盖写回 —— R3F 的 useFrame 按订阅顺序
+ * 执行（子先父后），本组件回调最后运行，把墙钟值覆盖为自累积值：delta 是
+ * R3F 帧间差，demand 下天然等于真实动画时长，唤醒前后的 time 连续无跳变；
+ * 静置时无渲染帧 → 不累积、不 invalidate（S18 零渲染约定不破）。
+ */
+function FrozenSparkles(props: SparklesProps) {
+  const pointsRef = useRef<Points>(null);
+  const timeRef = useRef(0);
+  useFrame((_, delta) => {
+    timeRef.current += delta;
+    const points = pointsRef.current;
+    if (points === null) return;
+    const material = points.material as unknown as { time?: number };
+    if (material?.time !== undefined) material.time = timeRef.current;
+  });
+  return <Sparkles ref={pointsRef} {...props} />;
+}
+
 /** 说话者 id（首条非系统台词；映射 ActorMesh 皮肤表） */
 function speakerOf(lines: readonly { readonly speakerId: string }[]): string {
   const line = lines.find((l) => l.speakerId !== 'system');
@@ -197,6 +225,16 @@ function SceneContent({ pinnedInfo, onPin }: {
   const peeking = useViewStore((s) => s.peeking);
   const hidePlayerAvatar =
     viewPreference === 'first' && !peeking && (phase === 'playing' || phase === 'dialogue');
+
+  // A2-1/A2-2：换肤 / 墙皮重掷作弊的视图消费（cheatRegistry 状态订阅）。
+  // 此前两者是「作弊写状态、渲染层零消费者」的死数据：skinIndex 只落
+  // cheatRegistry 自身（5 套部件皮肤仅 0 号可达）、wallSkinEpoch 全仓无视图
+  // 读取。此处只订阅不写 —— 渲染层永不写作弊状态，存档写入仍只在
+  // cheatRegistry 的命令路径（演示不污染存档纪律不受影响）。
+  const cheatVisuals = useCheatVisualState();
+  // skinIndex ∈ [0, CHEAT_SKIN_COUNT)（roles 资产数）映射到 PLAYER_SKINS 下标：
+  // 两表现同为 5 套，取模保底（任一侧扩容都不越界；playerSkinById 越界回退 0）
+  const playerSkinId = cheatVisuals.skinIndex % PLAYER_SKIN_COUNT;
 
   const player = entities?.find((e) => e.kind === 'player');
   const chests = entities?.filter((e) => e.kind === 'chest') ?? [];
@@ -476,7 +514,8 @@ function SceneContent({ pinnedInfo, onPin }: {
         cameraMode={cameraMode} // CAM-1 契约：分档夹紧按 (viewPreference × cameraMode × peeking)
       />
 
-      {/* 竞技场（点地面关闭信息卡）；战斗布阵时 grid = 战场网格、hazardCells = 尖刺 */}
+      {/* 竞技场（点地面关闭信息卡）；战斗布阵时 grid = 战场网格、hazardCells = 尖刺；
+          A2-2：wallSkinEpoch 透传 —— 「墙皮重掷」作弊按键后 14 阶墙皮确定性重排 */}
       <group onPointerDown={() => onPin(null)}>
         <GridArena
           grid={terrain}
@@ -486,11 +525,13 @@ function SceneContent({ pinnedInfo, onPin }: {
           heights={heights}
           hazardCells={spikeCells}
           complete={complete}
+          wallSkinEpoch={cheatVisuals.wallSkinEpoch}
         />
       </group>
 
       {/* 玩家（关卡切换即重挂，朝向复位）；FP 档 explore/dialogue 相内隐藏化身
-          （第一人称不见自己身体），combat/victory 与 T 俯瞰恢复正常可见 */}
+          （第一人称不见自己身体），combat/victory 与 T 俯瞰恢复正常可见；
+          A2-1：skinId 透传 cheat skinIndex —— 「皮肤轮换」作弊渲染链接通 */}
       {!hidePlayerAvatar && (phase !== 'combat' ? player !== undefined : true) && (
         <group onPointerDown={pinEntity(playerInfo, playerWorld)}>
           <PlayerAvatar
@@ -498,6 +539,7 @@ function SceneContent({ pinnedInfo, onPin }: {
             entityId={formationPlayer?.id ?? player?.id ?? 'player-1'}
             position={playerWorld}
             facing="down"
+            skinId={playerSkinId}
             theme={theme}
           />
         </group>
@@ -578,10 +620,11 @@ function SceneContent({ pinnedInfo, onPin }: {
 
       <VfxLayer toWorld={vfxToWorld} playerWorld={playerWorld} theme={theme} />
 
-      {/* 逐关环境粒子（THEME-3）：drei Sparkles 的 useFrame 只写 material.time、
-          不 invalidate —— demand 下静置冻结，S18 零渲染约定不破 */}
+      {/* 逐关环境粒子（THEME-3）：FrozenSparkles 包装 —— 静置冻结（Sparkles
+          不 invalidate，S18 零渲染约定不破）且唤醒首帧 time 走渲染帧 dt 累积量，
+          粒子云不再因墙钟跳变而瞬移（A2-7） */}
       {sparklesSpec !== null && (
-        <Sparkles
+        <FrozenSparkles
           count={sparklesSpec.count}
           color={sparklesSpec.color}
           size={sparklesSpec.size}
@@ -637,24 +680,30 @@ export function RootReadyProbe({ onReady }: { readonly onReady: () => void }) {
 }
 
 /**
- * 后台节流环境（rAF 停摆）的 demand 画布初始化兜底（N5）。
+ * 后台节流环境（rAF 停摆）的 demand 画布初始化兜底（N5 + K5）。
  * react-use-measure 的 bounds 只经两条通路更新：ResizeObserver 回调（初次
  * 通知在「update the rendering」步骤投递，rAF 停摆的后台标签页里永不触发）
  * 与 window resize 兜底监听（普通事件任务，不依赖渲染帧）。后台打开游戏时
  * containerRect 恒 {0,0,0,0}，R3F Canvas 的 width>0 守卫永不通过 —— canvas
  * 停在 300×150、data-engine 缺失、root 不建立。
- * 修法：回到前台（visibilitychange / window focus）时若 root 仍未建立，
- * 补发一次 window resize 借 react-use-measure 的 resize 兜底监听触发重新
- * 量取（与问题报告实测修法一致：dispatch 一次 resize 即正常初始化）。
- * 双重前置：root 已建立 → 永久静默（量取/重绘回归 ResizeObserver 正常管线）；
- * document 不可见 → 不发（rAF 停摆中补发无意义）。返回卸载函数：WorldCanvas
- * 卸载时拆除监听，不跨组件生命周期泄漏。
+ * 修法一（N5）：回到前台（visibilitychange / window focus）时若 root 仍未
+ * 建立，补发一次 window resize 借 react-use-measure 的 resize 兜底监听触发
+ * 重新量取（与问题报告实测修法一致：dispatch 一次 resize 即正常初始化）。
+ * 修法二（K5）：后台打开且一直不回前台的标签页里，上述回前台兜底永不触发
+ * —— 安装时（挂载 effect）若 root 仍未建立，立即补发一次 resize。调用方
+ * 的挂载 effect 晚于 Canvas 子树 effect 运行，此时 react-use-measure 的
+ * resize 监听已就位；前台正常挂载时 root 已建立（或即将由 ResizeObserver
+ * 管线建立），本次补发是幂等空操作；后台节流下 resize 是普通事件任务，
+ * 不依赖渲染帧投递 —— root 在后台即完成初始化。
+ * 返回卸载函数：WorldCanvas 卸载时拆除监听，不跨组件生命周期泄漏。
  */
 export function installDemandCanvasWake(isRootReady: () => boolean): () => void {
   const wake = (): void => {
     if (isRootReady() || document.visibilityState !== 'visible') return;
     window.dispatchEvent(new Event('resize'));
   };
+  // K5：安装即补发（root 未建立时）；root 已建立则与既有行为一致全静默
+  if (!isRootReady()) window.dispatchEvent(new Event('resize'));
   document.addEventListener('visibilitychange', wake);
   window.addEventListener('focus', wake);
   return () => {

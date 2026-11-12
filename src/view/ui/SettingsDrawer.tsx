@@ -23,6 +23,8 @@ import { LOCALE_NAMES } from '../../data/i18n';
 import { GACHA_CONFIG } from '../../data/gacha';
 import { formatPercent, stripBr, tUi } from '../../data/i18n/uiText';
 import { bus } from '../../core/events/bus';
+import { useLogbookStore } from '../../archive/logbook';
+import { useStatsStore } from '../../archive/statsCollector';
 
 const SAVE_KEY = 'lawbox-chronicle:v1'; // gameStore.ts persist 配置的存储键
 
@@ -197,6 +199,7 @@ export function SettingsDrawer() {
 
   const [tab, setTab] = useState<DrawerTab>(activePanel === 'rulebook' ? 'rulebook' : 'general');
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmClearArchive, setConfirmClearArchive] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
 
   // 面板身份切换（settings ↔ rulebook）时同步页签
@@ -225,6 +228,25 @@ export function SettingsDrawer() {
     URL.revokeObjectURL(url);
     setExportNote(tUi(locale, 'settings.exportDone'));
     bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-16' });
+  };
+
+  /**
+   * 清空档案（A4-6）：清 logbook 与 stats 两个档案分片（图鉴/成就/关卡纪录/
+   * 抽卡历史与曲线），兑现 logbook.ts 头注释「设置面板的『清空档案』才清本片」
+   * 的既有承诺 —— 此前该入口从未存在，resetSave 只回主存档分片，玩家清档后
+   * 抽卡历史与图鉴成就永久留存。与 resetSave 相互独立（收藏语义 vs 进度语义），
+   * 两步确认防误触；清除后广播 toast 明示。
+   */
+  const clearArchive = () => {
+    if (!confirmClearArchive) {
+      setConfirmClearArchive(true);
+      return;
+    }
+    useLogbookStore.getState().clearLogbook();
+    useStatsStore.getState().clearStats();
+    setConfirmClearArchive(false);
+    bus.publish({ type: 'ui/toast', messageKey: 'settings.clearArchiveDone' });
+    bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-3' });
   };
 
   return (
@@ -343,7 +365,7 @@ export function SettingsDrawer() {
         </div>
       )}
 
-      {/* 存档：导出 JSON / 两步确认清空 */}
+      {/* 存档：导出 JSON / 两步确认清空主存档 / 两步确认清空档案分片（A4-6） */}
       {tab === 'save' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button className="btn-neon" onClick={exportSave}>
@@ -367,6 +389,18 @@ export function SettingsDrawer() {
             }}
           >
             {confirmReset ? tUi(locale, 'settings.resetConfirm') : `🗑 ${tUi(locale, 'settings.reset')}`}
+          </button>
+          <button
+            className="chip"
+            style={{
+              cursor: 'pointer',
+              alignSelf: 'flex-start',
+              borderColor: confirmClearArchive ? 'var(--neon-rose)' : undefined,
+              color: confirmClearArchive ? 'var(--neon-rose)' : undefined,
+            }}
+            onClick={clearArchive}
+          >
+            {confirmClearArchive ? tUi(locale, 'settings.clearArchiveConfirm') : tUi(locale, 'settings.clearArchive')}
           </button>
           {exportNote !== null && <span style={{ fontSize: 12, color: 'var(--neon-cyan)' }}>{exportNote}</span>}
           <span style={{ fontSize: 11.5, color: 'var(--text-dim)' }}>{tUi(locale, 'settings.save')} · {SAVE_KEY}</span>

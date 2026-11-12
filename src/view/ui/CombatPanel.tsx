@@ -4,6 +4,8 @@
  * 与共享契约（core/types.ts GameAction）的对接现状：
  *  - 攻击/道具/逃跑 → dispatch combatAct（store combatAct 只在 battle 相结算，
  *    逃跑是真实状态变更 combat:null + phase:'playing'，K2 的值传递空操作在此根治）；
+ *    布阵相逃跑在本面板就地拒绝并弹 ui/toast（引擎拒绝只进被 core 投影过滤的
+ *    system 日志，玩家看不见——A1-5 的零反馈根治）；
  *  - 布阵 → dispatch toggleFormation（语义见 gameStore 的 toggleFormation case：
  *    战斗中确认布阵开打，无战斗时打开卡组面板）；
  *  - 技能 → 共享契约无 'combatSkill' 动作：按钮以 onSkill prop 为注入点，
@@ -88,6 +90,20 @@ export function CombatPanel({ onSkill }: { onSkill?: () => void }) {
     bus.publish({ type: 'ui/toast', messageKey: 'toast.skillPending' });
   };
 
+  const flee = () => {
+    // 布阵相逃跑被引擎 enqueueAction 拒绝时只记 system 日志，而 system 条目不进
+    // core 投影（toCoreCombatState 过滤）——按钮点了界面毫无变化。此处与 store 的
+    // shove 阶段门禁同款：直接给 ui/toast 可见反馈，不再派发注定被拒的无效行动
+    if (isFormation) {
+      bus.publish({
+        type: 'ui/toast',
+        messageKey: '布阵阶段不能逃跑：调整站位/选好武器，确认布阵开打后再逃。',
+      });
+      return;
+    }
+    store().combatAct('flee');
+  };
+
   const recentLog = combat.log.slice(-5);
 
   return (
@@ -152,7 +168,7 @@ export function CombatPanel({ onSkill }: { onSkill?: () => void }) {
           <button style={ACTION_BTN} disabled={!isBattle} onClick={() => store().combatAct('item')}>
             ⚗ {tUi(locale, 'combat.item')}
           </button>
-          <button style={{ ...ACTION_BTN, borderColor: 'rgba(255,92,158,0.55)' }} onClick={() => store().combatAct('flee')}>
+          <button style={{ ...ACTION_BTN, borderColor: 'rgba(255,92,158,0.55)' }} onClick={flee}>
             🏃 {tUi(locale, 'combat.flee')}
           </button>
           {/* 布阵期推挤入口（H1）：四个方向的按钮 + 战场提示；方向键/WASD 同效 */}

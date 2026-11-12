@@ -334,6 +334,36 @@ describe('useKeyActions 全链路（jsdom 键盘事件 → store）', () => {
     expect(useViewStore.getState().peeking).toBe(false);
   });
 
+  it('A1-4：KeyT 按住中窗口失焦（keyup 永不到达）→ blur 兜底释放俯瞰，不再永久粘滞', () => {
+    press('KeyT');
+    expect(useViewStore.getState().peeking).toBe(true);
+    // 真实 alt-tab/点别的窗口的时序：blur 事件后 keyup 永远不会到达
+    window.dispatchEvent(new Event('blur'));
+    // 修复前 peeking 保持 true：相机收敛俯瞰位后粘滞，第三人称/头位档夹紧全部失效
+    expect(useViewStore.getState().peeking).toBe(false);
+    // 失焦恢复后松开 T 的 keyup 迟到：不破坏已释放的按住态（幂等）
+    lift('KeyT');
+    expect(useViewStore.getState().peeking).toBe(false);
+  });
+
+  it('A1-6：浏览器自动重复的 Tab/方向键在派发忽略前也阻止默认行为（焦点逃逸回归）', () => {
+    // 合成 KeyboardEvent 无默认行为，preventDefault 的调用与否用 spy 断言：
+    // 修复前 repeat 拍在 preventDefault 之前提前 return，OS/浏览器默认焦点遍历
+    // 每拍都会把焦点移出游戏到 HUD 按钮
+    const prevent = vi.spyOn(Event.prototype, 'preventDefault');
+    try {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Tab', bubbles: true, repeat: true }));
+      expect(prevent).toHaveBeenCalled(); // repeat 拍也拦默认行为
+      prevent.mockClear();
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'ArrowDown', bubbles: true, repeat: true }),
+      );
+      expect(prevent).toHaveBeenCalled(); // 方向键 repeat 拍同理（滚动防呆）
+    } finally {
+      prevent.mockRestore();
+    }
+  });
+
   it('移动方向随相机偏航映射：camYaw=π/2 时按 W 向左、按 A 向下，与 mapInputDir 一致', () => {
     // 基准：camYaw=0 映射恒等，S = 网格 down（出生点向下可走，既有用例已证）
     useGameStore.getState().startLevel('level-sb-01');

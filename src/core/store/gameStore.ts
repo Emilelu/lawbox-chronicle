@@ -200,7 +200,6 @@ const initialState: GameState = {
   gacha: {
     starStones: 1600,
     totalPulls: 0,
-    pullsSinceFourStar: 0,
     owned: [],
     activeLaws: [],
     lastResult: null,
@@ -327,6 +326,27 @@ export function postBattlePlayerHp(
 ): number {
   if (outcome === 'defeat') return maxHp;
   return clampHp(hpFinal, maxHp);
+}
+
+/* ======================== 逃跑落位写回（A1-3，纯函数） ======================= */
+
+/**
+ * 逃跑结算的世界层写回（纯函数，A1-3 / 上一轮 K2 的分层矛盾收口）。
+ * ---------------------------------------------------------------------------
+ * effects.computeFlee 的契约是「逃跑=真实位移」：玩家在布阵战场 formation 内
+ * 被 BFS 挪到最近安全格；但 settleBattle 报告不含位置字段，结算若不回写，
+ * 世界层的玩家仍站在怪物旁 —— 引擎声称位移、世界原地不动。本函数把 formation
+ * 里的玩家落位投影回世界实体层：找到 formation 玩家 → 覆盖世界玩家坐标；
+ * 找不到（异常战场）原样返回。纯函数：vitest 直接断言写回结果。
+ */
+export function applyFleeDisplacement(
+  worldEntities: readonly GridEntity[],
+  formationEntities: readonly GridEntity[],
+  playerId: string,
+): readonly GridEntity[] {
+  const fled = formationEntities.find((e) => e.id === playerId);
+  if (fled === undefined) return worldEntities;
+  return worldEntities.map((e) => (e.kind === 'player' ? { ...e, x: fled.x, y: fled.y } : e));
 }
 
 /* ======================== 触发旗标视图（N3 单一真相源） ====================== */
@@ -511,7 +531,8 @@ export const useGameStore = create<GameStore>()(
                       /* 未知成就 id：logbook 抛 RangeError，剧情侧不因成就崩剧本 */
                     }
                   })
-                  .catch(() => undefined);
+                  // A4-9：绝不静默 —— 动态加载失败要让控制台可见（S14 纪律）
+                  .catch((e: unknown) => console.error('[logbook] 动态加载失败，成就未入册', e));
               }
               break;
             case 'teleport': {
@@ -567,6 +588,18 @@ export const useGameStore = create<GameStore>()(
       };
 
       /* --------------------------- 剧本推进 ------------------------------- */
+
+      /**
+       * 待落盘的触发封印（A4-1）。once 触发命中时不再立即写入 seenEventIds，
+       * 只在本会话变量挂账，待剧本正常收尾（closeStoryRuntime）才落盘。
+       * 根因：markTriggerSeen 先于 startStoryScript 执行，而 seenEventIds 随
+       * story 持久化 —— 玩家在对话中刷新页面时触发已被封印、storyRuntime 却被
+       * 重置，once 规则从此永不重触发（天使① / 作者谜题一旦中断即主线软锁）。
+       * 封印延迟到收尾后，「演完才封印」；中断的剧本保持未封印，重走原坐标
+       * 即可再次开演。会话变量不落盘：刷新即作废，与「中断=未触发」语义一致。
+       */
+      let pendingSeenTriggerId: string | null = null;
+
       const startStoryScript = (scriptId: string, entryNodeId?: string): void => {
         const state = get();
         // 运行时旗标种子：持久化旗标 + 持卡镜像（解释器的 requireCard/gate 用）
@@ -576,6 +609,8 @@ export const useGameStore = create<GameStore>()(
         const step = startStory(ALL_SCRIPTS, scriptId, runtime, entryNodeId);
         if (step.error !== undefined) {
           bus.publish({ type: 'debug/mark', label: `story-error:${step.error}` });
+          // 剧本没演成：本次触发的封印账目作废（未演出的剧本不该封印触发）
+          pendingSeenTriggerId = null;
         }
         const phase: GameState['phase'] = 'dialogue';
         set({ phase, storyRuntime: step.state });
@@ -588,14 +623,21 @@ export const useGameStore = create<GameStore>()(
         const state = get();
         const runtime = state.storyRuntime;
         const lastEnding = runtime.flags['last-ending-id'];
+        // A4-1：剧本正常收尾才落盘触发封印（见 pendingSeenTriggerId 注释）
+        const pendingSeen = pendingSeenTriggerId;
+        pendingSeenTriggerId = null;
+        const story =
+          pendingSeen !== null && !state.story.seenEventIds.includes(pendingSeen)
+            ? { ...state.story, seenEventIds: [...state.story.seenEventIds, pendingSeen] }
+            : state.story;
         set({
           // N3：runtime→story 的收尾合并收敛为「只并入 card: 镜像」（该合并对
           // 真相源的唯一独有贡献；setFlag 类效果已经 writeFlag 实时双写进真相）。
           // 原并集合并无法表达「真相源已删除键」——会话草稿里的陈旧旗（如外部
           // 只清了 story.flags 单侧的 defeated 旗）会经收尾合并复活回真相源；
           // triggerFlagView 以真相源优先即根治，非 card 的草稿残留一律丢弃。
-          storyRuntime: { ...IDLE_STORY_RUNTIME, flags: { ...state.story.flags } },
-          story: { ...state.story, flags: triggerFlagView(state.story.flags, runtime.flags) },
+          storyRuntime: { ...IDLE_STORY_RUNTIME, flags: { ...story.flags } },
+          story,
         });
         if (lastEnding === 'outskirt-north-transit') {
           startStoryScript('script-hidden-game');
@@ -741,6 +783,26 @@ export const useGameStore = create<GameStore>()(
           hp: postBattlePlayerHp(report.outcome, report.playerHpFinal, report.playerMaxHp),
         };
 
+        // A1-3：逃跑=真实位移（computeFlee 在 formation 内挪玩家），结算时把
+        // 布阵战场的玩家落位写回世界层（puzzle 引擎态 + segment 投影同 set 同步），
+        // 消除「引擎声称位移、世界原地不动」的分层矛盾。仅搬运玩家实体：敌人/
+        // 箱子是世界实体的战斗投影，保持世界层其余状态不变。
+        let worldPatch: { puzzle: PuzzleState; segment: GameState['segment'] } | null = null;
+        if (report.outcome === 'fled' && battle.formation !== null) {
+          const puzzle = puzzleOf();
+          if (puzzle !== null) {
+            const entities = applyFleeDisplacement(
+              puzzle.entities,
+              battle.formation.entities,
+              battle.formation.playerId,
+            );
+            if (entities !== puzzle.entities) {
+              const moved: PuzzleState = { ...puzzle, entities };
+              worldPatch = { puzzle: moved, segment: segmentOf(moved, state.segment?.levelId ?? '') };
+            }
+          }
+        }
+
         if (report.outcome === 'victory') {
           // 掉落武器入包（自动装备 —— 原版语义）
           if (report.dropWeaponId !== null) {
@@ -756,14 +818,14 @@ export const useGameStore = create<GameStore>()(
 
         if (state.storyRuntime.phase === 'awaiting-battle') {
           const step = resolveBattleResult(ALL_SCRIPTS, state.storyRuntime, report.outcome === 'victory');
-          set({ battle: null, combat: null, player, storyRuntime: step.state });
+          set({ battle: null, combat: null, player, storyRuntime: step.state, ...(worldPatch ?? {}) });
           applyStoryEffects(step.effects);
           // 剧本续演（win/lose 分支都是对话或 ending 节点）——留在对话相渲染
           if (get().battle === null) set({ phase: 'dialogue' });
           return;
         }
 
-        set({ battle: null, combat: null, player, phase: 'playing' });
+        set({ battle: null, combat: null, player, phase: 'playing', ...(worldPatch ?? {}) });
       };
 
       /* --------------------------- 挑战层入场 ----------------------------- */
@@ -786,6 +848,9 @@ export const useGameStore = create<GameStore>()(
       /* --------------------------- 关卡启动 ------------------------------- */
       const beginLevel = (levelId: string): void => {
         const state = get();
+        // 换关即作废未收尾剧本的封印账目（剧本被 beginLevel 重置为中断态，
+        // 与 A4-1「演完才封印」语义一致：中断的触发保持可重触发）
+        pendingSeenTriggerId = null;
         const level = findLevelAny(levelId);
         if (level === undefined) return;
         const parsed = parseLevelGeometry(level);
@@ -892,10 +957,10 @@ export const useGameStore = create<GameStore>()(
       };
 
       const markTriggerSeen = (rule: TriggerRule): void => {
+        // A4-1：封印延迟 —— once 规则命中只挂账（pendingSeenTriggerId），剧本
+        // 正常收尾才写 seenEventIds。once:false 的规则（小怪/BOSS 遭遇）不封印。
         if (rule.once === false) return;
-        const state = get();
-        if (state.story.seenEventIds.includes(rule.id)) return;
-        set({ story: { ...state.story, seenEventIds: [...state.story.seenEventIds, rule.id] } });
+        pendingSeenTriggerId = rule.id;
       };
 
       /* --------------------------- 推箱主流程 ----------------------------- */
@@ -1014,6 +1079,8 @@ export const useGameStore = create<GameStore>()(
         backToTitle() {
           // 回标题即清空一局的世界状态：segment/result 不清会让标题页继续渲染
           // 旧关卡与旧结算（closeOverlay 的 title 回退也依赖 segment===null）
+          // A4-1：未收尾剧本的封印账目一并作废（回标题=中断）
+          pendingSeenTriggerId = null;
           set({
             phase: 'title',
             activePanel: 'none',
@@ -1269,6 +1336,8 @@ export const useGameStore = create<GameStore>()(
           bus.publish({ type: 'anim/gachaBurst', rarity: best });
           bus.publish({ type: 'bgm/play', bgmId: 'bgm-bandori' });
           const pity: PityCounters = outcome.countersAfter;
+          // A4-10：pity 是保底计数唯一真相（types.ts），UI 进度条直接读 s.pity ——
+          // 不再手工镜像 pullsSinceFourStar 进 gacha（双字段靠双写维持一致性的根源）
           set({
             phase: 'gacha',
             pity,
@@ -1276,7 +1345,6 @@ export const useGameStore = create<GameStore>()(
               ...state.gacha,
               starStones: state.gacha.starStones - cost,
               totalPulls: pity.totalPulls,
-              pullsSinceFourStar: pity.pullsSinceFourStar,
               owned: [
                 ...state.gacha.owned,
                 ...outcome.pulls.map((p) => ({ uid: p.uid, cardId: p.cardId, obtainedAt: Date.now() })),
@@ -1318,7 +1386,8 @@ export const useGameStore = create<GameStore>()(
             .then((m) => {
               m.useStatsStore.getState().recordPulls(m.POOL_NOSTALGIA, pulls, startIndex);
             })
-            .catch(() => undefined);
+            // A4-9：绝不静默 —— 动态加载失败要让控制台可见（S14 纪律）
+            .catch((e: unknown) => console.error('[statsCollector] 动态加载失败，怀旧池本回未记档', e));
           bus.publish({
             type: 'ui/toast',
             messageKey: `怀旧对照第 ${round + 1} 回：4★×${fourCount} 3★×${threeCount}（原版复刻，不产出可用卡；实测曲线已更新）。`,
@@ -1371,7 +1440,8 @@ export const useGameStore = create<GameStore>()(
             } else if (eff.kind === 'showEnding') {
               const cur = get();
               set({ story: { ...cur.story, flags: { ...cur.story.flags, 'last-ending-id': eff.endingId } } });
-              bus.publish({ type: 'ui/toast', messageKey: '真结局达成：拒绝剧本的人。' });
+              // A4-5：真结局 toast 键控（toast.trueEnding），7 语种不再直显中文句
+              bus.publish({ type: 'ui/toast', messageKey: 'toast.trueEnding' });
               if (eff.achievementId !== undefined) {
                 const achievementId = eff.achievementId;
                 // 动态引入避免 gameStore ↔ logbook 的模块环（同 applyStoryEffects 策略）
@@ -1383,7 +1453,8 @@ export const useGameStore = create<GameStore>()(
                       /* 未知成就 id：logbook 抛 RangeError，终端侧不因成就崩终端 */
                     }
                   })
-                  .catch(() => undefined);
+                  // A4-9：绝不静默 —— 动态加载失败要让控制台可见（S14 纪律）
+                  .catch((e: unknown) => console.error('[logbook] 动态加载失败，成就未入册', e));
               }
             }
           }
@@ -1491,6 +1562,11 @@ export const useGameStore = create<GameStore>()(
         },
 
         openPanel(panel) {
+          // A4-4 面板互斥的另一半：打开 deck/gacha/settings/rulebook 任一主面板
+          // 时，广播关闭三个独立分片面板（档案/选关/攻略）——它们的 open 在各自
+          // 分片 store 里，openPanel 的单值互斥（PanelId）覆盖不到；反向互斥由
+          // 分片面板自己的 open 动作广播 closePanels + closeOverlay 完成。
+          bus.publish({ type: 'ui/closePanels' });
           set({ activePanel: panel });
         },
 
@@ -1538,19 +1614,22 @@ export const useGameStore = create<GameStore>()(
           battleSeq = 0;
           nostalgiaSeq = 0;
           nostalgiaPullsTotal = 0;
+          pendingSeenTriggerId = null; // A4-1：清档一并作废未收尾剧本的封印账目
           set({ ...initialState, visitCount: get().visitCount });
         },
       };
     },
     {
       name: 'lawbox-chronicle:v1',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       // 段内实体/战斗/演出态是会话态，不落盘；档案只存进度与偏好。
-      // story+storyRuntime 双落盘是既有存档契约（types.ts：story-weaver 运行时
-      // 草稿随档持久）；N3 后旗标真相唯一在 story.flags —— 触发/META 评估经
-      // triggerFlagView 以真相源为准，storyRuntime 里的陈旧旗副本不遮蔽真相，
-      // 且每次剧本开场即被 startStoryScript 以 story.flags 重播种自愈。
+      // storyRuntime 自 v3 起同样不再落盘（A4-2）：全仓从未有读档恢复点，
+      // 「剧本中断可续」承诺未兑现，落盘是纯死重；撤销后语义收敛为
+      // 「剧本中断即重来」，配合触发封印延迟（pendingSeenTriggerId，A4-1）
+      // 中断的 once 触发未落账，重走原坐标即可再次开演，不再软锁。
+      // 旗标真相唯一在 story.flags —— 触发/META 评估经 triggerFlagView 以
+      // 真相源为准；每次剧本开场即被 startStoryScript 以 story.flags 重播种。
       partialize: (state) => ({
         locale: state.locale,
         settings: state.settings,
@@ -1559,9 +1638,17 @@ export const useGameStore = create<GameStore>()(
         gacha: state.gacha,
         pity: state.pity,
         story: state.story,
-        storyRuntime: state.storyRuntime,
         visitCount: state.visitCount,
       }),
+      migrate: (persisted) => {
+        // v3：storyRuntime 停止落盘 —— 剥离 v1/v2 旧档遗留的运行时切片
+        //（剧本恢复从未实现，遗留切片只会让读档后 storyRuntime 带着幽灵
+        // 节点；zustand merge 会把持久化切片原样灌回内存，必须在迁移时丢弃）。
+        const legacy = persisted as Partial<GameState> & { visitCount?: number };
+        const { storyRuntime: droppedRuntime, ...rest } = legacy;
+        void droppedRuntime;
+        return rest as GameState & { visitCount: number };
+      },
     },
   ),
 );

@@ -30,7 +30,12 @@ interface LevelSelectStore {
 
 export const useLevelSelectStore = create<LevelSelectStore>()((set) => ({
   open: false,
-  toggle: () => set((s) => ({ open: !s.open })),
+  // A4-4 互斥：打开（非关闭）时先广播 ui/closePanels 关掉档案/攻略等其它分片
+  // 面板，再翻转自己。广播同步送达订阅者，本面板若已开不受影响（willOpen=false）。
+  toggle: () => {
+    if (!useLevelSelectStore.getState().open) bus.publish({ type: 'ui/closePanels' });
+    set((s) => ({ open: !s.open }));
+  },
   close: () => set({ open: false }),
 }));
 
@@ -102,16 +107,14 @@ export function LevelSelectPanel() {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <h3 style={{ fontSize: 18, letterSpacing: '0.14em' }}>选关</h3>
+        <h3 style={{ fontSize: 18, letterSpacing: '0.14em' }}>{tUi(locale, 'levelSelect.title')}</h3>
         <span style={{ flex: 1 }} />
         <button className="chip" style={{ cursor: 'pointer' }} onClick={close}>
           ✕ {tUi(locale, 'ui.close')}
         </button>
       </div>
 
-      <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-        已到达的关卡可直接进入；未到达的关卡置灰（到达进度见 HUD 左上关卡名，通关后对应旗标永久记录）。
-      </span>
+      <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>{tUi(locale, 'levelSelect.hint')}</span>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {rows.map((row) => (
@@ -140,18 +143,18 @@ export function LevelSelectPanel() {
             )}
             {row.reached ? (
               <button className="btn-neon" style={{ padding: '0.4em 1.2em' }} onClick={() => enter(row.level.id)}>
-                进入
+                {tUi(locale, 'levelSelect.enter')}
               </button>
             ) : (
-              <span className="chip" style={{ fontSize: 10.5 }}>未到达</span>
+              <span className="chip" style={{ fontSize: 10.5 }}>{tUi(locale, 'levelSelect.notReached')}</span>
             )}
             <button
               className="chip"
               style={{ cursor: 'pointer', fontSize: 10.5, padding: '1px 8px' }}
               onClick={() => useGuidePanelStore.getState().openFor(row.level.id)}
-              title="查看本关攻略（机制提示与参考推法）"
+              title={tUi(locale, 'guide.entry')}
             >
-              💡 攻略
+              {tUi(locale, 'guide.entry')}
             </button>
           </div>
         ))}

@@ -110,7 +110,8 @@ export function DeckPanel() {
   const activeLaws = useGameStore((s) => s.gacha.activeLaws);
   const starStones = useGameStore((s) => s.gacha.starStones);
   const totalPulls = useGameStore((s) => s.gacha.totalPulls);
-  const pullsSinceFourStar = useGameStore((s) => s.gacha.pullsSinceFourStar);
+  // A4-10：保底进度唯一真相在 s.pity（gacha 镜像字段已删），UI 直接读这里
+  const pullsSinceFourStar = useGameStore((s) => s.pity.pullsSinceFourStar);
   const weaponId = useGameStore((s) => s.player.weaponId);
 
   const [tab, setTab] = useState<DeckTab>('deck');
@@ -241,7 +242,7 @@ export function DeckPanel() {
             }}
             onClick={() => setTab(key)}
           >
-            {key === 'shop' ? '商店' : tUi(locale, `tab.${key}`)}
+            {key === 'shop' ? tUi(locale, 'tab.shop') : tUi(locale, `tab.${key}`)}
           </button>
         ))}
       </div>

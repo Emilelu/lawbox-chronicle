@@ -89,7 +89,8 @@ export function GachaOverlay() {
   const phase = useGameStore((s) => s.phase);
   const locale = useGameStore((s) => s.locale);
   const starStones = useGameStore((s) => s.gacha.starStones);
-  const pullsSinceFourStar = useGameStore((s) => s.gacha.pullsSinceFourStar);
+  // A4-10：保底进度唯一真相在 s.pity（gacha 镜像字段已删），进度条直接读这里
+  const pullsSinceFourStar = useGameStore((s) => s.pity.pullsSinceFourStar);
   const lastResult = useGameStore((s) => s.gacha.lastResult);
 
   const [revealed, setRevealed] = useState(0);
