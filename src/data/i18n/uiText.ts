@@ -85,6 +85,7 @@ const ZH_HANS_UI = {
   'combat.skill': '技能',
   'combat.item': '道具',
   'combat.flee': '逃跑',
+  'combat.fleeLocked': '布阵阶段不能逃跑：调整站位/选好武器，确认布阵开打后再逃。',
   'combat.shove': '推挤',
   'combat.shoveHint': '布阵期：方向键/WASD 或 ▲▼◀▶ 推挤敌人方块——推入深渊/尖刺按比例扣血，箱子坠落会冲击相邻敌人',
   'combat.enemyShield': '护盾 {n}',
@@ -118,6 +119,7 @@ const ZH_HANS_UI = {
   'gacha.insufficient': '星石不足',
   'gacha.detail': '法则箱庭池 · 逐卡独立判定（怀旧模型对照见规则手册）',
   'gacha.pityMax': '保底已就绪',
+  'gacha.pityTriggered': '保底发动',
   /* ---- 卡组面板 ---- */
   'deck.ownedCount': '持有 {n} 张',
   'deck.lawCard': '法则卡',
@@ -370,6 +372,7 @@ const ZH_HANT_UI: UiDict = {
   'combat.skill': '技能',
   'combat.item': '道具',
   'combat.flee': '逃跑',
+  'combat.fleeLocked': '佈陣階段不能逃跑：調整站位/選好武器，確認佈陣開打後再逃。',
   'combat.shove': '推擠',
   'combat.shoveHint': '布陣期：方向鍵/WASD 或 ▲▼◀▶ 推擠敵人方塊——推入深淵/尖刺按比例扣血，箱子墜落會衝擊相鄰敵人',
   'combat.enemyShield': '護盾 {n}',
@@ -402,6 +405,7 @@ const ZH_HANT_UI: UiDict = {
   'gacha.insufficient': '星石不足',
   'gacha.detail': '法則箱庭池 · 逐卡獨立判定（懷舊模型對照見規則手冊）',
   'gacha.pityMax': '保底已就緒',
+  'gacha.pityTriggered': '保底發動',
   'deck.ownedCount': '持有 {n} 張',
   'deck.lawCard': '法則卡',
   'deck.characterCard': '角色卡',
@@ -628,6 +632,7 @@ const EN_UI: UiDict = {
   'combat.skill': 'Skill',
   'combat.item': 'Item',
   'combat.flee': 'Flee',
+  'combat.fleeLocked': 'No fleeing during formation: adjust your stand / pick a weapon, then confirm the formation before fleeing.',
   'combat.shove': 'Shove',
   'combat.shoveHint': 'Formation: arrows/WASD or ▲▼◀▶ shove enemy blocks — abyss/spikes deal proportional damage; falling chests blast adjacent enemies',
   'combat.enemyShield': 'Shield {n}',
@@ -660,6 +665,7 @@ const EN_UI: UiDict = {
   'gacha.insufficient': 'Not enough star stones',
   'gacha.detail': 'Lawbox pool · per-card independent roll (nostalgia comparison in the rulebook)',
   'gacha.pityMax': 'Pity ready',
+  'gacha.pityTriggered': 'Pity triggered',
   'deck.ownedCount': 'Owned {n}',
   'deck.lawCard': 'Law card',
   'deck.characterCard': 'Character card',
@@ -888,6 +894,7 @@ const JA_UI: UiDict = {
   'combat.skill': 'スキル',
   'combat.item': '道具',
   'combat.flee': '逃げる',
+  'combat.fleeLocked': '編成フェーズは逃走できません：配置と武器を整え、編成を確定してから逃げてください。',
   'combat.shove': '押し',
   'combat.shoveHint': '布陣フェーズ：方向キー/WASD か ▲▼◀▶ で敵ブロックを押し込む——深淵/トゲは比例ダメージ、落ちた箱は隣接敵に衝撃',
   'combat.enemyShield': 'シールド {n}',
@@ -920,6 +927,7 @@ const JA_UI: UiDict = {
   'gacha.insufficient': '星石が足りません',
   'gacha.detail': '法則箱庭ピック · 1 枚ずつ独立判定（懐かしモデルとの比較はルールブック）',
   'gacha.pityMax': '天井到了',
+  'gacha.pityTriggered': '天井発動',
   'deck.ownedCount': '所持 {n} 枚',
   'deck.lawCard': '法則カード',
   'deck.characterCard': 'キャラカード',
@@ -1147,6 +1155,7 @@ const RU_UI: UiDict = {
   'combat.skill': 'Умение',
   'combat.item': 'Предмет',
   'combat.flee': 'Бежать',
+  'combat.fleeLocked': 'Нельзя бежать в фазе построения: займите позицию / выберите оружие, подтвердите построение — потом бегите.',
   'combat.shove': 'Толкнуть',
   'combat.shoveHint': 'Построение: стрелки/WASD или ▲▼◀▶ сталкивайте блоки врагов — пропасть/шипы наносят пропорциональный урон, упавший сундук бьёт соседних врагов',
   'combat.enemyShield': 'Щит {n}',
@@ -1179,6 +1188,7 @@ const RU_UI: UiDict = {
   'gacha.insufficient': 'Недостаточно звёздных камней',
   'gacha.detail': 'Пул Законной Шкатулки · независимый ролл на каждую карту (сравнение с ностальгической моделью — в справочнике)',
   'gacha.pityMax': 'Гарантия готова',
+  'gacha.pityTriggered': 'Гарантия сработала',
   'deck.ownedCount': 'В наличии {n}',
   'deck.lawCard': 'Карта закона',
   'deck.characterCard': 'Карта персонажа',
@@ -1407,6 +1417,7 @@ const DE_UI: UiDict = {
   'combat.skill': 'Fähigkeit',
   'combat.item': 'Gegenstand',
   'combat.flee': 'Fliehen',
+  'combat.fleeLocked': 'Kein Fliehen in der Aufstellungsphase: Position wählen / Waffe ausrüsten, Aufstellung bestätigen – dann fliehen.',
   'combat.shove': 'Schieben',
   'combat.shoveHint': 'Aufstellung: Pfeile/WASD oder ▲▼◀▶ schieben Gegnerblöcke — Abgrund/Stacheln verursachen proportionalen Schaden; fallende Kisten treffen Nachbarn',
   'combat.enemyShield': 'Schild {n}',
@@ -1439,6 +1450,7 @@ const DE_UI: UiDict = {
   'gacha.insufficient': 'Nicht genug Sternensteine',
   'gacha.detail': 'Gesetzkasten-Pool · unabhängiger Wurf pro Karte (Nostalgie-Vergleich im Regelhandbuch)',
   'gacha.pityMax': 'Garantie bereit',
+  'gacha.pityTriggered': 'Garantie ausgelöst',
   'deck.ownedCount': 'Besitzen {n}',
   'deck.lawCard': 'Gesetzeskarte',
   'deck.characterCard': 'Charakterkarte',
@@ -1667,6 +1679,7 @@ const FR_UI: UiDict = {
   'combat.skill': 'Compétence',
   'combat.item': 'Objet',
   'combat.flee': 'Fuir',
+  'combat.fleeLocked': 'Fuite impossible en phase de formation : ajustez votre position / choisissez une arme, validez la formation avant de fuir.',
   'combat.shove': 'Pousser',
   'combat.shoveHint': 'Placement : flèches/WASD ou ▲▼◀▶ poussez les blocs ennemis — gouffre/pics infligent des dégâts proportionnels ; les coffres qui tombent frappent les ennemis adjacents',
   'combat.enemyShield': 'Bouclier {n}',
@@ -1699,6 +1712,7 @@ const FR_UI: UiDict = {
   'gacha.insufficient': 'Pas assez de pierres d’étoile',
   'gacha.detail': 'Pool de la Lawbox · tirage indépendant par carte (comparaison nostalgique dans le manuel)',
   'gacha.pityMax': 'Pitié prête',
+  'gacha.pityTriggered': 'Pitié déclenchée',
   'deck.ownedCount': 'Possédées : {n}',
   'deck.lawCard': 'Carte de loi',
   'deck.characterCard': 'Carte de personnage',
@@ -2080,4 +2094,373 @@ export function levelName(locale: LocaleId, level: { readonly id: string; readon
 export function levelSubtitle(locale: LocaleId, level: { readonly id: string; readonly subtitle: string }): string {
   const text = (LEVEL_TEXT as Readonly<Record<string, Readonly<Record<LocaleId, LevelTextEntry>>>>)[level.id];
   return text?.[locale]?.subtitle ?? level.subtitle;
+}
+
+/* ===================== 卡名 / 武器名 / 法则名 i18n（C4） ==================== */
+
+/**
+ * 内容词本地化（C4）：卡名 / 武器名 / 法则补丁名是数据层硬编码中文的「内容词」，
+ * 此前无任何本地化机制——English 界面下标题页抽卡、HUD 武器、战斗武器栏、
+ * 法则快捷栏、档案图鉴与逐抽记录全部保持中文。本表沿用关卡名 F4 的同款机制：
+ * 按 id 提供七语种覆写，未收录的 id 由 cardName/weaponName/lawPatchName 回落
+ * 数据原文（新增卡/武器/补丁即使漏配也不白屏）。Record 编译期强制每个 id ×
+ * 每个 LocaleId 齐备（与上方 UI 字典同一道防线）；__tests__ 再断言
+ * 「CARDS/WEAPONS/LAW_PATCHES 的每个 id 都已收录且 zh-Hans 与数据原文逐字一致」。
+ * 卡面/武器的 description 仍是数据层中文（本次范围只覆盖名称）。
+ */
+interface NameTextEntry {
+  readonly name: string;
+}
+
+const CARD_NAME_SOURCE = {
+  /* ---- 法则卡（17，顺序同 LAW_CARDS） ---- */
+  'card-law-light-step': {
+    'zh-Hans': { name: '法则·轻步' }, 'zh-Hant': { name: '法則·輕步' },
+    en: { name: 'Law · Light Step' }, ja: { name: '法則・軽歩' },
+    ru: { name: 'Закон · Лёгкий шаг' }, de: { name: 'Gesetz · Leichter Schritt' },
+    fr: { name: 'Loi · Pas léger' },
+  },
+  'card-law-gravity-well': {
+    'zh-Hans': { name: '法则·重力井' }, 'zh-Hant': { name: '法則·重力井' },
+    en: { name: 'Law · Gravity Well' }, ja: { name: '法則・重力の井' },
+    ru: { name: 'Закон · Гравитационный колодец' }, de: { name: 'Gesetz · Gravitationsbrunnen' },
+    fr: { name: 'Loi · Puits de gravité' },
+  },
+  'card-law-plane-shift': {
+    'zh-Hans': { name: '法则·位面通行' }, 'zh-Hant': { name: '法則·位面通行' },
+    en: { name: 'Law · Plane Pass' }, ja: { name: '法則・位相通行' },
+    ru: { name: 'Закон · Проход Плана' }, de: { name: 'Gesetz · Ebenenpass' },
+    fr: { name: 'Loi · Passe de Plan' },
+  },
+  'card-law-second-chance': {
+    'zh-Hans': { name: '法则·再临' }, 'zh-Hant': { name: '法則·再臨' },
+    en: { name: 'Law · Second Chance' }, ja: { name: '法則・再臨' },
+    ru: { name: 'Закон · Второй шанс' }, de: { name: 'Gesetz · Zweite Chance' },
+    fr: { name: 'Loi · Seconde chance' },
+  },
+  'card-law-wider-push': {
+    'zh-Hans': { name: '法则·长臂' }, 'zh-Hant': { name: '法則·長臂' },
+    en: { name: 'Law · Long Arm' }, ja: { name: '法則・長腕' },
+    ru: { name: 'Закон · Длинная рука' }, de: { name: 'Gesetz · Langarm' },
+    fr: { name: 'Loi · Bras long' },
+  },
+  'card-law-berserk': {
+    'zh-Hans': { name: '法则·狂化' }, 'zh-Hant': { name: '法則·狂化' },
+    en: { name: 'Law · Berserk' }, ja: { name: '法則・狂化' },
+    ru: { name: 'Закон · Берсерк' }, de: { name: 'Gesetz · Berserker' },
+    fr: { name: 'Loi · Berserk' },
+  },
+  'card-law-iron-will': {
+    'zh-Hans': { name: '法则·铁壁' }, 'zh-Hant': { name: '法則·鐵壁' },
+    en: { name: 'Law · Iron Will' }, ja: { name: '法則・鉄壁' },
+    ru: { name: 'Закон · Железная воля' }, de: { name: 'Gesetz · Eiserner Wille' },
+    fr: { name: 'Loi · Volonté de fer' },
+  },
+  'card-law-feather-chest': {
+    'zh-Hans': { name: '法则·羽箱' }, 'zh-Hant': { name: '法則·羽箱' },
+    en: { name: 'Law · Feather Chest' }, ja: { name: '法則・羽箱' },
+    ru: { name: 'Закон · Перьевый сундук' }, de: { name: 'Gesetz · Federkiste' },
+    fr: { name: 'Loi · Coffre plume' },
+  },
+  'card-law-lead-chest': {
+    'zh-Hans': { name: '法则·铅箱' }, 'zh-Hant': { name: '法則·鉛箱' },
+    en: { name: 'Law · Lead Chest' }, ja: { name: '法則・鉛箱' },
+    ru: { name: 'Закон · Свинцовый сундук' }, de: { name: 'Gesetz · Bleikiste' },
+    fr: { name: 'Loi · Coffre de plomb' },
+  },
+  'card-law-diagonal-push': {
+    'zh-Hans': { name: '法则·斜向推挤' }, 'zh-Hant': { name: '法則·斜向推擠' },
+    en: { name: 'Law · Diagonal Push' }, ja: { name: '法則・斜め押し' },
+    ru: { name: 'Закон · Диагональный толчок' }, de: { name: 'Gesetz · Diagonalschub' },
+    fr: { name: 'Loi · Poussée diagonale' },
+  },
+  'card-law-chest-off-goal': {
+    'zh-Hans': { name: '法则·箱可推离' }, 'zh-Hant': { name: '法則·箱可推離' },
+    en: { name: 'Law · Chest Off Goal' }, ja: { name: '法則・箱ずらし' },
+    ru: { name: 'Закон · Сундук можно сдвинуть' }, de: { name: 'Gesetz · Kiste wegschieben' },
+    fr: { name: 'Loi · Coffre déplaçable' },
+  },
+  'card-law-mirror-pull': {
+    'zh-Hans': { name: '法则·镜像拉箱' }, 'zh-Hant': { name: '法則·鏡像拉箱' },
+    en: { name: 'Law · Mirror Pull' }, ja: { name: '法則・鏡像引き' },
+    ru: { name: 'Закон · Зеркальная тяга' }, de: { name: 'Gesetz · Spiegelzug' },
+    fr: { name: 'Loi · Tirage miroir' },
+  },
+  'card-law-phase-walk': {
+    'zh-Hans': { name: '法则·相位穿行' }, 'zh-Hant': { name: '法則·相位穿行' },
+    en: { name: 'Law · Phase Walk' }, ja: { name: '法則・位相移動' },
+    ru: { name: 'Закон · Фазовый шаг' }, de: { name: 'Gesetz · Phasengang' },
+    fr: { name: 'Loi · Marche de phase' },
+  },
+  'card-law-chest-detonate': {
+    'zh-Hans': { name: '法则·箱落引爆' }, 'zh-Hant': { name: '法則·箱落引爆' },
+    en: { name: 'Law · Chest Detonate' }, ja: { name: '法則・落下起爆' },
+    ru: { name: 'Закон · Детонация сундуков' }, de: { name: 'Gesetz · Kisten-Detonation' },
+    fr: { name: 'Loi · Détonation de coffre' },
+  },
+  'card-law-plane-eye': {
+    'zh-Hans': { name: '法则·位面之眼' }, 'zh-Hant': { name: '法則·位面之眼' },
+    en: { name: 'Law · Plane Eye' }, ja: { name: '法則・位相の眼' },
+    ru: { name: 'Закон · Око Плана' }, de: { name: 'Gesetz · Auge der Ebene' },
+    fr: { name: 'Loi · Œil de Plan' },
+  },
+  'card-law-knockback-plus-2': {
+    'zh-Hans': { name: '法则·击退+2' }, 'zh-Hant': { name: '法則·擊退+2' },
+    en: { name: 'Law · Knockback +2' }, ja: { name: '法則・ノックバック+2' },
+    ru: { name: 'Закон · Отбрасывание +2' }, de: { name: 'Gesetz · Rückstoß +2' },
+    fr: { name: 'Loi · Repousser +2' },
+  },
+  'card-law-explode-plus-1': {
+    'zh-Hans': { name: '法则·爆炸+1' }, 'zh-Hant': { name: '法則·爆炸+1' },
+    en: { name: 'Law · Blast +1' }, ja: { name: '法則・爆発+1' },
+    ru: { name: 'Закон · Взрыв +1' }, de: { name: 'Gesetz · Explosion +1' },
+    fr: { name: 'Loi · Explosion +1' },
+  },
+  /* ---- 角色卡（11，顺序同 CHARACTER_CARDS） ---- */
+  'card-chr-ylzz': {
+    'zh-Hans': { name: '影流之主' }, 'zh-Hant': { name: '影流之主' },
+    en: { name: 'Shadow-Stream Master' }, ja: { name: '影流の主' },
+    ru: { name: 'Владыка теневого потока' }, de: { name: 'Meister des Schattenstroms' },
+    fr: { name: 'Maître du courant d’ombre' },
+  },
+  'card-chr-author': {
+    'zh-Hans': { name: '作者' }, 'zh-Hant': { name: '作者' },
+    en: { name: 'The Author' }, ja: { name: '作者' },
+    ru: { name: 'Автор' }, de: { name: 'Der Autor' },
+    fr: { name: 'L’auteur' },
+  },
+  'card-chr-angel-1': {
+    'zh-Hans': { name: '导航天使①' }, 'zh-Hant': { name: '導航天使①' },
+    en: { name: 'Guiding Angel ①' }, ja: { name: '導きの天使①' },
+    ru: { name: 'Ангел-проводник ①' }, de: { name: 'Leitengel ①' },
+    fr: { name: 'Ange guide ①' },
+  },
+  'card-chr-angel-2': {
+    'zh-Hans': { name: '导航天使②' }, 'zh-Hant': { name: '導航天使②' },
+    en: { name: 'Guiding Angel ②' }, ja: { name: '導きの天使②' },
+    ru: { name: 'Ангел-проводник ②' }, de: { name: 'Leitengel ②' },
+    fr: { name: 'Ange guide ②' },
+  },
+  'card-chr-angel-3': {
+    'zh-Hans': { name: '导航天使③' }, 'zh-Hant': { name: '導航天使③' },
+    en: { name: 'Guiding Angel ③' }, ja: { name: '導きの天使③' },
+    ru: { name: 'Ангел-проводник ③' }, de: { name: 'Leitengel ③' },
+    fr: { name: 'Ange guide ③' },
+  },
+  'card-chr-angel-4': {
+    'zh-Hans': { name: '导航天使④' }, 'zh-Hant': { name: '導航天使④' },
+    en: { name: 'Guiding Angel ④' }, ja: { name: '導きの天使④' },
+    ru: { name: 'Ангел-проводник ④' }, de: { name: 'Leitengel ④' },
+    fr: { name: 'Ange guide ④' },
+  },
+  'card-chr-dygg': {
+    'zh-Hans': { name: '冬泳怪鸽' }, 'zh-Hant': { name: '冬泳怪鴿' },
+    en: { name: 'Winter-Swim Odd Pigeon' }, ja: { name: '冬泳の怪鳩' },
+    ru: { name: 'Голубь зимнего плавания' }, de: { name: 'Winterschwimm-Taube' },
+    fr: { name: 'Pigeon de nage hivernale' },
+  },
+  'card-chr-caixukun': {
+    'zh-Hans': { name: '蔡徐坤' }, 'zh-Hant': { name: '蔡徐坤' },
+    en: { name: 'Cai Xukun' }, ja: { name: '蔡徐坤' },
+    ru: { name: 'Цай Сюйкунь' }, de: { name: 'Cai Xukun' },
+    fr: { name: 'Cai Xukun' },
+  },
+  'card-chr-guolaoshi': {
+    'zh-Hans': { name: '郭老师' }, 'zh-Hant': { name: '郭老師' },
+    en: { name: 'Teacher Guo' }, ja: { name: '郭先生' },
+    ru: { name: 'Учитель Го' }, de: { name: 'Lehrer Guo' },
+    fr: { name: 'Professeur Guo' },
+  },
+  'card-buff-stardust-medal': {
+    'zh-Hans': { name: '星屑徽章' }, 'zh-Hant': { name: '星屑徽章' },
+    en: { name: 'Stardust Medal' }, ja: { name: '星屑バッジ' },
+    ru: { name: 'Медальон звёздной пыли' }, de: { name: 'Sternstaubabzeichen' },
+    fr: { name: 'Médaille de poussière d’étoiles' },
+  },
+  'card-buff-starlight-charm': {
+    'zh-Hans': { name: '星光护符' }, 'zh-Hant': { name: '星光護符' },
+    en: { name: 'Starlight Charm' }, ja: { name: '星光のお守り' },
+    ru: { name: 'Талисман звёздного света' }, de: { name: 'Sternlicht-Amulett' },
+    fr: { name: 'Amulette de lumière d’étoiles' },
+  },
+} as const satisfies Readonly<Record<string, Readonly<Record<LocaleId, NameTextEntry>>>>;
+
+export type CardNameTextId = keyof typeof CARD_NAME_SOURCE;
+
+export const CARD_NAME_TEXT: Readonly<Record<CardNameTextId, Readonly<Record<LocaleId, NameTextEntry>>>> =
+  CARD_NAME_SOURCE;
+
+/** 武器名表（5，id 同 data/weapons.ts WEAPONS） */
+const WEAPON_NAME_SOURCE = {
+  'weapon-dagger': {
+    'zh-Hans': { name: '匕首' }, 'zh-Hant': { name: '匕首' },
+    en: { name: 'Dagger' }, ja: { name: '短剣' },
+    ru: { name: 'Кинжал' }, de: { name: 'Dolch' },
+    fr: { name: 'Dague' },
+  },
+  'weapon-basketball': {
+    'zh-Hans': { name: '篮球' }, 'zh-Hant': { name: '籃球' },
+    en: { name: 'Basketball' }, ja: { name: 'バスケットボール' },
+    ru: { name: 'Баскетбольный мяч' }, de: { name: 'Basketball' },
+    fr: { name: 'Ballon de basket' },
+  },
+  'weapon-mihotel': {
+    'zh-Hans': { name: '迷吼tiao' }, 'zh-Hant': { name: '迷吼tiao' },
+    en: { name: 'Kiwi Bomb' }, ja: { name: 'キウイ爆弾' },
+    ru: { name: 'Киви-бомба' }, de: { name: 'Kiwi-Bombe' },
+    fr: { name: 'Bombe kiwi' },
+  },
+  'weapon-bigsword': {
+    'zh-Hans': { name: '张牙舞爪大宝剑' }, 'zh-Hant': { name: '張牙舞爪大寶劍' },
+    en: { name: 'Fang-Baring Greatsword' }, ja: { name: '牙を剥く大剣' },
+    ru: { name: 'Огромный оскаленный меч' }, de: { name: 'Fletschendes Großschwert' },
+    fr: { name: 'Grande épée aux crocs menaçants' },
+  },
+  'weapon-gfsStick': {
+    'zh-Hans': { name: '爷爷的拐杖' }, 'zh-Hant': { name: '爺爺的拐杖' },
+    en: { name: 'Grandpa’s Cane' }, ja: { name: 'おじいちゃんの杖' },
+    ru: { name: 'Трость дедушки' }, de: { name: 'Opas Gehstock' },
+    fr: { name: 'La canne de papi' },
+  },
+} as const satisfies Readonly<Record<string, Readonly<Record<LocaleId, NameTextEntry>>>>;
+
+export type WeaponNameTextId = keyof typeof WEAPON_NAME_SOURCE;
+
+export const WEAPON_NAME_TEXT: Readonly<Record<WeaponNameTextId, Readonly<Record<LocaleId, NameTextEntry>>>> =
+  WEAPON_NAME_SOURCE;
+
+/** 法则补丁名表（17，id 同 core/lawRegistry LAW_PATCHES；法则快捷栏芯片消费） */
+const LAW_PATCH_NAME_SOURCE = {
+  'wider-push': {
+    'zh-Hans': { name: '长臂法则' }, 'zh-Hant': { name: '長臂法則' },
+    en: { name: 'Long Arm Law' }, ja: { name: '長腕の法則' },
+    ru: { name: 'Закон длинной руки' }, de: { name: 'Langarm-Gesetz' },
+    fr: { name: 'Loi du bras long' },
+  },
+  'feather-chest': {
+    'zh-Hans': { name: '羽化法则' }, 'zh-Hant': { name: '羽化法則' },
+    en: { name: 'Feather Law' }, ja: { name: '羽化の法則' },
+    ru: { name: 'Закон оперения' }, de: { name: 'Feder-Gesetz' },
+    fr: { name: 'Loi de la plume' },
+  },
+  'lead-chest': {
+    'zh-Hans': { name: '铅封法则' }, 'zh-Hant': { name: '鉛封法則' },
+    en: { name: 'Lead Seal Law' }, ja: { name: '鉛封の法則' },
+    ru: { name: 'Закон свинцовой печати' }, de: { name: 'Bleisiegel-Gesetz' },
+    fr: { name: 'Loi du sceau de plomb' },
+  },
+  'berserk': {
+    'zh-Hans': { name: '狂化法则' }, 'zh-Hant': { name: '狂化法則' },
+    en: { name: 'Berserk Law' }, ja: { name: '狂化の法則' },
+    ru: { name: 'Закон берсерка' }, de: { name: 'Berserker-Gesetz' },
+    fr: { name: 'Loi du berserk' },
+  },
+  'iron-will': {
+    'zh-Hans': { name: '铁壁法则' }, 'zh-Hant': { name: '鐵壁法則' },
+    en: { name: 'Iron Wall Law' }, ja: { name: '鉄壁の法則' },
+    ru: { name: 'Закон железной стены' }, de: { name: 'Eisenwand-Gesetz' },
+    fr: { name: 'Loi du mur de fer' },
+  },
+  'light-step': {
+    'zh-Hans': { name: '轻步法则' }, 'zh-Hant': { name: '輕步法則' },
+    en: { name: 'Light Step Law' }, ja: { name: '軽歩の法則' },
+    ru: { name: 'Закон лёгкого шага' }, de: { name: 'Leichtschritt-Gesetz' },
+    fr: { name: 'Loi du pas léger' },
+  },
+  'gravity-well': {
+    'zh-Hans': { name: '重力井法则' }, 'zh-Hant': { name: '重力井法則' },
+    en: { name: 'Gravity Well Law' }, ja: { name: '重力井の法則' },
+    ru: { name: 'Закон гравитационного колодца' }, de: { name: 'Gravitationsbrunnen-Gesetz' },
+    fr: { name: 'Loi du puits de gravité' },
+  },
+  'plane-shift': {
+    'zh-Hans': { name: '位面通行' }, 'zh-Hant': { name: '位面通行' },
+    en: { name: 'Plane Pass' }, ja: { name: '位相通行' },
+    ru: { name: 'Проход Плана' }, de: { name: 'Ebenenpass' },
+    fr: { name: 'Passe de Plan' },
+  },
+  'second-chance': {
+    'zh-Hans': { name: '再临法则' }, 'zh-Hant': { name: '再臨法則' },
+    en: { name: 'Second Chance Law' }, ja: { name: '再臨の法則' },
+    ru: { name: 'Закон второго шанса' }, de: { name: 'Zweite-Chance-Gesetz' },
+    fr: { name: 'Loi de la seconde chance' },
+  },
+  'diagonal-push': {
+    'zh-Hans': { name: '斜向推挤' }, 'zh-Hant': { name: '斜向推擠' },
+    en: { name: 'Diagonal Push' }, ja: { name: '斜め押し' },
+    ru: { name: 'Диагональный толчок' }, de: { name: 'Diagonalschub' },
+    fr: { name: 'Poussée diagonale' },
+  },
+  'chest-off-goal': {
+    'zh-Hans': { name: '箱可推离' }, 'zh-Hant': { name: '箱可推離' },
+    en: { name: 'Chest Off Goal' }, ja: { name: '箱ずらし' },
+    ru: { name: 'Сундук можно сдвинуть' }, de: { name: 'Kiste wegschieben' },
+    fr: { name: 'Coffre déplaçable' },
+  },
+  'mirror-pull': {
+    'zh-Hans': { name: '镜像拉箱' }, 'zh-Hant': { name: '鏡像拉箱' },
+    en: { name: 'Mirror Pull' }, ja: { name: '鏡像引き' },
+    ru: { name: 'Зеркальная тяга' }, de: { name: 'Spiegelzug' },
+    fr: { name: 'Tirage miroir' },
+  },
+  'phase-walk': {
+    'zh-Hans': { name: '相位穿行' }, 'zh-Hant': { name: '相位穿行' },
+    en: { name: 'Phase Walk' }, ja: { name: '位相移動' },
+    ru: { name: 'Фазовый шаг' }, de: { name: 'Phasengang' },
+    fr: { name: 'Marche de phase' },
+  },
+  'chest-detonate': {
+    'zh-Hans': { name: '箱落引爆' }, 'zh-Hant': { name: '箱落引爆' },
+    en: { name: 'Chest Detonate' }, ja: { name: '落下起爆' },
+    ru: { name: 'Детонация сундуков' }, de: { name: 'Kisten-Detonation' },
+    fr: { name: 'Détonation de coffre' },
+  },
+  'plane-eye': {
+    'zh-Hans': { name: '位面之眼' }, 'zh-Hant': { name: '位面之眼' },
+    en: { name: 'Plane Eye' }, ja: { name: '位相の眼' },
+    ru: { name: 'Око Плана' }, de: { name: 'Auge der Ebene' },
+    fr: { name: 'Œil de Plan' },
+  },
+  'knockback-plus-2': {
+    'zh-Hans': { name: '击退+2' }, 'zh-Hant': { name: '擊退+2' },
+    en: { name: 'Knockback +2' }, ja: { name: 'ノックバック+2' },
+    ru: { name: 'Отбрасывание +2' }, de: { name: 'Rückstoß +2' },
+    fr: { name: 'Repousser +2' },
+  },
+  'explode-plus-1': {
+    'zh-Hans': { name: '爆炸+1' }, 'zh-Hant': { name: '爆炸+1' },
+    en: { name: 'Blast +1' }, ja: { name: '爆発+1' },
+    ru: { name: 'Взрыв +1' }, de: { name: 'Explosion +1' },
+    fr: { name: 'Explosion +1' },
+  },
+} as const satisfies Readonly<Record<string, Readonly<Record<LocaleId, NameTextEntry>>>>;
+
+export type LawPatchNameTextId = keyof typeof LAW_PATCH_NAME_SOURCE;
+
+export const LAW_PATCH_NAME_TEXT: Readonly<Record<LawPatchNameTextId, Readonly<Record<LocaleId, NameTextEntry>>>> =
+  LAW_PATCH_NAME_SOURCE;
+
+/** 按表取名的通用实现：id 命中覆写表则用译文，未收录回落数据原文（同 levelName） */
+function nameFromTable(
+  locale: LocaleId,
+  id: string,
+  table: Readonly<Record<string, Readonly<Record<LocaleId, NameTextEntry>>>>,
+  fallback: string,
+): string {
+  return (table as Readonly<Record<string, Readonly<Record<LocaleId, NameTextEntry>>>>)[id]?.[locale]?.name ?? fallback;
+}
+
+/** 卡名 i18n（C4）：先查本表按语种覆写，未收录的 cardId 回落卡数据原文 */
+export function cardName(locale: LocaleId, card: { readonly id: string; readonly name: string }): string {
+  return nameFromTable(locale, card.id, CARD_NAME_SOURCE, card.name);
+}
+
+/** 武器名 i18n（C4）：同 cardName */
+export function weaponName(locale: LocaleId, weapon: { readonly id: string; readonly name: string }): string {
+  return nameFromTable(locale, weapon.id, WEAPON_NAME_SOURCE, weapon.name);
+}
+
+/** 法则补丁名 i18n（C4）：同 cardName（法则快捷栏芯片 = patch.name） */
+export function lawPatchName(locale: LocaleId, patch: { readonly id: string; readonly name: string }): string {
+  return nameFromTable(locale, patch.id, LAW_PATCH_NAME_SOURCE, patch.name);
 }

@@ -22,7 +22,7 @@ import { selectBattleState, useGameStore } from '../../core/store/gameStore';
 import { bus } from '../../core/events/bus';
 import type { CombatState, Dir, WeaponDef } from '../../core/types';
 import { WEAPONS, findEnemy, findWeapon } from '../../data';
-import { tUi } from '../../data/i18n/uiText';
+import { tUi, weaponName } from '../../data/i18n/uiText';
 
 /* ------------------------------ 纯逻辑导出 -------------------------------- */
 
@@ -64,7 +64,13 @@ export function CombatPanel({ onSkill }: { onSkill?: () => void }) {
   const phase = useGameStore((s) => s.phase);
   const locale = useGameStore((s) => s.locale);
   const enemyHp = combat?.enemyHp ?? 0;
-  const enemyShield = useGameStore((s) => selectBattleState(s)?.enemyShield ?? 0);
+  const battle = useGameStore((s) => selectBattleState(s));
+  const enemyShield = battle?.enemyShield ?? 0;
+  // C5：武器栏只渲染 battle.availableWeapons（本次战斗真实可装备的实例，
+  // 与 player.weapons 同源）—— 此前 WEAPONS.map 渲染全武器表，未持有的
+  // 迷吼tiao/大宝剑/拐杖也显示为可点按钮，点击被 selectWeapon 守卫拒绝弹 toast，
+  // 可见性与可用性不一致
+  const availableWeapons = battle?.availableWeapons ?? [];
   const [weaponFlash, setWeaponFlash] = useState<string | null>(null);
 
   if (combat === null || phase !== 'combat') return null;
@@ -94,11 +100,9 @@ export function CombatPanel({ onSkill }: { onSkill?: () => void }) {
     // 布阵相逃跑被引擎 enqueueAction 拒绝时只记 system 日志，而 system 条目不进
     // core 投影（toCoreCombatState 过滤）——按钮点了界面毫无变化。此处与 store 的
     // shove 阶段门禁同款：直接给 ui/toast 可见反馈，不再派发注定被拒的无效行动
+    //（C4 顺手收尾：提示原为硬编码中文整句，非中文语种下同样漏中文，改键控 combat.fleeLocked）
     if (isFormation) {
-      bus.publish({
-        type: 'ui/toast',
-        messageKey: '布阵阶段不能逃跑：调整站位/选好武器，确认布阵开打后再逃。',
-      });
+      bus.publish({ type: 'ui/toast', messageKey: 'combat.fleeLocked' });
       return;
     }
     store().combatAct('flee');
@@ -208,23 +212,26 @@ export function CombatPanel({ onSkill }: { onSkill?: () => void }) {
             </span>
           )}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            {WEAPONS.map((w) => {
-              const equipped = combat.equippedWeaponId === w.id;
+            {availableWeapons.map((instance) => {
+              const def = findWeapon(instance.defId);
+              // C4：武器名按语种解析（实例 name 是数据层中文副本，经 def 回查名称表）
+              const label = weaponName(locale, { id: instance.defId, name: instance.name });
+              const equipped = combat.equippedWeaponId === instance.defId;
               return (
                 <button
-                  key={w.id}
-                  onClick={() => equip(w.id)}
-                  title={`${w.name} · +${w.attack} — ${w.description}`}
+                  key={instance.uid}
+                  onClick={() => equip(instance.defId)}
+                  title={`${label} · +${instance.attack}${def !== undefined ? ` — ${def.description}` : ''}`}
                   className="chip"
                   style={{
                     cursor: 'pointer',
                     fontSize: 12,
-                    borderColor: equipped ? 'var(--neon-gold)' : weaponFlash === w.id ? 'var(--neon-cyan)' : undefined,
+                    borderColor: equipped ? 'var(--neon-gold)' : weaponFlash === instance.defId ? 'var(--neon-cyan)' : undefined,
                     color: equipped ? 'var(--neon-gold)' : 'var(--text-dim)',
                   }}
                 >
                   {equipped ? '✓ ' : ''}
-                  {w.name} +{w.attack}
+                  {label} +{instance.attack}
                 </button>
               );
             })}

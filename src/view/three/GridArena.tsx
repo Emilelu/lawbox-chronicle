@@ -12,7 +12,8 @@
  * （12 关 accent/fog/sky/双灯/地面墙，mixHex 派生，L9 per-plane 分支）；
  * 墙皮 14 阶按关 accent 重采样；theme.ts:384 的 phaseTiles 装饰通道扩为
  * 按关 deco 格（levelDeco）并入 instancedMesh 合批；每关一座主角装置
- * （heroProp，纯装饰不占格）。
+ * （heroProp，纯装饰不占格）。位面锚点渲染为浮空石板（planeAnchors，
+ * vfx.plane 同源色，阴阳两相恒可见）—— 兑现 levelGuide「浮空石板」承诺。
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
@@ -49,6 +50,37 @@ import {
   type TileField,
   type WorldVec3,
 } from './theme';
+
+/* ============================ 位面锚点（浮空石板） ========================== */
+
+/** 锚点石板悬浮高度（相对格面；比阴面 phaseTiles 抬得更高，肉眼可辨「这是可站的切换点」） */
+export const PLANE_ANCHOR_LIFT = 0.3 * CELL;
+/** 锚点石板厚度 */
+export const PLANE_ANCHOR_HEIGHT = 0.08 * CELL;
+/** 锚点石板边长（略小于整格，露出底格提示「可站上去」） */
+export const PLANE_ANCHOR_SIZE = 0.72 * CELL;
+
+/**
+ * 位面锚点 → 浮空石板实例字段（纯函数，GridArena 渲染与单测共用）。
+ * 阴阳两相恒可见（锚点是两面共用的 F 切换落点，levelGuide 的「浮空石板」承诺
+ * 由此兑现——此前 planeAnchors 仅 grid.ts playerOnAnchor 逻辑消费，全仓无视觉）。
+ */
+export function planeAnchorItems(
+  anchors: readonly Vec2[],
+  toWorld: (x: number, y: number) => WorldVec3,
+  heights: HeightMap | undefined,
+  color: string,
+): FieldItem[] {
+  return anchors.map((anchor) => {
+    const surface = heightOf(heights, anchor.x, anchor.y) * HEIGHT_STEP;
+    const [wx, , wz] = toWorld(anchor.x, anchor.y);
+    return {
+      position: [wx, surface + PLANE_ANCHOR_LIFT + PLANE_ANCHOR_HEIGHT / 2, wz] as WorldVec3,
+      scale: [PLANE_ANCHOR_SIZE, PLANE_ANCHOR_HEIGHT, PLANE_ANCHOR_SIZE] as WorldVec3,
+      color,
+    };
+  });
+}
 import {
   levelDeco,
   levelHeroProp,
@@ -159,6 +191,8 @@ interface ArenaChunkProps {
   /** 远景低模 LOD（主区在域外时的过场形态） */
   readonly lowDetail: boolean;
   readonly hazardCells: readonly Vec2[];
+  /** 位面锚点（当前关的浮空石板；远景低模块不渲染） */
+  readonly planeAnchors: readonly Vec2[];
   readonly complete: boolean;
   /** 墙皮重掷纪元（A2-2 透传链：GridArena → ArenaChunk → FullDetailChunk） */
   readonly wallSkinEpoch: number;
@@ -213,7 +247,7 @@ function LowDetailChunk({ field, area, theme, heights }: {
 }
 
 /** 近景完整块：逐格合批（每材质 1 draw call）+ 按关装饰格 + 门体 */
-function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heights, complete, wallSkinEpoch }: {
+function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, planeAnchors, heights, complete, wallSkinEpoch }: {
   field: TileField;
   grid: Grid;
   area: AreaId;
@@ -221,6 +255,8 @@ function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heigh
   /** 当前关 id（FullDetailChunk 只渲染当前关所在块） */
   levelId: string | null;
   hazardCells: readonly Vec2[];
+  /** 位面锚点（当前关的浮空石板；远景低模块不渲染） */
+  planeAnchors: readonly Vec2[];
   heights: HeightMap | undefined;
   complete: boolean;
   /** 墙皮重掷纪元（A2-2：cheatRegistry.wallSkinEpoch 透传；0 = 基线 ramp） */
@@ -370,6 +406,12 @@ function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heigh
     [hazardCells, toWorld, theme, heights],
   );
 
+  // 位面锚点浮空石板（C1 视觉收尾）：位面切换 VFX 同源色（vfx.plane），阴阳两相恒可见
+  const anchorItems = useMemo<FieldItem[]>(
+    () => planeAnchorItems(planeAnchors, toWorld, heights, theme.vfx.plane),
+    [planeAnchors, toWorld, heights, theme],
+  );
+
   return (
     <group>
       <InstancedField items={abyssItems} shape="box" roughness={1} />
@@ -405,6 +447,15 @@ function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heigh
         metalness={0.1}
       />
       <InstancedField items={spikeItems} shape="cone" roughness={0.55} metalness={0.3} />
+      {/* 位面锚点浮空石板：阴阳两相恒可见（F 切换落点的可视承诺） */}
+      <InstancedField
+        items={anchorItems}
+        shape="box"
+        emissive={theme.vfx.plane}
+        emissiveIntensity={0.6}
+        roughness={0.4}
+        metalness={0.2}
+      />
       {gates.map((gate) => {
         const surface = surfaceAt(gate.x, gate.y);
         const [wx, , wz] = toWorld(gate.x, gate.y);
@@ -423,7 +474,7 @@ function FullDetailChunk({ field, grid, area, theme, levelId, hazardCells, heigh
 }
 
 function ArenaChunk(props: ArenaChunkProps) {
-  const { grid, area, yin, levelId, lowDetail, hazardCells, heights, complete, wallSkinEpoch } = props;
+  const { grid, area, yin, levelId, lowDetail, hazardCells, planeAnchors, heights, complete, wallSkinEpoch } = props;
   const field = useMemo(() => deriveTileField(grid, heights), [grid, heights]);
   // THEME-3：位面换肤升级为「位面 × 关卡」双维解析（levelThemes 缓存，引用稳定）
   const theme = resolveLevelTheme(levelId, yin);
@@ -436,6 +487,7 @@ function ArenaChunk(props: ArenaChunkProps) {
       theme={theme}
       levelId={levelId}
       hazardCells={hazardCells}
+      planeAnchors={planeAnchors}
       heights={heights}
       complete={complete}
       wallSkinEpoch={wallSkinEpoch}
@@ -533,6 +585,8 @@ export interface GridArenaProps {
   readonly heights?: HeightMap;
   /** 尖刺格（terrain 武器扩展字段；engine 数据就绪后传入） */
   readonly hazardCells?: readonly Vec2[];
+  /** 位面锚点（当前关 geometry.planeAnchors；缺省空表 = 本关无锚点视觉） */
+  readonly planeAnchors?: readonly Vec2[];
   /** 关卡完成（全部箱落基座）→ 法则之门溶解开启 */
   readonly complete: boolean;
   /** 墙皮重掷纪元（A2-2：cheatRegistry.wallSkinEpoch；0 = 基线 ramp，缺省不改观感） */
@@ -543,7 +597,7 @@ export interface GridArenaProps {
  * 区域分块挂载：主区 + 当前外域常驻，其余外域不挂载（进出时挂/卸）。
  * 主区在域外时以低模 LOD 形态常驻（远景过场合并低模）。
  */
-export function GridArena({ grid, currentArea, yin, levelId, heights, hazardCells = [], complete, wallSkinEpoch = 0 }: GridArenaProps) {
+export function GridArena({ grid, currentArea, yin, levelId, heights, hazardCells = [], planeAnchors = [], complete, wallSkinEpoch = 0 }: GridArenaProps) {
   const mounted = selectMountedAreas(currentArea);
   const mainLevel = useMemo(() => findLevel(LEVELS.find((l) => l.area === 'main')?.id ?? ''), []);
 
@@ -573,6 +627,7 @@ export function GridArena({ grid, currentArea, yin, levelId, heights, hazardCell
           levelId={mainLevelId}
           lowDetail={!currentIsMain}
           hazardCells={currentIsMain ? hazardCells : []}
+          planeAnchors={currentIsMain ? planeAnchors : []}
           heights={currentIsMain ? heights : undefined}
           complete={currentIsMain && complete}
           wallSkinEpoch={wallSkinEpoch}
@@ -586,6 +641,7 @@ export function GridArena({ grid, currentArea, yin, levelId, heights, hazardCell
           levelId={levelId ?? null}
           lowDetail={false}
           hazardCells={hazardCells}
+          planeAnchors={planeAnchors}
           heights={heights}
           complete={complete}
           wallSkinEpoch={wallSkinEpoch}

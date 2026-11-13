@@ -24,7 +24,7 @@ import { CARDS, GACHA_FLAVOR } from '../../data/gacha';
 import { FORMAL_POOL } from '../../data/gacha/pools';
 import { LEVELS } from '../../data/levels';
 import { LOCALE_NAMES, t } from '../../data/i18n';
-import { tUi } from '../../data/i18n/uiText';
+import { cardName, tUi } from '../../data/i18n/uiText';
 import { bus } from '../../core/events/bus';
 import { installDemandCanvasWake, RootReadyProbe } from '../three/WorldCanvas';
 
@@ -102,13 +102,16 @@ function Scene() {
 
 /**
  * 逐抽卡名本地化：与 ArchivePanel.pullLabel 同一口径 ——
- * 怀旧展品（cardId 不指向卡表）按稀有度标名；正式卡查卡表取卡名，查无则回落原 id。
+ * 怀旧展品（cardId 不指向卡表）按稀有度经 archive.nostalgiaStar 键控标名；
+ * 正式卡经 uiText.cardName 按语种取卡名（未收录 id 回落卡表原文），查无则回落原 id。
+ * locale 缺省 zh-Hans —— 保持三参调用（纯逻辑测试）语义不变。
  */
-export function pullCardLabel(cardId: string, rarity: number, cards: readonly CardDef[] = CARDS): string {
+export function pullCardLabel(cardId: string, rarity: number, cards: readonly CardDef[] = CARDS, locale: LocaleId = 'zh-Hans'): string {
   if (cardId.startsWith('nostalgia-star-')) {
-    return rarity === 4 ? '怀旧展品·4★' : rarity === 3 ? '怀旧展品·3★' : '怀旧展品·2★';
+    return tUi(locale, 'archive.nostalgiaStar', { n: rarity });
   }
-  return cards.find((c) => c.id === cardId)?.name ?? cardId;
+  const card = cards.find((c) => c.id === cardId);
+  return card !== undefined ? cardName(locale, card) : cardId;
 }
 
 /**
@@ -210,8 +213,8 @@ export function WelcomeScreen() {
           >
             <span style={{ color: 'var(--neon-gold)' }}>{'★'.repeat(Math.max(...lastResult.pulls.map((p) => p.rarity)))}</span>{' '}
             <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>
-              {lastResult.pulls.map((p) => pullCardLabel(p.cardId, p.rarity)).join(' · ')}
-              {lastResult.pityTriggered !== 'none' ? ' ｜保底发动' : ''}
+              {lastResult.pulls.map((p) => pullCardLabel(p.cardId, p.rarity, CARDS, locale)).join(' · ')}
+              {lastResult.pityTriggered !== 'none' ? ` ｜${tUi(locale, 'gacha.pityTriggered')}` : ''}
             </span>
           </motion.div>
         )}

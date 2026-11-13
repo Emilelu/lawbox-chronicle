@@ -45,6 +45,12 @@ describe('summarizeResult · 结算摘要（真实关卡表）', () => {
   it('未知 levelId（坏档）→ null，由组件走可关闭兜底（S11）', () => {
     expect(summarizeResult({ levelId: 'level-ghost', stars: 3, steps: 1 }, findLevel)).toBeNull();
   });
+
+  it('C4：奖励法则卡名按语种解析（en 下结算弹窗不再显示数据层中文卡名）', () => {
+    const summary = summarizeResult({ levelId: 'level-sb-01', stars: 3, steps: 42 }, findLevel, 'en');
+    expect(summary?.lawCardName).toBe('Law · Feather Chest');
+    expect(summary?.lawCardName).not.toContain('法则');
+  });
 });
 
 describe('B3-3 · 会话生成关卡的完整结算（findLevelAny 注入）', () => {

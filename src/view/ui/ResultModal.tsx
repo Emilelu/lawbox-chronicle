@@ -16,7 +16,7 @@ import { findLevelAny, useGameStore } from '../../core/store/gameStore';
 import { starStoneReward } from '../../core/formula';
 import { CARDS, LEVELS } from '../../data';
 import type { LevelDef, LocaleId } from '../../core/types';
-import { levelName as levelNameI18n, stripBr, tUi } from '../../data/i18n/uiText';
+import { cardName, levelName as levelNameI18n, stripBr, tUi } from '../../data/i18n/uiText';
 import { rarityColor } from './GachaOverlay';
 
 /* ------------------------------ 纯逻辑导出 -------------------------------- */
@@ -56,7 +56,8 @@ export function summarizeResult(
     steps: result.steps,
     parThreeStar: level.parSteps[0],
     rewardStones: starStoneReward(result.stars, level.reward.starStones),
-    lawCardName: lawCard?.name ?? null,
+    // C4：奖励法则卡名按语种解析（与 levelName 同在摘要纯函数内取 locale）
+    lawCardName: lawCard !== undefined ? cardName(locale, lawCard) : null,
     lawCardRarity: lawCard?.rarity ?? null,
   };
 }

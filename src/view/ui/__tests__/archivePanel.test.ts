@@ -12,12 +12,14 @@ import { createRoot, type Root } from 'react-dom/client';
 import type { CardDef } from '../../../core/types';
 import type { PullRecord, StatsState } from '../../../archive/statsCollector';
 import { useGameStore } from '../../../core/store/gameStore';
+import { CARDS as ALL_CARDS } from '../../../data/gacha';
 import { tUi } from '../../../data/i18n/uiText';
 import {
   ArchivePanel,
   achievementRows,
   codexRows,
   curvePolyline,
+  formatAt,
   latestPulls,
   poolComparison,
   pullLabel,
@@ -147,6 +149,39 @@ describe('pullLabel · 逐抽标签', () => {
     expect(pullLabel(nostalgia3, CARDS, 'en')).toBe('Nostalgia exhibit · 3★');
     expect(pullLabel(nostalgia3, CARDS, 'en')).not.toMatch(/怀旧/);
     expect(pullLabel(nostalgia3, CARDS)).toBe('怀旧展品·3★');
+  });
+
+  it('C4：正式卡标签经 uiText.cardName 按语种解析（en 下不再显示数据层中文卡名）', () => {
+    const record: PullRecord = {
+      uid: 'o2',
+      cardId: 'card-chr-caixukun',
+      rarity: 2,
+      isNew: false,
+      poolId: 'star-wish-altar',
+      pullIndex: 2,
+      at: 2,
+    };
+    expect(pullLabel(record, ALL_CARDS, 'zh-Hans')).toBe('蔡徐坤');
+    expect(pullLabel(record, ALL_CARDS, 'en')).toBe('Cai Xukun');
+    expect(pullLabel(record, ALL_CARDS, 'en')).not.toMatch(/蔡徐坤/);
+  });
+});
+
+describe('formatAt · 时间戳按语种格式化（C3 回归防线）', () => {
+  /** 正午 UTC 固定时刻：极端时区也不会翻转「年/日 AM-PM」两类断言 */
+  const AT = Date.UTC(2026, 10, 14, 6, 14, 0);
+
+  it('zh-Hans 为 24 小时制年先行格式（不含 AM/PM 标记）——修复前是 en-US 12 小时制', () => {
+    const zh = formatAt(AT, 'zh-Hans');
+    expect(zh).toContain('2026');
+    expect(zh).not.toMatch(/AM|PM/);
+    expect(zh).not.toBe(formatAt(AT, 'en'));
+  });
+
+  it('en 保留 12 小时制 AM/PM 格式（非中文语种行为不回退）', () => {
+    const en = formatAt(AT, 'en');
+    expect(en).toMatch(/AM|PM/);
+    expect(en).toContain('2026');
   });
 });
 

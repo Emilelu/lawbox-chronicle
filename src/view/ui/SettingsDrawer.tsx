@@ -271,9 +271,10 @@ export function SettingsDrawer() {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <h3 style={{ fontSize: 18, letterSpacing: '0.14em' }}>
-          {activePanel === 'rulebook' ? tUi(locale, 'rulebook.title') : tUi(locale, 'tab.general')}
-        </h3>
+        {/* C2：标题跟随内部页签 tab（而非 activePanel 身份）—— 页签点击只改
+            tab，此前标题仍按 activePanel 二值渲染，📜 进来点「常规」后标题
+            仍是「规则手册」，与内容脱节；TAB_TAB_KEY 与页签按钮同源同口径 */}
+        <h3 style={{ fontSize: 18, letterSpacing: '0.14em' }}>{tUi(locale, TAB_TAB_KEY[tab])}</h3>
         <span style={{ flex: 1 }} />
         <button className="chip" style={{ cursor: 'pointer' }} onClick={() => store().closeOverlay()}>
           ✕ {tUi(locale, 'ui.close')}

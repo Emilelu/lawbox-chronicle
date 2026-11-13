@@ -348,6 +348,21 @@ describe('F4 —— HUD 模型按语种解析关卡名/副标题', () => {
     const zh = selectHudModel(useGameStore.getState());
     expect(zh.levelName).toBe('初醒箱庭');
   });
+
+  it('C4：HUD 武器名（weaponName）随 locale 切换 —— en 下「ATK · 篮球」不再漏中文', () => {
+    store().startLevel('level-sb-01');
+    // 装备篮球（真实武器表 id；HUD 武器名此前恒读数据层中文 name）
+    useGameStore.setState((s) => ({ player: { ...s.player, weaponId: 'weapon-basketball' } }));
+    useGameStore.setState({ locale: 'en' });
+    const en = selectHudModel(useGameStore.getState());
+    expect(en.weaponName).toBe('Basketball');
+    useGameStore.setState({ locale: 'zh-Hans' });
+    const zh = selectHudModel(useGameStore.getState());
+    expect(zh.weaponName).toBe('篮球');
+    // 未装备武器： weaponName 归 null（HUD 不显示武器段）——与既有语义一致
+    useGameStore.setState((s) => ({ player: { ...s.player, weaponId: null } }));
+    expect(selectHudModel(useGameStore.getState()).weaponName).toBeNull();
+  });
 });
 
 /* ================== 战斗演出转译（R2 · store→bus→表现层） ================== */

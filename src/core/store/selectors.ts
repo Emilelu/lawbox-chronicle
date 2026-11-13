@@ -12,7 +12,7 @@ import { findLevelAny } from './gameStore';
 import { findWeapon } from '../../data/weapons';
 import { GACHA_CONFIG, CARDS } from '../../data/gacha';
 import { LAW_PATCHES, type LawPatchDef } from '../lawRegistry';
-import { levelName as levelNameI18n, levelSubtitle as levelSubtitleI18n } from '../../data/i18n/uiText';
+import { levelName as levelNameI18n, levelSubtitle as levelSubtitleI18n, weaponName as weaponNameI18n } from '../../data/i18n/uiText';
 
 /** 实体占位表（id→entity），每调用现算 */
 export function selectOccupancy(state: GameState): Map<string, GridEntity> {
@@ -74,7 +74,9 @@ export function selectHudModel(state: GameState): HudModel {
     hp: state.player.hp,
     maxHp: state.player.maxHp,
     attack: Math.round((state.player.baseAttack + weaponBonus) * state.ruleSet.playerAttackMul),
-    weaponName: weapon?.name ?? null,
+    // C4：武器名按语种解析（与上方 levelName/areaName 的 F4 同款——非中文语种
+    // 下 HUD「ATK 60 · 篮球」此前恒显示数据层中文武器名）
+    weaponName: weapon !== undefined ? weaponNameI18n(state.locale, weapon) : null,
   };
 }
 

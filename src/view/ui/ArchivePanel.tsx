@@ -36,7 +36,7 @@ import { CARDS } from '../../data/gacha';
 import { ACHIEVEMENTS, type AchievementDef } from '../../data/lore/achievements';
 import { NOSTALGIA_POOL_INFO, RATE_DISCLOSURE } from '../../data/gacha/pools';
 import type { CardDef, LocaleId } from '../../core/types';
-import { formatPercent, tUi } from '../../data/i18n/uiText';
+import { cardName, formatPercent, tUi } from '../../data/i18n/uiText';
 import { rarityColor, rarityStars } from './GachaOverlay';
 
 /* ============================== 面板开关分片 =============================== */
@@ -121,13 +121,16 @@ export function latestPulls(pullHistory: readonly PullRecord[], limit: number): 
 
 /**
  * 逐抽记录的可读标签：怀旧展品按稀有度标名（键控 archive.nostalgiaStar，A4-5 收尾）；
- * 正式卡回落到卡名。locale 缺省 zh-Hans——保持两参调用（纯逻辑测试）语义不变。
+ * 正式卡经 uiText.cardName 按语种取卡名（C4：此前直接读数据层中文 name，
+ * 非中文语种下逐抽记录恒显示中文卡名）。locale 缺省 zh-Hans——保持两参调用
+ * （纯逻辑测试）语义不变。
  */
 export function pullLabel(record: PullRecord, cards: readonly CardDef[], locale: LocaleId = 'zh-Hans'): string {
   if (record.cardId.startsWith('nostalgia-star-')) {
     return tUi(locale, 'archive.nostalgiaStar', { n: record.rarity });
   }
-  return cards.find((c) => c.id === record.cardId)?.name ?? record.cardId;
+  const card = cards.find((c) => c.id === record.cardId);
+  return card !== undefined ? cardName(locale, card) : record.cardId;
 }
 
 export interface PoolComparison {
@@ -167,8 +170,14 @@ export function curvePolyline(
   return points.map((p) => `${px(p.pulls)},${py(p.fourStarRate)}`).join(' ');
 }
 
-function formatAt(at: number): string {
-  return new Date(at).toLocaleString();
+/**
+ * 时间戳格式化（C3）：toLocaleString 必须显式传 locale —— 此前无参调用回落
+ * 运行环境缺省 locale（实测 en-US 12 小时制），中文界面下图鉴首获/成就解锁/
+ * 逐抽记录的时间全是「11/14/2026, 2:14:00 AM」式英文格式。
+ * 导出供纯逻辑单测（年序/12 小时制标记的语种差异断言）。
+ */
+export function formatAt(at: number, locale: LocaleId): string {
+  return new Date(at).toLocaleString(locale);
 }
 function rateText(rate: number | null): string {
   return rate === null ? '—' : formatPercent(rate);
@@ -344,14 +353,14 @@ export function ArchivePanel() {
                 <span style={{ color: rarityColor(row.card.rarity), letterSpacing: '0.12em', fontSize: 12 }}>
                   {rarityStars(row.card.rarity)}
                 </span>
-                <span style={{ fontWeight: 700 }}>{row.card.name}</span>
+                <span style={{ fontWeight: 700 }}>{cardName(locale, row.card)}</span>
                 <span className="chip" style={{ fontSize: 10.5, padding: '1px 8px' }}>
                   {row.card.kind === 'law' ? tUi(locale, 'deck.lawCard') : tUi(locale, 'deck.characterCard')}
                 </span>
                 <span style={{ flex: 1 }} />
                 {row.obtained ? (
                   <span style={{ fontSize: 11.5, color: 'var(--neon-cyan)' }}>
-                    {tUi(locale, 'archive.firstSeen')} {formatAt(row.firstSeenAt ?? 0)} · {tUi(locale, 'archive.obtainTimes', { n: row.obtainedCount })}
+                    {tUi(locale, 'archive.firstSeen')} {formatAt(row.firstSeenAt ?? 0, locale)} · {tUi(locale, 'archive.obtainTimes', { n: row.obtainedCount })}
                   </span>
                 ) : (
                   <span style={{ fontSize: 11.5, color: 'var(--text-dim)' }}>{tUi(locale, 'archive.notObtained')}</span>
@@ -376,7 +385,7 @@ export function ArchivePanel() {
                 <span style={{ flex: 1 }} />
                 {row.unlocked ? (
                   <span className="chip" style={{ fontSize: 10.5, color: 'var(--neon-cyan)', borderColor: 'rgba(0,229,255,0.5)' }}>
-                    ✓ {tUi(locale, 'archive.unlocked')} · {formatAt(row.unlockedAt ?? 0)}
+                    ✓ {tUi(locale, 'archive.unlocked')} · {formatAt(row.unlockedAt ?? 0, locale)}
                   </span>
                 ) : (
                   <span className="chip" style={{ fontSize: 10.5 }}>{row.def.secret === true ? tUi(locale, 'archive.hiddenAch') : tUi(locale, 'archive.locked')}</span>
@@ -438,7 +447,7 @@ export function ArchivePanel() {
                   <span style={{ color: rarityColor(record.rarity), letterSpacing: '0.12em', fontSize: 12 }}>{rarityStars(record.rarity)}</span>
                   <span style={{ fontSize: 13 }}>{label}</span>
                   <span style={{ flex: 1 }} />
-                  <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{formatAt(record.at)}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{formatAt(record.at, locale)}</span>
                 </div>
               );
             })

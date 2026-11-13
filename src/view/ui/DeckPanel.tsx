@@ -17,7 +17,7 @@ import { useGameStore } from '../../core/store/gameStore';
 import { CARDS } from '../../data/gacha';
 import { WEAPONS, findEnemy, findWeapon } from '../../data';
 import type { CardDef, CardInstance, Rarity } from '../../core/types';
-import { tUi } from '../../data/i18n/uiText';
+import { cardName, tUi, weaponName } from '../../data/i18n/uiText';
 import { rarityColor, rarityStars } from './GachaOverlay';
 import { ShopPanel } from './ShopPanel';
 
@@ -141,7 +141,7 @@ export function DeckPanel() {
         <span style={{ color: rarityColor(group.card.rarity), letterSpacing: '0.12em', fontSize: 13 }}>
           {rarityStars(group.card.rarity)}
         </span>
-        <span style={{ fontWeight: 700 }}>{group.card.name}</span>
+        <span style={{ fontWeight: 700 }}>{cardName(locale, group.card)}</span>
         <span className="chip" style={{ fontSize: 10.5, padding: '1px 8px' }}>
           {group.card.kind === 'law' ? tUi(locale, 'deck.lawCard') : tUi(locale, 'deck.characterCard')}
         </span>
@@ -266,7 +266,7 @@ export function DeckPanel() {
               {tUi(locale, 'combat.weapon')}：
               {equippedWeapon !== undefined ? (
                 <b style={{ color: 'var(--neon-gold)' }}>
-                  {equippedWeapon.name} +{equippedWeapon.attack}
+                  {weaponName(locale, equippedWeapon)} +{equippedWeapon.attack}
                 </b>
               ) : (
                 tUi(locale, 'combat.unarmed')
@@ -280,7 +280,7 @@ export function DeckPanel() {
             return (
               <div key={w.id} className="glass" style={{ padding: '9px 14px', display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <b style={{ color: isEquipped ? 'var(--neon-gold)' : 'var(--text-primary)' }}>{w.name}</b>
+                  <b style={{ color: isEquipped ? 'var(--neon-gold)' : 'var(--text-primary)' }}>{weaponName(locale, w)}</b>
                   <span style={{ fontSize: 12.5, color: 'var(--neon-cyan)' }}>+{w.attack}</span>
                   {isEquipped ? (
                     <span className="chip" style={{ fontSize: 10.5, color: 'var(--neon-gold)' }}>{tUi(locale, 'deck.currentWeapon')}</span>

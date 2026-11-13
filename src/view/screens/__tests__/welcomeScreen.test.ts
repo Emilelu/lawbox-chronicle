@@ -2,8 +2,10 @@
  * 欢迎页 · pullCardLabel / roll1ButtonLabel 纯逻辑单测。
  * ---------------------------------------------------------------------------
  * 覆盖「最近抽卡」槽位的卡名本地化口径（与 ArchivePanel.pullLabel 一致）：
- * 正式卡查卡表显示卡名（蔡徐坤 / 星光护符），怀旧展品按稀有度标名，
- * 查无此卡回落原始 id。
+ * 正式卡经 uiText.cardName 按语种查名（zh-Hans 与数据原文一致），怀旧展品按
+ * 稀有度经 archive.nostalgiaStar 键控标名，查无此卡回落原始 id。
+ * C4：locale 为第 4 参（缺省 zh-Hans，兼容三参调用）——en 下卡名/展品标名
+ * 不再是中文。
  * B3-7/B4-9：单抽按钮文案定价与余额分开标注 —— 定价段取 pools 定价常量
  * （与 GachaOverlay「单抽 · 100◈」同口径），余额段经 gacha.balance 键控标注，
  * 持有余额不再拼成价格样式的「（N◈）」。
@@ -50,6 +52,20 @@ describe('pullCardLabel · 最近抽卡卡名本地化', () => {
     const subset = CARDS.filter((c) => c.id === 'card-chr-caixukun');
     expect(pullCardLabel('card-chr-caixukun', 2, subset)).toBe('蔡徐坤');
     expect(pullCardLabel('card-buff-starlight-charm', 2, subset)).toBe('card-buff-starlight-charm');
+  });
+
+  it('C4：locale 参数按语种解析卡名（en 下不再显示中文卡名），缺省 zh-Hans 兼容三参调用', () => {
+    expect(pullCardLabel('card-chr-caixukun', 2, CARDS, 'en')).toBe('Cai Xukun');
+    const lawCard = CARDS.find((c) => c.id === 'card-law-plane-eye')!;
+    expect(pullCardLabel(lawCard.id, lawCard.rarity, CARDS, 'en')).toBe('Law · Plane Eye');
+    expect(pullCardLabel('card-buff-starlight-charm', 2, CARDS, 'ja')).toBe('星光のお守り');
+    // 未收录卡 id：locale 不影响回落行为
+    expect(pullCardLabel('card-unknown-future', 2, CARDS, 'en')).toBe('card-unknown-future');
+  });
+
+  it('C4：怀旧展品标名也随语种（en：Nostalgia exhibit · N★）', () => {
+    expect(pullCardLabel('nostalgia-star-four', 4, CARDS, 'en')).toBe('Nostalgia exhibit · 4★');
+    expect(pullCardLabel('nostalgia-star-three', 3, CARDS, 'en')).not.toMatch(/怀旧/);
   });
 });
 

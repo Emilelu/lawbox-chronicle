@@ -542,6 +542,7 @@ function SceneContent({ pinnedInfo, onPin }: {
       />
 
       {/* 竞技场（点地面关闭信息卡）；战斗布阵时 grid = 战场网格、hazardCells = 尖刺；
+          planeAnchors = 位面锚点浮空石板（C1：锚点此前全仓无视觉，玩家只能盲试 F）；
           A2-2：wallSkinEpoch 透传 —— 「墙皮重掷」作弊按键后 14 阶墙皮确定性重排 */}
       <group onPointerDown={() => onPin(null)}>
         <GridArena
@@ -551,6 +552,7 @@ function SceneContent({ pinnedInfo, onPin }: {
           levelId={levelId}
           heights={heights}
           hazardCells={spikeCells}
+          planeAnchors={geometry?.planeAnchors ?? []}
           complete={complete}
           wallSkinEpoch={cheatVisuals.wallSkinEpoch}
         />

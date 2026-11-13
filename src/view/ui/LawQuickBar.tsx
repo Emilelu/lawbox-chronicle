@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGameStore } from '../../core/store/gameStore';
 import { selectActiveLawChips } from '../../core/store/selectors';
-import { tUi } from '../../data/i18n/uiText';
+import { lawPatchName, tUi } from '../../data/i18n/uiText';
 import { rarityColor, rarityStars } from './GachaOverlay';
 
 export function LawQuickBar() {
@@ -72,7 +72,8 @@ export function LawQuickBar() {
             >
               <span style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
                 <span style={{ fontSize: 10.5, color: rarityColor(chip.rarity) }}>{rarityStars(chip.rarity)}</span>
-                <span style={{ fontSize: 12.5, color: 'var(--text-primary)' }}>{chip.name}</span>
+                {/* C4：法则补丁名按语种解析（chip.name 是 lawRegistry 数据层中文） */}
+                <span style={{ fontSize: 12.5, color: 'var(--text-primary)' }}>{lawPatchName(locale, chip)}</span>
               </span>
               {open && <span style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.5 }}>{chip.description}</span>}
             </motion.button>

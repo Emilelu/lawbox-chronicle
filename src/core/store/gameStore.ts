@@ -50,7 +50,7 @@ import { starRating, starStoneReward, clampHp } from '../formula';
 import { findEnemy, findLevel } from '../../data';
 import { createWeaponInstance } from '../../data/weapons';
 import { CARDS, GACHA_FLAVOR } from '../../data/gacha';
-import { tUi, type UiTextKey } from '../../data/i18n/uiText';
+import { cardName, tUi, type UiTextKey } from '../../data/i18n/uiText';
 import { FORMAL_POOL, NOSTALGIA_PARAMS, gachaCost } from '../../data/gacha/pools';
 import { ALL_SCRIPTS, STORY_SOLVERS, ALL_TRIGGER_RULES } from '../../data/storyScripts';
 import { runMetaTerminalCommand } from '../../data/story/hiddenGame';
@@ -1591,11 +1591,12 @@ export const useGameStore = create<GameStore>()(
             return;
           }
           if (card.kind !== 'law') {
-            reject(tUi(locale, 'toast.redeemNotLawCard', { name: card.name }));
+            // C4：卡名插值经 cardName 按语种解析（此前恒插数据层中文卡名）
+            reject(tUi(locale, 'toast.redeemNotLawCard', { name: cardName(locale, card) }));
             return;
           }
           if (state.gacha.owned.some((o) => o.cardId === cardId)) {
-            reject(tUi(locale, 'toast.redeemAlreadyOwned', { name: card.name }));
+            reject(tUi(locale, 'toast.redeemAlreadyOwned', { name: cardName(locale, card) }));
             return;
           }
           if (state.pity.shards < FORMAL_POOL.pity.redeemCost) {
@@ -1632,9 +1633,9 @@ export const useGameStore = create<GameStore>()(
           bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-16' });
           bus.publish({
             type: 'ui/toast',
-            // B4-5：成功 toast 键控插值（toast.redeemSuccess，卡名按内容语言事实源）
+            // B4-5：成功 toast 键控插值（toast.redeemSuccess；C4：卡名按语种解析）
             messageKey: tUi(get().locale, 'toast.redeemSuccess', {
-              name: lawCard?.name ?? outcome.cardId,
+              name: lawCard !== undefined ? cardName(get().locale, lawCard) : outcome.cardId,
               cost: FORMAL_POOL.pity.redeemCost,
             }),
           });
@@ -1685,8 +1686,11 @@ export const useGameStore = create<GameStore>()(
             // 角色卡：编入卡组（战斗开局结算 buff，对话分支经 card: 镜像判定）
             set({ gacha: { ...state.gacha, activeLaws: [...state.gacha.activeLaws, card.id] } });
             bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-16' });
-            // B4-5：键控插值 toast（toast.cardEnrolled，7 语种；卡名保留中文属内容语言决策）
-            bus.publish({ type: 'ui/toast', messageKey: tUi(get().locale, 'toast.cardEnrolled', { name: card.name }) });
+            // B4-5：键控插值 toast（toast.cardEnrolled，7 语种；C4：卡名按语种解析）
+            bus.publish({
+              type: 'ui/toast',
+              messageKey: tUi(get().locale, 'toast.cardEnrolled', { name: cardName(get().locale, card) }),
+            });
             return;
           }
 

@@ -18,7 +18,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useGameStore } from '../../core/store/gameStore';
 import { CARDS, GACHA_CONFIG, GACHA_FLAVOR } from '../../data/gacha';
 import type { CardDef, GachaPullResult, Rarity } from '../../core/types';
-import { formatPercent, tUi } from '../../data/i18n/uiText';
+import { cardName, formatPercent, tUi } from '../../data/i18n/uiText';
 import chestImg from '../../assets/imgs/items/chest.png';
 
 /* ------------------------------ 纯逻辑导出 -------------------------------- */
@@ -294,7 +294,10 @@ export function GachaOverlay() {
                   <span style={{ color: rarityColor(pull.rarity), letterSpacing: '0.18em', fontSize: isTenPull ? 12 : 18 }}>
                     {rarityStars(pull.rarity)}
                   </span>
-                  <span style={{ fontSize: isTenPull ? 12.5 : 15, lineHeight: 1.4 }}>{card?.name ?? pull.cardId}</span>
+                  {/* C4：卡名按语种解析（抽卡揭示面此前恒显示数据层中文卡名） */}
+                  <span style={{ fontSize: isTenPull ? 12.5 : 15, lineHeight: 1.4 }}>
+                    {card !== undefined ? cardName(locale, card) : pull.cardId}
+                  </span>
                   <span style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>
                     {card?.kind === 'law' ? tUi(locale, 'deck.lawCard') : card?.kind === 'character' ? tUi(locale, 'deck.characterCard') : ''}
                   </span>

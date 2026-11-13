@@ -14,6 +14,7 @@ import { useGameStore } from '../../core/store/gameStore';
 import { CARDS } from '../../data/gacha';
 import { FORMAL_POOL } from '../../data/gacha/pools';
 import type { CardDef } from '../../core/types';
+import { cardName } from '../../data/i18n/uiText';
 import { rarityColor, rarityStars } from './GachaOverlay';
 
 /* ============================== 纯逻辑导出 ================================ */
@@ -45,6 +46,7 @@ export function shopLawItems(
 export function ShopPanel() {
   const shards = useGameStore((s) => s.pity.shards);
   const owned = useGameStore((s) => s.gacha.owned);
+  const locale = useGameStore((s) => s.locale);
   const ownedIds = new Set(owned.map((o) => o.cardId));
   const redeemCost = FORMAL_POOL.pity.redeemCost;
   const items = shopLawItems(CARDS, ownedIds, shards, redeemCost);
@@ -68,7 +70,7 @@ export function ShopPanel() {
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ color: rarityColor(item.card.rarity), letterSpacing: '0.12em', fontSize: 12 }}>{rarityStars(item.card.rarity)}</span>
-            <span style={{ fontWeight: 700 }}>{item.card.name}</span>
+            <span style={{ fontWeight: 700 }}>{cardName(locale, item.card)}</span>
             <span style={{ flex: 1 }} />
             {item.owned ? (
               <span className="chip" style={{ fontSize: 10.5, color: 'var(--neon-cyan)', borderColor: 'rgba(0,229,255,0.5)' }}>✓ 已持有</span>
