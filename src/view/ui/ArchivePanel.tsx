@@ -54,11 +54,18 @@ interface ArchivePanelStore {
 export const useArchivePanelStore = create<ArchivePanelStore>()((set) => ({
   open: false,
   tab: 'codex',
-  // A4-4 互斥：打开（非关闭）时先广播 ui/closePanels 关掉选关/攻略等其它分片
-  // 面板，再翻转自己。广播同步送达订阅者，本面板若已开不受影响（willOpen=false）。
+  // A4-4 互斥 + B3-8 反向互斥补全：开启（非关闭）时先调 gameStore.closeOverlay
+  // 关掉主浮层（activePanel 归 none、gacha 相复位、结算清空），该方法顺带广播
+  // ui/closePanels 关掉选关/攻略等其它分片面板 —— 兑现 openPanel 注释承诺的
+  // 「分片 open 广播 closePanels + closeOverlay」；主浮层开着时本面板不再在
+  // 底层打开被背板遮挡（形似无效）。关闭分支只关自己，不广播。
   toggle: () => {
-    if (!useArchivePanelStore.getState().open) bus.publish({ type: 'ui/closePanels' });
-    set((s) => ({ open: !s.open }));
+    if (useArchivePanelStore.getState().open) {
+      set({ open: false });
+      return;
+    }
+    useGameStore.getState().closeOverlay();
+    set({ open: true });
   },
   close: () => set({ open: false }),
   setTab: (tab) => set({ tab }),

@@ -24,7 +24,8 @@ import { useGameStore } from '../core/store/gameStore';
 import { cameraYawToDiagDir, cameraYawToGridDir } from '../view/three/theme';
 import { useViewStore } from '../view/three/viewStore';
 import { executeCheat, HOTKEY_CHEATS } from './cheatRegistry';
-import { isMetaTerminalOpen, toggleMetaTerminal } from './MetaTerminal';
+import { isMetaTerminalOpen, setMetaTerminalOpen, toggleMetaTerminal } from './MetaTerminal';
+import { bus } from '../core/events/bus';
 
 /* ============================ e.code → 语义绑定 ============================ */
 
@@ -87,6 +88,38 @@ export const HOLD_REPEAT_MS = 110;
 
 /** 键盘入口的作弊热键表（commands.ts 纯数据 → cheatRegistry 汇总，e.code → 作弊 id） */
 const CHEAT_HOTKEYS: Readonly<Record<string, string>> = HOTKEY_CHEATS;
+
+/**
+ * 纯视觉类作弊热键白名单（B1-2）：只碰 cheatRegistry 的 visualState（皮肤/墙皮），
+ * 不改世界状态——终端/浮层冻结门禁对它们放行，观感自选不受浮层管制。
+ */
+const VISUAL_ONLY_CHEATS: ReadonlySet<string> = new Set(['cheat-skin-next', 'cheat-wall-shuffle']);
+
+/** Q 双拍确认窗口（毫秒）：首拍只提示，窗口内第二次按才真正重玩本段 */
+export const REPLAY_CONFIRM_MS = 2000;
+
+let replayConfirmAt: number | null = null;
+
+/**
+ * B1-6：重玩本段会清空本段步数与撤销历史，且 Q 紧邻 WASD 极易误按。
+ * 步数为 0（没有可丢失的进度）时单击直接执行；否则首拍只发 ui/toast 提示，
+ * 窗口内第二次按才放行。纯输入层计时实现，不动 gameStore。
+ */
+function confirmReplaySegment(): boolean {
+  const steps = useGameStore.getState().segment?.steps ?? 0;
+  if (steps <= 0) {
+    replayConfirmAt = null;
+    return true;
+  }
+  const now = Date.now();
+  if (replayConfirmAt !== null && now - replayConfirmAt <= REPLAY_CONFIRM_MS) {
+    replayConfirmAt = null;
+    return true;
+  }
+  replayConfirmAt = now;
+  bus.publish({ type: 'ui/toast', messageKey: 'toast.replayConfirm' });
+  return false;
+}
 
 /* ============================= 长按连推计时器 ============================== */
 
@@ -233,6 +266,8 @@ export function dispatchBinding(binding: KeyBinding): void {
       if (isMetaTerminalOpen()) return;
       if (store.activePanel !== 'none') return; // 浮层后面不盲改世界状态（I3，与终端同语义）
       if (store.phase === 'playing' || store.phase === 'result' || store.phase === 'combat') {
+        // B1-6：Q 重玩本段在游玩相走双拍确认（无可丢进度时单击直通）
+        if (binding.action.type === 'replaySegment' && !confirmReplaySegment()) return;
         store.dispatch(binding.action);
       }
       return;
@@ -271,8 +306,16 @@ export function dispatchBinding(binding: KeyBinding): void {
       if (store.phase === 'dialogue') store.dispatch(binding.action);
       return;
     case 'toggleMute':
+      // S11：静音永可用，菜单/终局永不锁死
+      store.dispatch(binding.action);
+      return;
     case 'closeOverlay':
-      // S11：静音与关闭浮层永可用，菜单/终局永不锁死
+      // B1-5：META 终端开着且焦点不在输入框时，Esc 的第一职责是关终端（原先死键）；
+      // 终端没开才落到关闭浮层（S11：关闭浮层永可用，菜单/终局永不锁死）
+      if (isMetaTerminalOpen()) {
+        setMetaTerminalOpen(false);
+        return;
+      }
       store.dispatch(binding.action);
       return;
     default:
@@ -316,7 +359,16 @@ export function useKeyActions(): void {
       if (event.repeat) return; // 连推由自管理计时器负责，浏览器自动重复忽略
       if (binding === undefined) {
         // 未被玩法键占用的 code 才轮到作弊热键（K/[/]/R/G）；
-        // 即便如此仍必过 CheatRegistry 的解锁谓词（S9：热键无特权）
+        // 即便如此仍必过 CheatRegistry 的解锁谓词（S9：热键无特权）。
+        // B1-2 补口：终端/全屏浮层开着时，改世界状态的热键（K 消箱、[/] 跳关）
+        // 一律冻结——浮层后面盲改世界状态与 I3 同罪；纯视觉类（R/G）白名单放行
+        if (
+          cheatId !== undefined &&
+          !VISUAL_ONLY_CHEATS.has(cheatId) &&
+          (isMetaTerminalOpen() || useGameStore.getState().activePanel !== 'none')
+        ) {
+          return;
+        }
         if (cheatId !== undefined) executeCheat(cheatId, 'keyboard');
         return;
       }
@@ -330,6 +382,15 @@ export function useKeyActions(): void {
         // 移动键：首步与连推统一由 repeater 触发（press 内立即走一步），
         // 否则一次 keydown 会被派发两次 —— 单一触发源是硬约束
         repeater.press(event.code, event.code);
+        return;
+      }
+      // B1-6：连推计时器活跃（WASD 还按着）时 Q 一律忽略——误按高发窗口，
+      // 直接吞掉重玩意图，不弹提示、也不计入双拍确认
+      if (
+        binding.kind === 'action' &&
+        binding.action.type === 'replaySegment' &&
+        repeater.heldCount() > 0
+      ) {
         return;
       }
       dispatchBinding(binding);

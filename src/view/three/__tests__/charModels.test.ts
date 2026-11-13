@@ -6,8 +6,8 @@
  * 全部不依赖 WebGL（three 几何在 node 下纯 JS 构建）。
  */
 
-import { describe, expect, it } from 'vitest';
-import { BoxGeometry, Color } from 'three';
+import { describe, expect, it, vi } from 'vitest';
+import { BoxGeometry, BufferGeometry, Color } from 'three';
 import { easeOutBack } from '../theme'; // CAM-1 交付的回弹缓动（charModels 按契约消费）
 import {
   BOSS_CLONE_SWAY_AMPLITUDE,
@@ -32,7 +32,7 @@ import {
   spriteStackTransform,
   tintedGeometry,
 } from '../entities/charModels';
-import { parseArtMask } from '../entities/ActorMesh';
+import { buildBossGroundGeometry, parseArtMask } from '../entities/ActorMesh';
 import { buildPlayerParts } from '../entities/PlayerAvatar';
 
 describe('charModels · 玩家部件皮肤表', () => {
@@ -260,5 +260,27 @@ describe('charModels · tintedGeometry（顶点色工具）', () => {
       expect(color.getY(v)).toBeCloseTo(expected.g, 5);
       expect(color.getZ(v)).toBeCloseTo(expected.b, 5);
     }
+  });
+});
+
+describe('charModels · BOSS 底座几何缓存（B2-2 根治回归）', () => {
+  it('首次构建后释放 disc/ring 源几何；缓存命中零新建零释放、引用稳定', () => {
+    const disposeSpy = vi.spyOn(BufferGeometry.prototype, 'dispose');
+    try {
+      const first = buildBossGroundGeometry('#ff5c9e'); // YANG boss accent
+      // merge 成功路径：disc + ring 两个源几何被释放（旧实现在此路径零 dispose）
+      const afterBuild = disposeSpy.mock.calls.length;
+      expect(afterBuild).toBeGreaterThanOrEqual(2);
+      expect(first.getAttribute('color')).toBeDefined(); // 顶点色合并产物可用
+      // 缓存命中：不走 build 闭包 —— 零新建、零释放、同引用
+      expect(buildBossGroundGeometry('#ff5c9e')).toBe(first);
+      expect(disposeSpy.mock.calls.length).toBe(afterBuild);
+    } finally {
+      disposeSpy.mockRestore();
+    }
+  });
+
+  it('缓存键含 accentColor：YANG/YIN 两变体各自成相', () => {
+    expect(buildBossGroundGeometry('#ff5c9e')).not.toBe(buildBossGroundGeometry('#ffcf5c'));
   });
 });

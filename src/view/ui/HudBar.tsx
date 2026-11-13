@@ -7,6 +7,9 @@
  * - 彩虹 notice 的老 bug（SanBPushChest start.js:48-51 常驻 setInterval 染色）
  *   在此结构性规避：toast 栈唯一的定时器是「单条退场」的一次性 setTimeout，
  *   随订阅退订统一清理，绝无常驻 interval。
+ * - 撤销/重玩按钮带 phase 门禁（B4-4，canRewindWorld）：对话/抽卡相禁用点击，
+ *   与键盘侧 useKeyActions 的 undo/replaySegment 门禁同款谓词 —— 遮罩之下
+ *   不静默改写世界；store 层不加重复防线（键盘路径已正确，入口共用同一谓词）。
  * - 文件末尾导出 UiOverlaySuite：集成方一行挂载全部 2D overlay。
  */
 
@@ -14,7 +17,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGameStore } from '../../core/store/gameStore';
 import { selectHudModel } from '../../core/store/selectors';
-import { LOCALES, type LocaleId } from '../../core/types';
+import { LOCALES, type LocaleId, type Phase } from '../../core/types';
 import { LOCALE_NAMES, t } from '../../data/i18n';
 import { isUiTextKey, tUi } from '../../data/i18n/uiText';
 import { resolveAchievementToast } from '../../archive/logbook';
@@ -119,6 +122,16 @@ function hpColor(ratio: number): string {
   if (ratio > 0.5) return 'var(--neon-cyan)';
   if (ratio > 0.25) return 'var(--neon-gold)';
   return 'var(--neon-rose)';
+}
+
+/**
+ * 撤销/重玩的相位门禁谓词（B4-4）：与键盘侧 useKeyActions.ts 的
+ * undo/replaySegment 门禁（'playing'|'result'|'combat'）完全同款 ——
+ * 对话/抽卡（含标题，HUD 本就不渲染）相下世界在遮罩之后，静默改写会被
+ * 剧本收尾后的玩家察觉；HUD 与键盘两个入口共用同一谓词，语义不漂移。
+ */
+export function canRewindWorld(phase: Phase): boolean {
+  return phase === 'playing' || phase === 'result' || phase === 'combat';
 }
 
 const CIRCLE_BTN: CSSProperties = {
@@ -245,12 +258,26 @@ export function HudBar() {
           ◈ {hud.starStones}
         </button>
 
-        {/* 触屏友好的撤销/重玩快捷键（键盘侧由输入层承担 Z/Q） */}
+        {/* 触屏友好的撤销/重玩快捷键（键盘侧由输入层承担 Z/Q）。
+            B4-4：渲染期 phase 门禁 —— 非游玩/结算/战斗相禁用点击（与键盘同款
+            canRewindWorld 谓词），对话/抽卡遮罩之下不再静默改写世界 */}
         <div style={{ display: 'flex', gap: 6, pointerEvents: 'auto' }}>
-          <button className="chip" style={{ cursor: 'pointer' }} onClick={() => store().undo()} title="Z">
+          <button
+            className="chip"
+            disabled={!canRewindWorld(phase)}
+            style={{ cursor: canRewindWorld(phase) ? 'pointer' : 'not-allowed', opacity: canRewindWorld(phase) ? undefined : 0.45 }}
+            onClick={() => store().undo()}
+            title="Z"
+          >
             ↩ {tUi(locale, 'hud.undo')}
           </button>
-          <button className="chip" style={{ cursor: 'pointer' }} onClick={() => store().replaySegment()} title="Q">
+          <button
+            className="chip"
+            disabled={!canRewindWorld(phase)}
+            style={{ cursor: canRewindWorld(phase) ? 'pointer' : 'not-allowed', opacity: canRewindWorld(phase) ? undefined : 0.45 }}
+            onClick={() => store().replaySegment()}
+            title="Q"
+          >
             ⟲ {tUi(locale, 'hud.replay')}
           </button>
         </div>

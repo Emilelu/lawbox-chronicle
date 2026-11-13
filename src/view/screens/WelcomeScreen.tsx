@@ -3,6 +3,8 @@
  * 全屏 R3F Canvas（浮空的「法则箱」+ 星野 + 轨道视角）打底，
  * framer-motion 驱动 2D overlay 文案动效；语言切换即写 store（持久化探针）。
  * 「最近抽卡」槽位经 pullCardLabel 显示本地化卡名，与档案·逐抽记录同口径。
+ * B3-7/B4-9：单抽按钮的定价与余额分开标注 —— 单价取 pools 定价常量（100◈），
+ * 余额经 gacha.balance 键控标注，不再把持有余额拼成价格样式的「（N◈）」。
  * A2-6：frameloop="demand" 与 N5/K5 后台唤醒兜底（installDemandCanvasWake 复用）
  * 与 WorldCanvas 同一套纪律 —— 静置零渲染；LawBox 的常驻自转改为有限时长
  * 入场演出（角速度与摆幅随 easeOut 收敛到 0，结束即冻结），Stars/Float 在
@@ -17,10 +19,12 @@ import { Float, OrbitControls, Stars } from '@react-three/drei';
 import { motion } from 'framer-motion';
 import { useGameStore } from '../../core/store/gameStore';
 import { selectHudModel } from '../../core/store/selectors';
-import { LOCALES, type CardDef } from '../../core/types';
+import { LOCALES, type CardDef, type LocaleId } from '../../core/types';
 import { CARDS, GACHA_FLAVOR } from '../../data/gacha';
+import { FORMAL_POOL } from '../../data/gacha/pools';
 import { LEVELS } from '../../data/levels';
 import { LOCALE_NAMES, t } from '../../data/i18n';
+import { tUi } from '../../data/i18n/uiText';
 import { bus } from '../../core/events/bus';
 import { installDemandCanvasWake, RootReadyProbe } from '../three/WorldCanvas';
 
@@ -107,6 +111,18 @@ export function pullCardLabel(cardId: string, rarity: number, cards: readonly Ca
   return cards.find((c) => c.id === cardId)?.name ?? cardId;
 }
 
+/**
+ * 标题页单抽按钮文案（B3-7/B4-9）：定价与余额分开标注 ——
+ * 「单抽 · 100◈（当前的星石数 1600◈）」。单价取 pools 定价常量
+ * （FORMAL_POOL.pricing.single，与 GachaOverlay 的「单抽 · 100◈」同口径），
+ * 余额沿用 GachaOverlay 余额行的 gacha.balance 键控词；不再把持有余额
+ * starStones 拼成价格样式的「（N◈）」（余额随涨数值随变，必被读成标价）。
+ */
+export function roll1ButtonLabel(locale: LocaleId, starStones: number): string {
+  const unit = tUi(locale, 'common.stoneUnit');
+  return `${t(locale, 'gacha.roll1')} · ${FORMAL_POOL.pricing.single}${unit}（${tUi(locale, 'gacha.balance')} ${starStones}${unit}）`;
+}
+
 export function WelcomeScreen() {
   const locale = useGameStore((s) => s.locale);
   const visitCount = useGameStore((s) => s.visitCount);
@@ -181,7 +197,8 @@ export function WelcomeScreen() {
 
         <div style={{ display: 'flex', gap: 14, marginTop: 10, pointerEvents: 'auto', flexWrap: 'wrap', justifyContent: 'center' }}>
           <button className="btn-neon" onClick={startGame}>{t(locale, 'welcome.start')}</button>
-          <button className="btn-neon" onClick={tryGacha}>{t(locale, 'gacha.roll1')}（{starStones}◈）</button>
+          {/* B3-7/B4-9：定价（100◈）与余额分开标注，余额不再冒充标价 */}
+          <button className="btn-neon" onClick={tryGacha}>{roll1ButtonLabel(locale, starStones)}</button>
         </div>
 
         {lastResult !== null && (

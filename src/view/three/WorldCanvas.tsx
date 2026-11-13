@@ -438,14 +438,41 @@ function SceneContent({ pinnedInfo, onPin }: {
   // THEME-3：玩家提灯（L3 暗夜关双位面 / L9 仅阴面）与 Sparkles 环境粒子参数
   const lantern = useMemo(() => levelLantern(levelId, planeShifted), [levelId, planeShifted]);
   const sparklesSpec = useMemo(() => levelSparkles(levelId, planeShifted), [levelId, planeShifted]);
+  // B1-3：combat/boss 相的位姿只随「相位进入事实」（cameraMode + 战斗敌人 id）
+  // 发一次 —— 布阵期每步推挤产生的 playerWorld/enemyWorld 新数组引用不进依赖，
+  // setPoseId 不递增、CameraRig 的 poseId effect 不重启自动运镜：用户 onStart
+  // 拖拽取消的 poseActive 不再被下一步推挤强制拉回预设（「收敛后停手交还用户」
+  // 契约，CameraRig.tsx 头注释）。位姿的 target 字段在 CameraRig 不被消费
+  // （注视点恒走 focusWorld 轻量跟随），坐标经 ref 取渲染期最新值即可。
+  // dialogue 相的重发源收窄为「说话者轮换」（dialogueSpeakerId）：dialogueFocus
+  // 在 combat/victory 相退化为 playerWorld（每步推挤换引用），不能进依赖；
+  // 对话期间说话者静止，id 驱动与旧的 dialogueFocus 引用驱动等效。
+  const combatPoseKey =
+    cameraMode === 'combat' || cameraMode === 'boss' ? (combat?.enemyId ?? null) : null;
+  const playerWorldRef = useRef<WorldVec3>(playerWorld);
+  playerWorldRef.current = playerWorld;
+  const enemyWorldRef = useRef<WorldVec3>(enemyWorld);
+  enemyWorldRef.current = enemyWorld;
+  const dialogueFocusRef = useRef<WorldVec3>(dialogueFocus);
+  dialogueFocusRef.current = dialogueFocus;
   const pose = useMemo<CameraPose | null>(() => {
     if (cameraMode === 'explore') return exploreResetPose;
+    if (cameraMode === 'combat' || cameraMode === 'boss') {
+      return computePose(cameraMode, {
+        playerPos: playerWorldRef.current,
+        focusPos: enemyWorldRef.current,
+        arenaCenter,
+      });
+    }
     return computePose(cameraMode, {
-      playerPos: playerWorld,
-      focusPos: cameraMode === 'combat' || cameraMode === 'boss' ? enemyWorld : dialogueFocus,
+      playerPos: playerWorldRef.current,
+      focusPos: dialogueFocusRef.current,
       arenaCenter,
     });
-  }, [cameraMode, exploreResetPose, playerWorld, enemyWorld, dialogueFocus, arenaCenter]);
+    // 坐标经 ref 读取：combat/boss 相格位变化不重发位姿、dialogue 相由说话者
+    // id 驱动重发（B1-3）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraMode, combatPoseKey, dialogueSpeakerId, exploreResetPose, arenaCenter]);
   const [poseId, setPoseId] = useState(0);
   useEffect(() => {
     setPoseId((id) => id + 1);

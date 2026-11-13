@@ -2,6 +2,8 @@
  * logbook / statsCollector 单测 —— 分片记账、快照组装、双池曲线、自动收集器。
  * logbook 与 stats 模块加载时会自动安装收集器（订阅 bus + gameStore），
  * 本文件借此顺带验证「bus 计数」与「rollGacha → 抽卡历史」两条自动链路。
+ * B4-3：ghost 卡（卡池外）的读档清洗与收集器容错回归。
+ * B4-6：combatLogCursor 退出持久化契约（v2 迁移剥离）回归。
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -268,5 +270,77 @@ describe('自动收集器 —— bus 计数与 rollGacha 全链路', () => {
     expect(useGameStore.getState().gacha.totalPulls).toBe(10);
     // logbook 收集器同步镜像图鉴
     expect(Object.keys(useLogbookStore.getState().codexCards).length).toBeGreaterThan(0);
+  });
+});
+
+describe('B4-3 —— ghost 卡（卡池外）读档清洗与收集器容错', () => {
+  const GHOST = 'card-ghost-removed-in-vNext';
+
+  it('主档读档 merge 按 CARDS 白名单清洗 gacha.owned：ghost 卡不进内存', async () => {
+    useGameStore.getState().resetSave();
+    // 模拟坏档：持久化分片里混入 ghost 卡（版本删卡 / 手改存档）
+    const raw = JSON.parse(localStorage.getItem('lawbox-chronicle:v1') ?? '{}') as {
+      state?: Record<string, unknown>;
+    };
+    const gacha = (raw.state?.gacha ?? {}) as { owned?: unknown };
+    gacha.owned = [
+      { uid: 'ok-1', cardId: 'card-chr-angel-1', obtainedAt: 1 },
+      { uid: 'ghost-1', cardId: GHOST, obtainedAt: 2 },
+    ];
+    raw.state = { ...raw.state, gacha };
+    localStorage.setItem('lawbox-chronicle:v1', JSON.stringify(raw));
+    await useGameStore.persist.rehydrate();
+    const owned = useGameStore.getState().gacha.owned;
+    expect(owned.some((o) => o.cardId === GHOST)).toBe(false);
+    expect(owned.some((o) => o.cardId === 'card-chr-angel-1')).toBe(true);
+  });
+
+  it('收集器订阅链对 ghost 卡容错：不抛断链，合法卡照常入册，成就重评仍执行', () => {
+    useGameStore.getState().resetSave();
+    useLogbookStore.getState().clearLogbook();
+    // 直接经 setState 灌入 ghost 卡（绕过 merge 的最坏情况：外挂数据/运行期篡改）
+    useGameStore.setState({
+      gacha: {
+        ...useGameStore.getState().gacha,
+        owned: [
+          { uid: 'ghost-1', cardId: GHOST, obtainedAt: 1 },
+          { uid: 'ok-1', cardId: 'card-chr-angel-1', obtainedAt: 2 },
+        ],
+      },
+    });
+    // 订阅回调同步执行完毕且不抛 Uncaught：ghost 卡被跳过，合法卡入册
+    const codex = useLogbookStore.getState().codexCards;
+    expect(codex[GHOST]).toBeUndefined();
+    expect(codex['card-chr-angel-1']?.obtainedCount).toBe(1);
+  });
+});
+
+describe('B4-6 —— combatLogCursor 退出持久化（会话态游标，v2 迁移剥离）', () => {
+  it('partialize 不含 combatLogCursor（战斗中刷新不再残留游标）', () => {
+    useStatsStore.getState().setCombatCursor(7);
+    const persisted = useStatsStore.persist.getOptions().partialize?.(useStatsStore.getState()) as Record<string, unknown>;
+    expect(persisted).not.toHaveProperty('combatLogCursor');
+    expect(persisted).toHaveProperty('combatLogTail');
+    expect(persisted).toHaveProperty('poolTallies');
+  });
+
+  it('migrate（v1 → v2）剥离旧档遗留的 combatLogCursor，其余字段原样保留', () => {
+    const legacyV1 = {
+      pullHistory: [],
+      battleHistory: [],
+      combatLogTail: [{ actor: 'player', damage: 6, crit: false, turn: 1 }],
+      poolTallies: {},
+      counters: { pushBlocked: 3, goalBursts: 0, critShakes: 0, gachaBursts: 0, planeShifts: 1 },
+      lastResultFingerprint: '1#uid-x',
+      combatLogCursor: 4,
+    };
+    const migrated = useStatsStore.persist.getOptions().migrate?.(legacyV1, 1) as Record<string, unknown>;
+    expect(migrated).not.toHaveProperty('combatLogCursor');
+    expect(migrated.lastResultFingerprint).toBe('1#uid-x');
+    expect(migrated.combatLogTail).toEqual(legacyV1.combatLogTail);
+  });
+
+  it('persist 版本号升至 2（旧档升级触发 migrate 剥离）', () => {
+    expect(useStatsStore.persist.getOptions().version).toBe(2);
   });
 });

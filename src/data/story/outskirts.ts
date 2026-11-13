@@ -279,6 +279,12 @@ export const OUTSKIRT_EAST_SCRIPT: StoryScriptDef = {
     {
       kind: 'dialogue',
       id: 'outskirt-east-leave',
+      // B3-1：兑现「让法阵送你回 (-5,3)」的承诺 —— 台词不再是空头支票，
+      // 本节点进入即发射 teleport（世界坐标经 applyStoryEffects 的 worldToGrid
+      // 落格）。落点网格 (2,9) 已在 areas.ts 开为可站地板（B3-1 同批），
+      // 传送后玩家真实立于原版落点并可走回主城；EAST_LANDING_POS 由此接线，
+      // 不再是只有测试引用的死常量。
+      onEnterEffects: [{ kind: 'teleport', x: EAST_LANDING_POS.x, y: EAST_LANDING_POS.y }],
       lines: [
         { speakerId: 'system', text: '法阵运转——你被送回了地图的 (-5,3)。（原版落点，保真）' },
       ],

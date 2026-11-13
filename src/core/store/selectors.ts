@@ -8,7 +8,7 @@
 
 import type { GameState, GridEntity, LevelDef, Rarity, CardDef } from '../types';
 import { occupancyOf } from '../gridMove';
-import { findLevel } from '../../data/levels';
+import { findLevelAny } from './gameStore';
 import { findWeapon } from '../../data/weapons';
 import { GACHA_CONFIG, CARDS } from '../../data/gacha';
 import { LAW_PATCHES, type LawPatchDef } from '../lawRegistry';
@@ -31,7 +31,9 @@ export function selectChests(state: GameState): readonly GridEntity[] {
 /** 箱子是否全部落在旗位（terrain 3）——关卡完成判定 */
 export function selectLevelComplete(state: GameState): boolean {
   if (state.segment === null) return false;
-  const level = findLevel(state.segment.levelId);
+  // B3-3：改走 findLevelAny（静态表 + 会话注册表）——挑战层等会话关卡的
+  // 箱落旗判定此前查静态表落空，恒 false
+  const level = findLevelAny(state.segment.levelId);
   if (level === undefined) return false;
   const chests = selectChests(state);
   return (
@@ -57,7 +59,9 @@ export interface HudModel {
 
 /** HUD 胶囊数据模型（左上角） */
 export function selectHudModel(state: GameState): HudModel {
-  const level: LevelDef | undefined = state.segment !== null ? findLevel(state.segment.levelId) : undefined;
+  // B3-3：改走 findLevelAny —— 会话生成关卡（挑战层/无尽回廊）此前查静态表
+  // 落空，HUD 关卡名/副标题恒显示 '—'
+  const level: LevelDef | undefined = state.segment !== null ? findLevelAny(state.segment.levelId) : undefined;
   const weapon = state.player.weaponId !== null ? findWeapon(state.player.weaponId) : undefined;
   const weaponBonus = weapon?.attack ?? 0;
   return {

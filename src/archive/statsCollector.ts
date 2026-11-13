@@ -210,9 +210,14 @@ export const useStatsStore = create<StatsStore>()(
     }),
     {
       name: 'lawbox-chronicle:stats:v1',
-      version: 1,
+      // B4-6：v2 —— combatLogCursor 退出持久化契约。它是「本会话已消费的
+      // combat.log 条目数」的游标（会话态），而战斗会话态（combat/battle）不落
+      // 盘：战斗中刷新则 cursor=N 残留、combat 清零，下一场战斗开场 system×N
+      // 条日志被游标跳过、永久丢失。v1 旧档里已写入的 cursor 由 migrate 剥离，
+      // 读档后游标一律从 0 起算（与「战斗关闭归零」同一生命周期）。
+      version: 2,
       storage: createJSONStorage(() => localStorage),
-      // 只持久化数据字段；动作函数不落盘
+      // 只持久化数据字段；动作函数与会话态游标（combatLogCursor）不落盘
       partialize: (state) => ({
         pullHistory: state.pullHistory,
         battleHistory: state.battleHistory,
@@ -220,8 +225,12 @@ export const useStatsStore = create<StatsStore>()(
         poolTallies: state.poolTallies,
         counters: state.counters,
         lastResultFingerprint: state.lastResultFingerprint,
-        combatLogCursor: state.combatLogCursor,
       }),
+      migrate: (persisted) => {
+        const { combatLogCursor: droppedCursor, ...rest } = (persisted ?? {}) as Partial<StatsState>;
+        void droppedCursor;
+        return rest;
+      },
     },
   ),
 );

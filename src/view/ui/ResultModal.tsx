@@ -12,9 +12,9 @@
  */
 
 import { motion } from 'framer-motion';
-import { useGameStore } from '../../core/store/gameStore';
+import { findLevelAny, useGameStore } from '../../core/store/gameStore';
 import { starStoneReward } from '../../core/formula';
-import { CARDS, LEVELS, findLevel } from '../../data';
+import { CARDS, LEVELS } from '../../data';
 import type { LevelDef, LocaleId } from '../../core/types';
 import { levelName as levelNameI18n, stripBr, tUi } from '../../data/i18n/uiText';
 import { rarityColor } from './GachaOverlay';
@@ -70,7 +70,9 @@ export function ResultModal() {
   if (result === null) return null;
 
   const store = useGameStore.getState;
-  const summary = summarizeResult(result, findLevel, locale);
+  // B3-3：改走 findLevelAny（静态表 + 会话注册表）——挑战层等会话关卡的结算
+  // 此前查静态表落空，走「坏档兜底」分支（无 ★/步数/奖励/重玩）
+  const summary = summarizeResult(result, findLevelAny, locale);
   // 通关即解锁下一关（cheatRegistry 的进度订阅同源置位 reached:<next>）；
   // 结算面板直接提供「下一关」，省去回选关面板的一步
   const nextLevel = (() => {

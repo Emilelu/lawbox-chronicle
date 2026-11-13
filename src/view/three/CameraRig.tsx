@@ -173,14 +173,17 @@ export function CameraRig({ focusWorld, pose, poseId, cameraMode: cameraModeProp
 
   // 视角切换 / 战术俯瞰的自发位姿请求（不依赖 WorldCanvas 的 pose 管线）。
   // 目标位姿由 theme.computeSpontaneousPose 纯函数决策（N2 根治）：目标夹紧档
-  // 内可达 —— explore/dialogue 回 FP 头位，combat/victory/boss（全局档）回落
-  // 该模式既定舞台位（FP 头位 0.55 < 全局档 distMin 3.2 是不可达目标，曾把
-  // 收敛钉死在 3.2 且 poseActive 永不释放）。third 视角挂载与「third 松开 T」
-  // 不发请求 —— explore 常态交还用户全权，与既有第三人称行为逐字节一致。
+  // 内可达 —— explore/dialogue 回 FP 头位（first），combat/victory/boss（全局
+  // 档）回落该模式既定舞台位（FP 头位 0.55 < 全局档 distMin 3.2 是不可达目标，
+  // 曾把收敛钉死在 3.2 且 poseActive 永不释放）。third 视角挂载与非松开沿不
+  // 发请求 —— explore 常态交还用户全权；「third 松开 T」（B1-1）按当前 mode
+  // 回落既定取景：prevPeekRef 在读取后才更新，松开沿（true→false）作为
+  // prevPeeking 传入纯函数决策。
   const prevViewRef = useRef(viewPreference);
   const prevPeekRef = useRef(peeking);
   useEffect(() => {
     const viewChanged = prevViewRef.current !== viewPreference;
+    const prevPeeking = prevPeekRef.current; // 先读上一次值再更新（松开沿识别）
     prevViewRef.current = viewPreference;
     prevPeekRef.current = peeking;
     const head = focusRef.current;
@@ -189,7 +192,7 @@ export function CameraRig({ focusWorld, pose, poseId, cameraMode: cameraModeProp
       focusPos: [head.x, head.y, head.z],
       arenaCenter: [head.x, head.y, head.z],
     };
-    const desired = computeSpontaneousPose(viewPreference, cameraMode, peeking, ctx, viewChanged);
+    const desired = computeSpontaneousPose(viewPreference, cameraMode, peeking, ctx, viewChanged, prevPeeking);
     if (desired === null) return;
     desiredRef.current = desired;
     poseActiveRef.current = true;

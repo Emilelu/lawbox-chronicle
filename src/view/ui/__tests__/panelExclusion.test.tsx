@@ -1,10 +1,14 @@
 /**
- * 帷幕界面层 · 面板互斥回归（A4-3 / A4-4）。
+ * 帷幕界面层 · 面板互斥回归（A4-3 / A4-4 / B3-8）。
  * ---------------------------------------------------------------------------
  * A4-3：LevelGuidePanel 补订阅 ui/closePanels —— Esc（closeOverlay 广播）能关掉
  *       攻略面板（此前三个分片面板只有两个订阅，攻略面板 Esc 关不掉）。
  * A4-4：档案/选关/攻略三个分片面板互斥 —— 打开任一分片面板（open 动作广播）或
  *       任一主面板（openPanel 广播）时，已开的其它浮层一并关闭，不再三层叠开。
+ * B3-8：分片开启时的反向互斥 —— open/toggle 先调 gameStore.closeOverlay 关掉
+ *       主浮层（activePanel 归 none、gacha 相复位、结算清空），兑现 openPanel
+ *       注释承诺的「分片 open 广播 closePanels + closeOverlay」；主浮层开着时
+ *       分片不再在底层打开被背板遮挡（形似无效）。
  * 渲染走 react-dom createRoot + act（仓库未引入 @testing-library）；
  * 三个分片面板常驻挂载，与 UiOverlaySuite 的生产挂载方式一致（互斥的 close
  * 动作由面板组件的 bus 订阅执行，未挂载即无订阅者）。
@@ -130,5 +134,70 @@ describe('A4-4 · 三分片面板互斥（不再三层叠开）', () => {
     off();
     expect(received).toEqual([]);
     expect(useArchivePanelStore.getState().open).toBe(false);
+  });
+});
+
+describe('B3-8 · 分片开启时的反向互斥（主浮层一并关闭）', () => {
+  it('抽卡浮层开着时打开选关 → activePanel 归 none、选关打开（不再被背板遮挡）', () => {
+    const counts = mountPanels();
+    act(() => {
+      useGameStore.getState().startLevel('level-sb-01');
+      useGameStore.getState().openPanel('gacha');
+    });
+    expect(useGameStore.getState().activePanel).toBe('gacha');
+    act(() => {
+      useLevelSelectStore.getState().toggle();
+    });
+    expect(useGameStore.getState().activePanel).toBe('none');
+    expect(counts.select()).toBe(1);
+    expect(useLevelSelectStore.getState().open).toBe(true);
+  });
+
+  it('gacha 相开着时 openFor 攻略 → gacha 相复位 playing、攻略面板打开', () => {
+    const counts = mountPanels();
+    act(() => {
+      useGameStore.getState().startLevel('level-sb-01');
+      // rollGacha 的落点（gameStore:1419）：抽卡演出期间 phase='gacha'
+      useGameStore.setState({ phase: 'gacha' });
+    });
+    act(() => {
+      useGuidePanelStore.getState().openFor('level-sb-01');
+    });
+    expect(useGameStore.getState().phase).toBe('playing');
+    expect(counts.guide()).toBe(1);
+    expect(useGuidePanelStore.getState().open).toBe(true);
+  });
+
+  it('档案 toggle 同样关闭主浮层（三个分片入口逐一兑现 closeOverlay）', () => {
+    const counts = mountPanels();
+    act(() => {
+      useGameStore.getState().startLevel('level-sb-01');
+      useGameStore.getState().openPanel('settings');
+    });
+    expect(useGameStore.getState().activePanel).toBe('settings');
+    act(() => {
+      useArchivePanelStore.getState().toggle();
+    });
+    expect(useGameStore.getState().activePanel).toBe('none');
+    expect(counts.archive()).toBe(1);
+    expect(useArchivePanelStore.getState().open).toBe(true);
+  });
+
+  it('关闭分支不触碰主浮层：开启已关掉 deck，关闭后 activePanel 保持 none', () => {
+    mountPanels();
+    act(() => {
+      useGameStore.getState().startLevel('level-sb-01');
+      useGameStore.getState().openPanel('deck');
+    });
+    act(() => {
+      useArchivePanelStore.getState().toggle(); // 开（反向互斥关掉 deck）
+    });
+    expect(useGameStore.getState().activePanel).toBe('none');
+    expect(useArchivePanelStore.getState().open).toBe(true);
+    act(() => {
+      useArchivePanelStore.getState().toggle(); // 关（只关自己）
+    });
+    expect(useArchivePanelStore.getState().open).toBe(false);
+    expect(useGameStore.getState().activePanel).toBe('none');
   });
 });

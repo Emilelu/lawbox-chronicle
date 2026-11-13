@@ -17,13 +17,15 @@ import {
   HOLD_INITIAL_DELAY_MS,
   HOLD_REPEAT_MS,
   KEY_CODE_TO_ACTION,
+  REPLAY_CONFIRM_MS,
   createHoldRepeater,
   dispatchBinding,
   isTypingTarget,
   useKeyActions,
 } from '../useKeyActions';
 import { isMetaTerminalOpen, setMetaTerminalOpen } from '../MetaTerminal';
-import { HOTKEY_CHEATS, getVisualState, resetCheatVisualState } from '../cheatRegistry';
+import { CHEAT_SKIN_COUNT, HOTKEY_CHEATS, getVisualState, resetCheatVisualState } from '../cheatRegistry';
+import { bus } from '../../core/events/bus';
 import { useViewStore } from '../../view/three/viewStore';
 
 describe('KEY_CODE_TO_ACTION —— e.code → 语义', () => {
@@ -179,6 +181,9 @@ describe('useKeyActions 全链路（jsdom 键盘事件 → store）', () => {
     if (player === undefined) throw new Error('段位里没有玩家实体');
     return { x: player.x, y: player.y };
   };
+
+  const chestCount = (): number =>
+    useGameStore.getState().segment?.entities.filter((e) => e.kind === 'chest').length ?? 0;
 
   it('按 S 向下走一步；出生点向上被墙挡住（W 不位移）', () => {
     useGameStore.getState().startLevel('level-sb-01');
@@ -393,5 +398,130 @@ describe('useKeyActions 全链路（jsdom 键盘事件 → store）', () => {
     expect(useViewStore.getState().viewPreference).toBe('third');
     dispatchBinding({ kind: 'view' });
     expect(useViewStore.getState().viewPreference).toBe('first');
+  });
+
+  // ---- B1-2 / B1-5 / B1-6 回归（追加在 describe 尾部：B1-6 的双拍确认计时是
+  // 模块级状态，压轴执行避免未消费的时间戳跨用例泄漏） ----
+
+  it('B1-2：全屏浮层开着时 K/]/[ 热键冻结（不盲改浮层后的世界），R/G 纯视觉放行', () => {
+    const store = useGameStore.getState();
+    store.startLevel('level-sb-01');
+    useGameStore.setState((s) => ({ settings: { ...s.settings, cheatsEnabled: true } }));
+    const chestsBefore = chestCount();
+    expect(chestsBefore).toBeGreaterThan(0);
+    store.openPanel('deck');
+    press('KeyK'); // 消箱热键
+    lift('KeyK');
+    press('BracketRight'); // 跳下一关
+    lift('BracketRight');
+    press('BracketLeft'); // 跳上一关
+    lift('BracketLeft');
+    expect(chestCount()).toBe(chestsBefore); // 箱子没被浮层后面的热键消掉
+    expect(useGameStore.getState().segment?.levelId).toBe('level-sb-01'); // 关卡没被偷跳
+    expect(useGameStore.getState().activePanel).toBe('deck'); // 浮层也没被顶掉
+    // 纯视觉类白名单（B1-2）：皮肤/墙皮只碰 cheatRegistry 的 visualState，浮层下放行
+    const skinBefore = getVisualState().skinIndex;
+    const epochBefore = getVisualState().wallSkinEpoch;
+    press('KeyR');
+    lift('KeyR');
+    press('KeyG');
+    lift('KeyG');
+    expect(getVisualState().skinIndex).toBe((skinBefore + 1) % CHEAT_SKIN_COUNT);
+    expect(getVisualState().wallSkinEpoch).toBe(epochBefore + 1);
+    expect(useGameStore.getState().activePanel).toBe('deck');
+    // 关浮层后同一热键恢复生效：门禁只拦冻结窗口，不收窄功能
+    store.closeOverlay();
+    press('KeyK');
+    lift('KeyK');
+    expect(chestCount()).toBe(chestsBefore - 1);
+  });
+
+  it('B1-2：META 终端开着时改世界状态的热键同样冻结；Esc 先关终端（B1-5）后热键恢复', () => {
+    const store = useGameStore.getState();
+    store.startLevel('level-sb-01');
+    useGameStore.setState((s) => ({ settings: { ...s.settings, cheatsEnabled: true } }));
+    // 终端解锁旗标（BOSS 结局明示解锁的同款路径）
+    useGameStore.setState((s) => ({
+      story: { ...s.story, flags: { ...s.story.flags, 'meta:terminal-unlocked': true } },
+    }));
+    press('Backquote');
+    expect(isMetaTerminalOpen()).toBe(true);
+    const chestsBefore = chestCount();
+    press('KeyK');
+    lift('KeyK');
+    expect(chestCount()).toBe(chestsBefore); // 终端开着：消箱热键冻结
+    // B1-5：焦点不在终端输入框（window 级 keydown）时 Esc 的第一职责是关终端
+    press('Escape');
+    lift('Escape');
+    expect(isMetaTerminalOpen()).toBe(false);
+    press('KeyK');
+    lift('KeyK');
+    expect(chestCount()).toBe(chestsBefore - 1); // 终端关了：热键恢复生效
+  });
+
+  it('B1-5：终端没开时 Esc 照旧关闭全屏浮层（closeOverlay 语义不收窄）', () => {
+    const store = useGameStore.getState();
+    store.startLevel('level-sb-01');
+    store.openPanel('deck');
+    press('Escape');
+    lift('Escape');
+    expect(useGameStore.getState().activePanel).toBe('none');
+  });
+
+  it('B1-6：Q 重玩本段双拍确认——首拍只提示，窗口内第二拍才重建段位', () => {
+    const store = useGameStore.getState();
+    store.startLevel('level-sb-01');
+    press('KeyS');
+    lift('KeyS'); // 先走一步，制造可丢失的进度（steps>0）
+    expect(useGameStore.getState().segment?.steps ?? 0).toBeGreaterThan(0);
+    const segmentBefore = useGameStore.getState().segment;
+    const toasts: string[] = [];
+    const unsubscribe = bus.subscribe((event) => {
+      if (event.type === 'ui/toast') toasts.push(event.messageKey);
+    });
+    try {
+      press('KeyQ');
+      lift('KeyQ');
+      expect(useGameStore.getState().segment).toBe(segmentBefore); // 首拍不执行
+      expect(toasts).toEqual(['toast.replayConfirm']); // 只提示
+      press('KeyQ'); // 窗口内第二拍
+      lift('KeyQ');
+      expect(useGameStore.getState().segment).not.toBe(segmentBefore); // 段位重建
+      expect(useGameStore.getState().segment?.steps).toBe(0); // 步数清零
+      expect(toasts).toEqual(['toast.replayConfirm']); // 执行拍不再提示
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('B1-6：确认窗口过期需重新双拍；连推进行中 Q 被完全忽略（不提示不计数）', () => {
+    vi.useFakeTimers();
+    const store = useGameStore.getState();
+    store.startLevel('level-sb-01');
+    press('KeyS');
+    lift('KeyS'); // steps=1
+    const toasts: string[] = [];
+    const unsubscribe = bus.subscribe((event) => {
+      if (event.type === 'ui/toast') toasts.push(event.messageKey);
+    });
+    try {
+      press('KeyQ');
+      lift('KeyQ');
+      expect(toasts).toEqual(['toast.replayConfirm']); // 首拍提示
+      vi.advanceTimersByTime(REPLAY_CONFIRM_MS + 1); // 确认窗口过期
+      press('KeyQ');
+      lift('KeyQ');
+      expect(useGameStore.getState().segment?.steps).toBe(1); // 过期后第二拍不执行
+      expect(toasts).toEqual(['toast.replayConfirm', 'toast.replayConfirm']); // 重新提示
+      // 连推进行中（S 还按着，repeater.heldCount()>0）：Q 直接忽略，连提示都不发
+      press('KeyS'); // 连推首步，steps+1
+      press('KeyQ');
+      lift('KeyQ');
+      expect(useGameStore.getState().segment?.steps).toBe(2); // 连推在走，Q 未生效
+      expect(toasts).toEqual(['toast.replayConfirm', 'toast.replayConfirm']); // 无新增提示
+      lift('KeyS');
+    } finally {
+      unsubscribe();
+    }
   });
 });

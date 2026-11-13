@@ -329,7 +329,12 @@ const EFFECTS: Readonly<Record<string, CheatEffect>> = Object.freeze({
     const weapon = findWeapon(resolvedId) ?? weaponByName(item);
     if (weapon === undefined) return `[System] 未知武器：${item}`;
     const state = useGameStore.getState();
-    useGameStore.setState({ player: { ...state.player, weaponId: weapon.id } });
+    // B4-8：与 gameStore 的 grantWeapon 同构——先判重入列 player.weapons 再设
+    // weaponId，否则战斗界面的武器列表（由 player.weapons 构建）选不到终端
+    // 发放的武器，只换了手持不进背包
+    const weapons = state.player.weapons ?? [];
+    const nextWeapons = weapons.includes(weapon.id) ? weapons : [...weapons, weapon.id];
+    useGameStore.setState({ player: { ...state.player, weapons: nextWeapons, weaponId: weapon.id } });
     return `获得 ${weapon.name}：${weapon.description}`;
   },
 

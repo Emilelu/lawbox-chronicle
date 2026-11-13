@@ -50,7 +50,7 @@ import { starRating, starStoneReward, clampHp } from '../formula';
 import { findEnemy, findLevel } from '../../data';
 import { createWeaponInstance } from '../../data/weapons';
 import { CARDS, GACHA_FLAVOR } from '../../data/gacha';
-import { tUi } from '../../data/i18n/uiText';
+import { tUi, type UiTextKey } from '../../data/i18n/uiText';
 import { FORMAL_POOL, NOSTALGIA_PARAMS, gachaCost } from '../../data/gacha/pools';
 import { ALL_SCRIPTS, STORY_SOLVERS, ALL_TRIGGER_RULES } from '../../data/storyScripts';
 import { runMetaTerminalCommand } from '../../data/story/hiddenGame';
@@ -123,7 +123,14 @@ export function registerSessionLevel(level: Level3D): void {
   sessionLevels.set(level.id, level);
 }
 
-function findLevelAny(levelId: string): Level3D | undefined {
+/**
+ * 静态表 + 会话生成关卡注册表的合并查询（B3-3 导出）。
+ * 挑战层等会话关卡只进 sessionLevels（不进 LEVELS 数据表），此前本函数
+ * 模块私有，导致 selectors 的 HUD 关卡名与 ResultModal 结算摘要走静态
+ * findLevel 查不到会话关卡 —— HUD 显示 '—'、结算退化为坏档兜底分支。
+ * 导出后 selectors/ResultModal 统一走本查询，会话关卡吃到完整结算。
+ */
+export function findLevelAny(levelId: string): Level3D | undefined {
   const staticLevel = findLevel(levelId);
   if (staticLevel !== undefined) return staticLevel as Level3D;
   return sessionLevels.get(levelId);
@@ -395,6 +402,20 @@ export function triggerFlagView(
 export const useGameStore = create<GameStore>()(
   persist(
     (set, get) => {
+      /* --------------------- 段位会话编号（B4-1） -------------------------- */
+      /**
+       * 「段位会话」= 一次 beginLevel（含 startLevel/replaySegment/挑战层入层）
+       * 的完整生命周期。finishLevelSuccessfully 发奖前把当前会话标记为已结算，
+       * 同会话内 undo 回 playing 后重新达标（Z/HUD ↩ 循环）不再重复发放星石
+       * 与相位充能 —— 堵住「结算面板撤销 → 走一步 → 再结算」的无限刷币漏洞。
+       * 重玩（replaySegment/startLevel → beginLevel）开启新会话，重新结算的
+       * 既有语义不变。会话变量不落盘：刷新即作废，与「中断=未结算」一致
+       *（undo 后刷新重进即重新发奖，同 A4-1/R-2 会话变量语义）。
+       */
+      let levelSessionSeq = 0;
+      let currentLevelSession = 0;
+      let rewardedLevelSession = -1;
+
       /* ------------------------- 派生：谜题规则集 ------------------------- */
       const puzzleRulesOf = (): PuzzleRuleSet => {
         const state = get();
@@ -452,15 +473,23 @@ export const useGameStore = create<GameStore>()(
         if (segment === null) return;
         const level = findLevelAny(segment.levelId);
         if (level === undefined) return;
+        // B4-1：同一段位会话只发一次奖励。undo 回 playing 后重新达标（键盘 Z
+        // 在 result 相放行、HUD ↩ 直接调 undo）此前会再次走本函数全额入账，
+        // 「undo → 走一步」循环可无限刷星石与相位充能。已在当前会话结算过时
+        // 只更新结算面板（phase/result 照常显示），星石/法则卡/充能零重复入账。
+        const alreadyRewarded = rewardedLevelSession === currentLevelSession;
+        rewardedLevelSession = currentLevelSession;
         const stars = starRating(puzzle.steps, level.parSteps);
-        const gain = starStoneReward(stars, level.reward.starStones);
+        const gain = alreadyRewarded ? 0 : starStoneReward(stars, level.reward.starStones);
         const owned =
+          !alreadyRewarded &&
           level.reward.lawCardId !== undefined && !state.gacha.owned.some((o) => o.cardId === level.reward.lawCardId)
             ? [...state.gacha.owned, { uid: `reward-${level.reward.lawCardId}`, cardId: level.reward.lawCardId, obtainedAt: Date.now() }]
             : state.gacha.owned;
         // 相位穿行评分奖励（grantPhaseCharges 接线）：3★ +2 / 2★ +1 / 1★ +0，
-        // 从结算面板撤销回局（undo 允许）时奖励充能仍真实可用
-        const chargeBonus = stars >= 3 ? 2 : stars === 2 ? 1 : 0;
+        // 从结算面板撤销回局（undo 允许）时奖励充能仍真实可用；B4-1 起同会话
+        // 重复达标不再重复发放充能（充能与星石同批次入账，同一防刷口径）。
+        const chargeBonus = alreadyRewarded ? 0 : stars >= 3 ? 2 : stars === 2 ? 1 : 0;
         const chargedPuzzle = chargeBonus > 0 ? grantPhaseCharges(puzzle, chargeBonus) : puzzle;
         set({
           phase: 'result',
@@ -577,7 +606,8 @@ export const useGameStore = create<GameStore>()(
               break;
             case 'openMetaTerminal':
               writeFlag('meta:terminal-unlocked', true);
-              bus.publish({ type: 'ui/toast', messageKey: 'META 终端已解锁：通关后按 ` 呼出。' });
+              // B4-5：键控 toast（toast.metaTerminalUnlocked，7 语种），不再直显中文整句
+              bus.publish({ type: 'ui/toast', messageKey: 'toast.metaTerminalUnlocked' });
               break;
             case 'showHint':
               bus.publish({ type: 'ui/toast', messageKey: eff.text });
@@ -692,7 +722,6 @@ export const useGameStore = create<GameStore>()(
       /* --------------------------- 战斗装配 ------------------------------- */
       let battleSeq = 0;
       let nostalgiaSeq = 0;
-      let nostalgiaPullsTotal = 0;
 
       /**
        * 布阵战地形武器装配（纯）：尖刺格（图例 5）→ 'spike'；
@@ -874,23 +903,45 @@ export const useGameStore = create<GameStore>()(
       /* --------------------------- 挑战层入场 ----------------------------- */
       const enterChallengeLayer = (layerId: string): void => {
         const state = get();
+        // B3-2：visitSeq = story.flags 里 layer:<id>:* 前缀的旗标计数 + 1（写点
+        // 在下方入层成功处）。层号同时驱动三件事：runSeed 分层种子（每次进入
+        // 都是新生成的图，不再是固定 f1）、floorIndex（endless.ts 的尺寸/箱数/
+        // 拉箱强度成长曲线与「第 N 层」命名）、递增奖励（60+floorIndex×20◈）。
         const visitSeq = Object.keys(state.story.flags).filter((k) => k.startsWith(`layer:${layerId}:`)).length + 1;
-        const runSeed = `challenge-${layerId}-${visitSeq}`;
-        const levelId = `endless-${runSeed}-f1`;
+        const runSeed = `challenge-${layerId}`;
+        const levelId = `endless-${runSeed}-f${visitSeq}`;
         // 无尽回廊生成器（逆向拉箱构造性可解 + 内置求解器校验）按层种子生成
-        const generated = generateEndlessFloor(runSeed, 1);
+        const generated = generateEndlessFloor(runSeed, visitSeq);
         if (!generated.ok) {
-          bus.publish({ type: 'ui/toast', messageKey: `挑战层生成失败：${generated.error}` });
+          // B4-5：失败详情是 endless 生成器的内部诊断（中文），转为 console 上报
+          // 与 debug 标记；toast 走键控主句（toast.challengeGenFailed，7 语种）
+          console.warn(`[challenge] ${generated.error}`);
+          bus.publish({ type: 'debug/mark', label: `challenge-gen-error:${generated.error}` });
+          bus.publish({ type: 'ui/toast', messageKey: 'toast.challengeGenFailed' });
           return;
         }
         const level = { ...floorAsLevel(generated.floor), area: 'domain-3' as const, subtitle: `挑战层 · ${layerId}` };
         registerSessionLevel(level);
         beginLevel(levelId);
+        // B3-2：写层递增旗标（visitSeq 的唯一写点）。此前 layer:<id>:* 前缀全仓
+        // 只有读取（visitSeq 计数）无任何写点 → 计数恒 0、visitSeq 恒 1，三挑战
+        // 层退化为固定 f1 图、奖励恒 80◈，与「第 N+1 层在等你」的承诺不符。
+        // 入层成功后按本次 visitSeq 落旗，下次进入计数 +1：生成参数与奖励随
+        // 层数真实成长。旗标进 story.flags 真相源，随存档持久化。
+        if (get().segment?.levelId === levelId) {
+          const cur = get();
+          set({ story: { ...cur.story, flags: { ...cur.story.flags, [`layer:${layerId}:${visitSeq}`]: true } } });
+        }
       };
 
       /* --------------------------- 关卡启动 ------------------------------- */
       const beginLevel = (levelId: string): void => {
         const state = get();
+        // B4-1：开启新的段位会话 —— 后续 finishLevelSuccessfully 的「同会话只
+        // 发一次奖励」以此为界（换关/重玩都会开启新会话，重新结算语义不变）
+        levelSessionSeq += 1;
+        currentLevelSession = levelSessionSeq;
+        rewardedLevelSession = -1;
         // 换关即作废未收尾剧本的封印账目（剧本被 beginLevel 重置为中断态，
         // 与 A4-1「演完才封印」语义一致：中断的触发保持可重触发）
         pendingSeenTriggerId = null;
@@ -979,6 +1030,23 @@ export const useGameStore = create<GameStore>()(
         // npc/tile 类规则：落地即查（小怪 radius 0 = 踩上即遭遇）
         const hit = queryPositionalTrigger(levelId, grid, currWorld, ctxBase, 'npc+tile');
         if (hit !== null) {
+          // B3-4：npc 半径规则的「进入边沿」语义 —— 上一格已在触发半径内
+          //（区内移动）不再开演。常驻半径（L12 BOSS r3 覆盖整个圣坛解谜区）
+          // 曾使 once:false 规则区内每步完整重演秒杀演出，解谜收尾被反复打断；
+          // 边沿语义仿 isOutskirtsTransition（triggers.ts:160）的「跨入那一刻才
+          // 触发」，且不封印 seenEventIds —— 走出半径再跨入仍会开演，E 交互
+          // 主动重看也不受限，once:false 的可重复触发设计保留、无软锁路径。
+          // 半径 0（踩上即遭遇）不受影响：上一格距离必 >0，恒为进入边沿。
+          if (hit.when.kind === 'npc') {
+            const radius = hit.when.radius ?? 1;
+            const ruleLevel = positionalRuleLevelId(hit);
+            const prevDist =
+              ruleLevel === undefined
+                ? Math.abs(hit.when.x - prevWorld.x) + Math.abs(hit.when.y - prevWorld.y) // 主城旧规则：世界坐标
+                : Math.abs(hit.when.x - worldToGrid(prevWorld.x, prevWorld.y).x) +
+                  Math.abs(hit.when.y - worldToGrid(prevWorld.x, prevWorld.y).y); // 关级规则：网格坐标
+            if (prevDist <= radius) return;
+          }
           markTriggerSeen(hit);
           startStoryScript(hit.scriptId);
           return;
@@ -1011,14 +1079,19 @@ export const useGameStore = create<GameStore>()(
 
       /* --------------------------- 推箱主流程 ----------------------------- */
 
-      /** 法则动作被拒时的玩家提示（move 不弹 toast —— 撞墙是高频操作） */
-      const PUZZLE_BLOCK_TOASTS: Partial<Record<PuzzleAction['type'] | string, string>> = {
-        'law-locked': '对应法则未解锁：拉箱需「镜像拉箱」，斜推需「斜向推挤」，穿行需「相位穿行」（抽卡或关卡奖励获取）。',
-        'no-chest': '那个方向上没有箱子。',
-        'no-charge': '穿行充能不足：高星结算与「相位穿行」法则会补充充能。',
-        'landed-occupied': '落点被不可压碎的实体占据。',
-        'goal-locked': '就位的箱子推不落基座：需要「箱可推离」法则。',
-        cliff: '高度差太大，爬不上去。',
+      /**
+       * 法则动作被拒时的玩家提示（move 不弹 toast —— 撞墙是高频操作）。
+       * B4-5：中文整句迁入 uiText 键（toast.lawLocked 等六条，7 语种），此处
+       * 只存键名 —— messageKey 发键名，HudBar 的 resolveToastText 经 tUi 按语
+       * 种解析，非中文语种不再直显简中整句。
+       */
+      const PUZZLE_BLOCK_TOAST_KEYS: Partial<Record<PuzzleAction['type'] | string, UiTextKey>> = {
+        'law-locked': 'toast.lawLocked',
+        'no-chest': 'toast.noChest',
+        'no-charge': 'toast.noCharge',
+        'landed-occupied': 'toast.landedOccupied',
+        'goal-locked': 'toast.goalLocked',
+        cliff: 'toast.cliff',
       };
 
       /**
@@ -1108,8 +1181,8 @@ export const useGameStore = create<GameStore>()(
               }
             }
           }
-          const toast = toastOnBlock ? PUZZLE_BLOCK_TOASTS[result.reason] : undefined;
-          if (toast !== undefined) bus.publish({ type: 'ui/toast', messageKey: toast });
+          const toastKey = toastOnBlock ? PUZZLE_BLOCK_TOAST_KEYS[result.reason] : undefined;
+          if (toastKey !== undefined) bus.publish({ type: 'ui/toast', messageKey: toastKey });
           return;
         }
 
@@ -1245,7 +1318,7 @@ export const useGameStore = create<GameStore>()(
                   runBattleAction({ type: 'startBattle' });
                   break;
                 }
-                bus.publish({ type: 'ui/toast', messageKey: '战斗已开始，布阵阶段结束。' });
+                bus.publish({ type: 'ui/toast', messageKey: 'toast.formationOver' });
                 break;
               }
               s.openPanel('deck');
@@ -1268,7 +1341,7 @@ export const useGameStore = create<GameStore>()(
           const battle = battleOf();
           if (battle === null) return;
           if (battle.phase !== 'formation') {
-            bus.publish({ type: 'ui/toast', messageKey: '推挤只在布阵阶段可用：战斗期请选择武器攻击。' });
+            bus.publish({ type: 'ui/toast', messageKey: 'toast.shoveBattleOnly' });
             return;
           }
           runBattleAction({ type: 'shove', dir });
@@ -1293,7 +1366,7 @@ export const useGameStore = create<GameStore>()(
             // C 键约定：沿最近一次移动方向继续（可穿墙）；无方向可依时明示引导
             const inferred = lastMoveDirOf(puzzle);
             if (inferred === null) {
-              bus.publish({ type: 'ui/toast', messageKey: '先用方向键走一步，C 键会沿刚才的方向穿行。' });
+              bus.publish({ type: 'ui/toast', messageKey: 'toast.phaseWalkNeedDir' });
               return;
             }
             actDir = inferred;
@@ -1360,12 +1433,15 @@ export const useGameStore = create<GameStore>()(
           if (puzzle === null || state.phase !== 'playing') return;
           const result = applyPuzzleMove(puzzle, puzzleRulesOf(), { type: 'shiftPlane' });
           if (!result.ok) {
-            const toastByReason: Partial<Record<string, string>> = {
-              'plane-locked': '位面未解锁：需要「法则·位面通行」（抽卡或剧情获取）。',
-              'no-anchor': '这里离位面锚点太远了——「位面之眼」可以解除限制。',
-              embedded: '有实体嵌在阴面的墙里，无法切换位面。',
+            // B4-5：位面 toast 全部键控（7 语种）。'plane-locked' 接线既有
+            // toast.planeLocked 键（此前键已存在却未引用，双真相源口径收口）；
+            // no-anchor/embedded/兜底为本次新增键。
+            const toastKeyByReason: Partial<Record<string, UiTextKey>> = {
+              'plane-locked': 'toast.planeLocked',
+              'no-anchor': 'toast.planeNoAnchor',
+              embedded: 'toast.planeEmbedded',
             };
-            bus.publish({ type: 'ui/toast', messageKey: toastByReason[result.reason] ?? '无法切换位面。' });
+            bus.publish({ type: 'ui/toast', messageKey: toastKeyByReason[result.reason] ?? 'toast.planeShiftFailed' });
             return;
           }
           publishPuzzleFx(result.fx, 'up');
@@ -1378,7 +1454,12 @@ export const useGameStore = create<GameStore>()(
           // def id → availableWeapons 里的实例 uid（K12：只选真实存在的实例）
           const instance = battle.availableWeapons.find((w) => w.defId === weaponId);
           if (instance === undefined) {
-            bus.publish({ type: 'ui/toast', messageKey: `（背包里没有这把武器：${weaponId}）` });
+            // B4-5：带参数句子经 tUi 按 locale 插值后以成品文本发布（bus 单通道，
+            // 与 toast.nostalgiaRound 同一先例）；weaponId 是语言中立 id
+            bus.publish({
+              type: 'ui/toast',
+              messageKey: tUi(get().locale, 'toast.weaponNotInBag', { weaponId }),
+            });
             return;
           }
           runBattleAction({ type: 'selectWeapon', uid: instance.uid });
@@ -1396,6 +1477,14 @@ export const useGameStore = create<GameStore>()(
 
         rollGacha(times) {
           const state = get();
+          // B4-2：战斗/对话相禁入抽卡 —— 抽卡会把 phase 切到 'gacha'，而
+          // closeOverlay 只把 gacha 相回 playing，battle/formation 残留后世界层
+          // 与布阵战斗同时活跃（状态机破坏）。store 层门禁覆盖键盘+HUD+祭坛
+          // 全部入口；面板本身仍可开（看卡组/背包），只是抽卡动作被拒。
+          if (state.phase === 'combat' || state.phase === 'dialogue') {
+            bus.publish({ type: 'ui/toast', messageKey: 'toast.gachaLocked' });
+            return;
+          }
           const cost = gachaCost(times);
           if (state.gacha.starStones < cost) {
             bus.publish({ type: 'ui/toast', messageKey: 'toast.gachaPlaceholder' });
@@ -1453,14 +1542,19 @@ export const useGameStore = create<GameStore>()(
             isNew: false,
           }));
           const round = nostalgiaSeq;
-          const startIndex = nostalgiaPullsTotal;
           nostalgiaSeq += 1;
-          nostalgiaPullsTotal += pulls.length;
           const fourCount = stars.filter((s) => s === 'four').length;
           const threeCount = stars.filter((s) => s === 'three').length;
           // 统计分片动态引入（避免 gameStore ↔ statsCollector 的模块环，与 logbook 同策略）
           void import('../../archive/statsCollector')
             .then((m) => {
+              // B4-7：pullIndex 真相源回读 —— 起始编号取 stats 分片 POOL_NOSTALGIA
+              // 计数（随存档持久化），不再用会话闭包计数器 nostalgiaPullsTotal。
+              // 此前跨刷新 pullIndex 重新从 1 计，档案「逐抽记录」出现两套 #1~#10，
+              // 违背 statsCollector.ts:41-42「跨批次连续」承诺。动态回调里同步读
+              // poolTallies 是安全的：recordPulls 的 set 同步落账，上一批已计入。
+              const stats = m.useStatsStore.getState();
+              const startIndex = stats.poolTallies[m.POOL_NOSTALGIA]?.pulls ?? 0;
               m.useStatsStore.getState().recordPulls(m.POOL_NOSTALGIA, pulls, startIndex);
             })
             // A4-9：绝不静默 —— 动态加载失败要让控制台可见（S14 纪律）
@@ -1483,6 +1577,33 @@ export const useGameStore = create<GameStore>()(
 
         redeemLawCard(cardId) {
           const state = get();
+          // B4-5：玩家可见的失败原因先在本层预校验并走 uiText 键控（7 语种）——
+          // 引擎 redeemLawCardEngine 的 error 是中文整句，不进玩家 toast 通道
+          //（引擎校验原样保留：预校验与引擎同谓词同源，理论不可达时走兜底键）。
+          const locale = state.locale;
+          const reject = (messageKey: string): void => {
+            bus.publish({ type: 'ui/toast', messageKey });
+            bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-3' });
+          };
+          const card = CARDS.find((c) => c.id === cardId);
+          if (card === undefined) {
+            reject(tUi(locale, 'toast.redeemUnknownCard', { cardId }));
+            return;
+          }
+          if (card.kind !== 'law') {
+            reject(tUi(locale, 'toast.redeemNotLawCard', { name: card.name }));
+            return;
+          }
+          if (state.gacha.owned.some((o) => o.cardId === cardId)) {
+            reject(tUi(locale, 'toast.redeemAlreadyOwned', { name: card.name }));
+            return;
+          }
+          if (state.pity.shards < FORMAL_POOL.pity.redeemCost) {
+            reject(
+              tUi(locale, 'toast.redeemShortShards', { need: FORMAL_POOL.pity.redeemCost, have: state.pity.shards }),
+            );
+            return;
+          }
           // 校验（余额/合法性/已持有）在引擎纯函数 redeemLawCard：60 碎片直购任一未持有法则卡
           const outcome = redeemLawCardEngine({
             counters: state.pity,
@@ -1492,11 +1613,12 @@ export const useGameStore = create<GameStore>()(
             redeemCost: FORMAL_POOL.pity.redeemCost,
           });
           if (!outcome.ok) {
-            bus.publish({ type: 'ui/toast', messageKey: outcome.error });
-            bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-3' });
+            // 预校验已覆盖全部已知拒绝路径；引擎仍拒绝（内部校验兜底）不直显中文整句
+            console.warn(`[gacha] 碎片直购被引擎拒绝：${outcome.error}`);
+            reject('toast.redeemFailed');
             return;
           }
-          const card = CARDS.find((c) => c.id === outcome.cardId);
+          const lawCard = CARDS.find((c) => c.id === outcome.cardId);
           set({
             pity: outcome.counters,
             gacha: {
@@ -1510,7 +1632,11 @@ export const useGameStore = create<GameStore>()(
           bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-16' });
           bus.publish({
             type: 'ui/toast',
-            messageKey: `碎片直购成功：「${card?.name ?? outcome.cardId}」已入卡组（-${FORMAL_POOL.pity.redeemCost} 碎片）。`,
+            // B4-5：成功 toast 键控插值（toast.redeemSuccess，卡名按内容语言事实源）
+            messageKey: tUi(get().locale, 'toast.redeemSuccess', {
+              name: lawCard?.name ?? outcome.cardId,
+              cost: FORMAL_POOL.pity.redeemCost,
+            }),
           });
         },
 
@@ -1559,7 +1685,8 @@ export const useGameStore = create<GameStore>()(
             // 角色卡：编入卡组（战斗开局结算 buff，对话分支经 card: 镜像判定）
             set({ gacha: { ...state.gacha, activeLaws: [...state.gacha.activeLaws, card.id] } });
             bus.publish({ type: 'sfx/play', sfxId: 'sfx-effect-16' });
-            bus.publish({ type: 'ui/toast', messageKey: `「${card.name}」已编入卡组。` });
+            // B4-5：键控插值 toast（toast.cardEnrolled，7 语种；卡名保留中文属内容语言决策）
+            bus.publish({ type: 'ui/toast', messageKey: tUi(get().locale, 'toast.cardEnrolled', { name: card.name }) });
             return;
           }
 
@@ -1569,7 +1696,10 @@ export const useGameStore = create<GameStore>()(
             .filter((id): id is string => id !== undefined);
           const rebuilt = buildPuzzleRuleSet(DEFAULT_RULE_SET, [...patchIds, card.lawPatchId]);
           if (!rebuilt.ok) {
-            bus.publish({ type: 'ui/toast', messageKey: rebuilt.error });
+            // B4-5：rebuilt.error 是 lawRegistry 的内部诊断（未知补丁 id 等，数据
+            // bug 路径）——转 console 上报，toast 走通用键控句不直显中文整句
+            console.warn(`[law] 法则补丁应用失败：${rebuilt.error}`);
+            bus.publish({ type: 'ui/toast', messageKey: 'toast.actionFailed' });
             return;
           }
           set({
@@ -1666,8 +1796,11 @@ export const useGameStore = create<GameStore>()(
         closeOverlay() {
           const state = get();
           // 终局/抽卡/设置 overlay 全部可关闭且不锁控制（根治 S11）
-          // 无段位（标题页单抽）时回到标题，而不是落到没有世界的 playing 空白页
-          const fallbackPhase = state.segment === null ? 'title' : 'playing';
+          // 无段位（标题页单抽）时回到标题，而不是落到没有世界的 playing 空白页；
+          // B4-2 双保险：battle 残留（战斗中被违规切走的会话态）时回 'combat'
+          // 而非 'playing' —— 世界层不得在战斗活跃时回到推箱相
+          const fallbackPhase =
+            state.segment === null ? 'title' : state.battle !== null ? 'combat' : 'playing';
           if (state.result !== null) set({ result: null, phase: fallbackPhase });
           if (state.phase === 'gacha') set({ phase: fallbackPhase });
           if (state.activePanel !== 'none') set({ activePanel: 'none' });
@@ -1706,7 +1839,6 @@ export const useGameStore = create<GameStore>()(
           for (const id of sessionLevelIds) sessionLevels.delete(id);
           battleSeq = 0;
           nostalgiaSeq = 0;
-          nostalgiaPullsTotal = 0;
           pendingSeenTriggerId = null; // A4-1：清档一并作废未收尾剧本的封印账目
           pendingChallengeLayer = null; // R-2：清档一并作废未入层的挑战层挂账
           set({ ...initialState, visitCount: get().visitCount });
@@ -1752,7 +1884,20 @@ export const useGameStore = create<GameStore>()(
       // 'zh-Hans'，堵住「损坏存档 locale 直达渲染树」的最后一条通道。
       merge: (persisted, current) => {
         const persistedLocale = (persisted as { locale?: unknown } | null | undefined)?.locale;
-        return { ...current, ...(persisted as object), locale: isLocaleId(persistedLocale) ? persistedLocale : 'zh-Hans' };
+        const merged = { ...current, ...(persisted as object), locale: isLocaleId(persistedLocale) ? persistedLocale : 'zh-Hans' } as typeof current;
+        // B4-3：按 CARDS 白名单清洗读档灌回的 gacha.owned —— 版本删卡或手改
+        // 存档的 ghost 卡（cardId 不在卡池）此前原样进内存，logbook 收集器对
+        // owned 全量重算时 recordCardObtained 抛 RangeError，订阅链中断、成就/
+        // 图鉴静默停摆。治本：ghost 卡在读档入口即被洗掉，永不复发。
+        // （收集器侧另有 per-call 容错兜底，见 archive/logbook.ts installLogbookCollector。）
+        const gacha = merged.gacha;
+        if (gacha !== undefined && Array.isArray(gacha.owned)) {
+          const knownCardIds = new Set(CARDS.map((c) => c.id));
+          // GameState.gacha 是 readonly 属性（types.ts），不能对 merged 原地赋值；
+          // 用展开重建新对象覆盖 gacha，其余切片（含 store 方法）引用原样保留。
+          return { ...merged, gacha: { ...gacha, owned: gacha.owned.filter((o) => knownCardIds.has(o.cardId)) } };
+        }
+        return merged;
       },
     },
   ),

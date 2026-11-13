@@ -8,8 +8,12 @@
  *
  * 成就判定：状态镜像 → buildAchievementSnapshot()（纯函数）→
  * evaluateAchievements()（data/lore/achievements.ts，纯函数）→ 新解锁写入
- * 本分片并广播 toast/音效。判定完全声明式，坏档/外挂数据只会让谓词不满足，
- * 不会让收集器崩溃。
+ * 本分片并广播 toast/音效。判定完全声明式。坏档/外挂数据的两道防线（B4-3）：
+ *  - 治本：主档读档 merge 按 CARDS 白名单清洗 gacha.owned（gameStore.ts），
+ *    ghost 卡在读档入口即被洗掉、不进内存；
+ *  - 止血：本文件收集器对 recordCardObtained 做 per-call 容错 —— record*
+ *    动作对未知 id 仍显式抛 RangeError（坏数据不静默入库的契约），但收集链
+ *    捕获后跳过该卡并 warn 一次，成就重评与同 set 后续订阅者不再被中断。
  *
  * toast 约定（对接点）：成就解锁广播 {type:'ui/toast', messageKey:
  * 'lore:ach:<成就id>'}，UI 层经 resolveAchievementToast() 解析原文案 ——
@@ -265,6 +269,25 @@ export function achievementProgress(state: LogbookState): AchievementProgress {
 
 let unsubscribeLogbook: (() => void) | null = null;
 let lastResultRef: unknown = null;
+/** 已 warn 过的 ghost 卡 id（B4-3：同一坏卡只警告一次，不刷屏） */
+const warnedUnknownCardIds = new Set<string>();
+
+/**
+ * 图鉴记卡的容错通道（B4-3 止血）：recordCardObtained 对未知 id 显式抛
+ * RangeError（坏数据不静默入库），但收集器在订阅链里调用 —— ghost 卡抛错会
+ * 中断其后所有订阅者与成就重评。此处捕获、跳过该卡并 warn 一次，收集链照常
+ * 走完；ghost 卡不写入图鉴（治本清洗在主档读档 merge，gameStore.ts）。
+ */
+function safeRecordCardObtained(cardId: string, at?: number): void {
+  try {
+    useLogbookStore.getState().recordCardObtained(cardId, at);
+  } catch {
+    if (!warnedUnknownCardIds.has(cardId)) {
+      warnedUnknownCardIds.add(cardId);
+      console.warn(`[logbook] 存档含卡池外卡牌「${cardId}」，图鉴跳过记录（成就/图鉴收集不受影响）`);
+    }
+  }
+}
 
 /**
  * 安装 logbook 收集器（幂等）：订阅全局 store，把「发生过的事」镜像进本
@@ -277,6 +300,8 @@ export function installLogbookCollector(): () => void {
     const logbook = useLogbookStore.getState();
 
     // ---- 图鉴：卡牌持有清单变化 → 全量重算首获/次数 ----
+    // B4-3：逐卡走 safeRecordCardObtained 容错 —— ghost 卡（卡池外）不再抛断
+    // 订阅链，后续合法卡照常入册
     if (state.gacha.owned !== prev.gacha.owned) {
       const counts = new Map<string, number>();
       for (const instance of state.gacha.owned) {
@@ -285,10 +310,10 @@ export function installLogbookCollector(): () => void {
       for (const [cardId, count] of counts) {
         const known = logbook.codexCards[cardId];
         if (known === undefined) {
-          logbook.recordCardObtained(cardId);
-          for (let i = 1; i < count; i++) logbook.recordCardObtained(cardId);
+          safeRecordCardObtained(cardId);
+          for (let i = 1; i < count; i++) safeRecordCardObtained(cardId);
         } else if (count > known.obtainedCount) {
-          for (let i = known.obtainedCount; i < count; i++) logbook.recordCardObtained(cardId);
+          for (let i = known.obtainedCount; i < count; i++) safeRecordCardObtained(cardId);
         }
       }
     }

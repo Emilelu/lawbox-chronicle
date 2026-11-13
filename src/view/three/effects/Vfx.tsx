@@ -292,10 +292,11 @@ export function VfxLayer({ toWorld, playerWorld, theme }: VfxLayerProps) {
           />
         );
       })}
-      {/* 位面反转扩散环 */}
+      {/* 位面反转扩散环（y 随玩家海拔抬升，B2-1：站上 h1 基座格时环根不再
+          埋进平台体被 depthTest 剔除 —— 与粒子 origin 的 p[1]+0.7 同源跟随） */}
       <mesh
         ref={ringRef}
-        position={[playerWorld[0], 0.05, playerWorld[2]]}
+        position={[playerWorld[0], playerWorld[1] + 0.05, playerWorld[2]]}
         rotation={[-Math.PI / 2, 0, 0]}
         visible={false}
       >

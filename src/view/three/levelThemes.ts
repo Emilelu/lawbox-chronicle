@@ -94,6 +94,14 @@ export interface LevelThemeSpec {
   };
   /** 玩家提灯（缺省不启用）；onlyYin = 仅阴面启用（L9 表里回廊） */
   readonly lantern?: Readonly<LevelLanternSpec & { readonly onlyYin?: boolean }>;
+  /**
+   * 氛围豁免直通（B2-3）：以「绝对强度」为设计语义的关（L3 暗夜宣称灯减半/
+   * 雾浓一倍，spec 值相对位面基线就是目标倍率）置 true 后，keyLight/rimLight
+   * 强度与雾密度不再走 LEVEL_MIX 混色（0.6 系数会把减半稀释成 −36%、翻倍
+   * 稀释成 +37%），直接取 spec 值；色值仍走混色，关卡识别色职责不变。
+   * 缺省 false：其余关强度/密度保持 LEVEL_MIX 混色，行为逐字节不变。
+   */
+  readonly atmosphereBypass?: boolean;
   /** 阴面覆盖分支（L9 等位面关）：字段级覆盖，未给出的字段继承阳面值 */
   readonly yinPlane?: Partial<
     Pick<
@@ -139,7 +147,10 @@ export const LEVEL_THEMES: Readonly<Record<string, LevelThemeSpec>> = Object.fre
     heroProp: { kind: 'arch', x: 3, y: 2, color: '#d8a678', height: 2.0 },
   },
   'level-sb-03': {
-    // 暗夜关：全场景压暗（灯减半、雾浓一倍），玩家提灯成为主光源
+    // 暗夜关：全场景压暗（灯减半、雾浓一倍），玩家提灯成为主光源。
+    // 氛围豁免直通（B2-3）：intensity/density 为绝对设计值，不经 LEVEL_MIX
+    // 稀释（双位面同暗，atmosphereBypass 随 effectiveSpec 展开继承）。
+    atmosphereBypass: true,
     accent: '#a8c4ff',
     fog: { color: '#060a16', density: 0.042 },
     sky: { top: '#03060d', horizon: '#0b1224' },
@@ -306,7 +317,11 @@ function deriveTheme(spec: LevelThemeSpec | undefined, planeShifted: boolean): P
   const base = planeShifted ? YIN_THEME : YANG_THEME;
   if (spec === undefined) return base;
   const s = effectiveSpec(spec, planeShifted);
-  const lerp = (a: number, b: number): number => a + (b - a) * LEVEL_MIX;
+  // 氛围豁免直通（B2-3）：atmosphereBypass 关的灯强/雾浓取 spec 绝对值不走
+  // LEVEL_MIX —— 否则 0.6 系数把 L3「灯减半/雾浓一倍」稀释成 −36%/+37%，
+  // 暗夜意图被系统性削弱 40%；色值仍走混色，其余关 lerp 行为不变。
+  const bypass = s.atmosphereBypass === true;
+  const lerp = (a: number, b: number): number => (bypass ? b : a + (b - a) * LEVEL_MIX);
   return Object.freeze({
     id: base.id,
     sky: {

@@ -85,15 +85,23 @@ describe('theme · 自发位姿回落决策（computeSpontaneousPose，N2 根治
     }
   });
 
-  it('third + 视角确有切换：explore/dialogue 回 explore 预设；全局档模式回落舞台位', () => {
-    for (const mode of FP_MODES) {
-      const pose = computeSpontaneousPose('third', mode, false, ctx, true);
-      expect(pose).not.toBeNull();
-      expect(pose!.distance).toBeCloseTo(8.5, 12);
-      expect(pose!.polar).toBeCloseTo(degToRad(35), 12); // explore 预设 elevation 55° → 极角 35°
-      expect(pose!.azimuth).toBeNull();
-      expect(pose!.fov).toBe(BASE_CAMERA_FOV);
-    }
+  it('third + 视角确有切换：explore 回 explore 预设、dialogue 回 dialogue 设计位（B1-4）；全局档模式回落舞台位', () => {
+    // explore：回落 explore 预设 8.5/35°（现状语义保持），方位角保留、fov 回基准
+    const explore = computeSpontaneousPose('third', 'explore', false, ctx, true);
+    expect(explore).not.toBeNull();
+    expect(explore!.distance).toBeCloseTo(8.5, 12);
+    expect(explore!.polar).toBeCloseTo(degToRad(35), 12); // explore 预设 elevation 55° → 极角 35°
+    expect(explore!.azimuth).toBeNull();
+    expect(explore!.fov).toBe(BASE_CAMERA_FOV);
+    // dialogue（B1-4）：回落 dialogue 设计位（4.6/俯仰 52°），不再被拽去 explore
+    // 俯瞰位 —— 说话者不轮换时位姿管线收不回来，取景拉远会持续整段对话
+    const dialogue = computeSpontaneousPose('third', 'dialogue', false, ctx, true);
+    const dialogueStage = computePose('dialogue', ctx);
+    expect(dialogue).not.toBeNull();
+    expect(dialogue!.distance).toBe(dialogueStage.distance);
+    expect(dialogue!.polar).toBe(dialogueStage.polar);
+    expect(dialogue!.azimuth).toBeNull(); // 方位角保留
+    expect(dialogue!.fov).toBe(BASE_CAMERA_FOV); // fov 回基准（T 俯瞰 50 不残留）
     for (const mode of STAGE_MODES) {
       const stage = computePose(mode, ctx);
       const pose = computeSpontaneousPose('third', mode, false, ctx, true);
@@ -104,26 +112,58 @@ describe('theme · 自发位姿回落决策（computeSpontaneousPose，N2 根治
     }
   });
 
-  it('third 且视角未切换：不发请求（null，explore 常态交还用户全权，现状一致）', () => {
+  it('third + T 松开沿（prevPeeking=true → peeking=false）：按当前 mode 回落既定取景（B1-1）', () => {
+    // 根因回归：T 俯瞰沿把相机收敛到 explore 俯瞰预设后，松开不改变 view，
+    // 旧行为 viewChanged=false 时 return null → 取景永久停在俯瞰位直到相位切换。
+    // 松开沿按当前 mode 回落（与 first 分支不查 viewChanged 同做法）：
+    for (const mode of STAGE_MODES) {
+      const stage = computePose(mode, ctx);
+      const pose = computeSpontaneousPose('third', mode, false, ctx, false, true);
+      expect(pose).not.toBeNull();
+      expect(pose!.distance).toBe(stage.distance);
+      expect(pose!.polar).toBe(stage.polar);
+      expect(pose!.fov).toBe(BASE_CAMERA_FOV);
+    }
+    // combat 方位角归 0（I1 舞台位语义，与 first 松开回落一致）
+    expect(computeSpontaneousPose('third', 'combat', false, ctx, false, true)!.azimuth).toBe(0);
+    // dialogue：回落 dialogue 设计位（与 B1-4 viewChanged 分支同构）
+    const dialogue = computeSpontaneousPose('third', 'dialogue', false, ctx, false, true);
+    const dialogueStage = computePose('dialogue', ctx);
+    expect(dialogue!.distance).toBe(dialogueStage.distance); // 4.6
+    expect(dialogue!.polar).toBe(dialogueStage.polar); // 极角 38°（俯仰 52°）
+    // explore：回落 explore 预设（俯瞰预设与 explore 预设同值，语义仍是回落）
+    const explore = computeSpontaneousPose('third', 'explore', false, ctx, false, true);
+    expect(explore!.distance).toBeCloseTo(8.5, 12);
+    expect(explore!.polar).toBeCloseTo(degToRad(35), 12);
+    // first 分支不查松开沿：first 松开 T 维持既有舞台位/FP 头位回落（现状不变）
+    const firstCombat = computeSpontaneousPose('first', 'combat', false, ctx, false, true);
+    expect(firstCombat!.distance).toBeCloseTo(8.2, 12);
+  });
+
+  it('third 且视角未切换且非松开沿：不发请求（null，explore 常态交还用户全权，现状一致）', () => {
     for (const mode of ALL_MODES) {
-      expect(computeSpontaneousPose('third', mode, false, ctx, false)).toBeNull();
+      expect(computeSpontaneousPose('third', mode, false, ctx, false, false)).toBeNull();
+      expect(computeSpontaneousPose('third', mode, false, ctx, false)).toBeNull(); // prevPeeking 缺省 false
     }
   });
 
   it('N2 核心不变量：一切非 null 自发位姿的 distance/polar 必须落在目标夹紧档内（可达性）', () => {
     // 不可达目标 = useFrame 每帧夹紧把收敛钉在档位边界 → 永不收敛冻结（N2 根因）。
-    // 全组合扫描：view × mode × peeking × viewChanged。
+    // 全组合扫描：view × mode × peeking × viewChanged × prevPeeking（B1-1 松开沿
+    // 与 viewChanged 分支合并后，松开沿产物同样必须可达）。
     for (const view of ['first', 'third'] as const) {
       for (const mode of ALL_MODES) {
         for (const peeking of [false, true]) {
           for (const viewChanged of [false, true]) {
-            const pose = computeSpontaneousPose(view, mode, peeking, ctx, viewChanged);
-            if (pose === null) continue;
-            const limits = cameraLimitsFor(view, mode, peeking);
-            expect(pose.distance ?? 0).toBeGreaterThanOrEqual(limits.distMin);
-            expect(pose.distance ?? 0).toBeLessThanOrEqual(limits.distMax);
-            expect(pose.polar ?? 0).toBeGreaterThanOrEqual(limits.polarMin);
-            expect(pose.polar ?? 0).toBeLessThanOrEqual(limits.polarMax);
+            for (const prevPeeking of [false, true]) {
+              const pose = computeSpontaneousPose(view, mode, peeking, ctx, viewChanged, prevPeeking);
+              if (pose === null) continue;
+              const limits = cameraLimitsFor(view, mode, peeking);
+              expect(pose.distance ?? 0).toBeGreaterThanOrEqual(limits.distMin);
+              expect(pose.distance ?? 0).toBeLessThanOrEqual(limits.distMax);
+              expect(pose.polar ?? 0).toBeGreaterThanOrEqual(limits.polarMin);
+              expect(pose.polar ?? 0).toBeLessThanOrEqual(limits.polarMax);
+            }
           }
         }
       }

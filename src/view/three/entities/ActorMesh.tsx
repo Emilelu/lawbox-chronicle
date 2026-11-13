@@ -463,17 +463,28 @@ function buildAuthorChairGeometry(): BufferGeometry {
   });
 }
 
-/** BOSS 底座：接地阴影盘 + 光环合并（顶点色区分，统一材质动态透明度） */
-function buildBossGroundGeometry(accentColor: string): BufferGeometry {
-  const disc = tintedGeometry(
-    new CircleGeometry(0.34, 18).rotateX(-Math.PI / 2).translate(0, 0.012, 0),
-    '#000000',
-  );
-  const ring = tintedGeometry(
-    new RingGeometry(0.42, 0.56, 28).rotateX(-Math.PI / 2).translate(0, 0.02, 0),
-    accentColor,
-  );
-  return cachedGeometry(`actor:ylzz:ground:${accentColor}`, () => mergeOrFirst([disc, ring], disc));
+/** BOSS 底座：接地阴影盘 + 光环合并（顶点色区分，统一材质动态透明度）。
+ *  disc/ring 的创建收进 cachedGeometry 的 build 闭包（与 buildVoxelGeometry
+ *  同款写法，B2-2）：缓存命中路径不再每次 BOSS 战挂载新建后被闭包跳过丢弃；
+ *  merge 成功后释放两个源几何 —— mergeOrFirst 的兜底路径返回 disc 本体时
+ *  不可 dispose，以「合并产物 ≠ disc」判别。导出仅供 B2-2 缓存回归测试。 */
+export function buildBossGroundGeometry(accentColor: string): BufferGeometry {
+  return cachedGeometry(`actor:ylzz:ground:${accentColor}`, () => {
+    const disc = tintedGeometry(
+      new CircleGeometry(0.34, 18).rotateX(-Math.PI / 2).translate(0, 0.012, 0),
+      '#000000',
+    );
+    const ring = tintedGeometry(
+      new RingGeometry(0.42, 0.56, 28).rotateX(-Math.PI / 2).translate(0, 0.02, 0),
+      accentColor,
+    );
+    const merged = mergeOrFirst([disc, ring], disc);
+    if (merged !== disc) {
+      disc.dispose();
+      ring.dispose();
+    }
+    return merged;
+  });
 }
 
 /* ================================ 组件 ==================================== */

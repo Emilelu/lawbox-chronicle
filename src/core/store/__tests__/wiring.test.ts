@@ -10,11 +10,12 @@
  * 本文件覆盖六个任务新增的旁路接线，驱动同一全局 store，无 mock。
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   battleTurnFxEvents,
   CRIT_SHAKE_INTENSITY,
   effectiveTerrain,
+  findLevelAny,
   importLevel,
   postBattlePlayerHp,
   selectBattleFormationGrid,
@@ -22,6 +23,7 @@ import {
   selectBattleState,
   selectHazardCells,
   useGameStore,
+  worldToGrid,
 } from '../gameStore';
 import { POOL_NOSTALGIA, useStatsStore } from '../../../archive/statsCollector';
 import { selectHudModel } from '../selectors';
@@ -625,7 +627,9 @@ describe('F 位面切换全链路（R6 实机验证的存档态接线）', () =>
     teleportPlayer(9, 1);
     const events = captureDuring(() => store().shiftPlane());
     expect(store().segment?.planeShifted).toBe(false);
-    expect(events.some((e) => e.type === 'ui/toast' && e.messageKey.includes('位面未解锁'))).toBe(true);
+    // B4-5：'plane-locked' 分支接线既有 toast.planeLocked 键（messageKey 发键
+    // 名，文案按语种经 tUi 解析），不再发中文整句
+    expect(events.some((e) => e.type === 'ui/toast' && e.messageKey === 'toast.planeLocked')).toBe(true);
     expect(events.some((e) => e.type === 'fx/planeShift')).toBe(false);
   });
 });
@@ -794,5 +798,161 @@ describe('N-2 —— locale 白名单：setLocale/读档双通道非法值回落
     expect(store().locale).toBe('zh-Hans');
     // 迁移剥离生效：legacy 运行时切片不再经 merge 灌回（否则 phase='dialogue' 幽灵节点）
     expect(store().storyRuntime.phase).toBe('idle');
+  });
+});
+
+/* ================== B3/B4 · 修复回归（store 层端到端） ==================== */
+
+/** 当前段位玩家网格位（与 flow/g4Regression 测试同口径） */
+function playerPos(): { x: number; y: number } {
+  const player = store().segment?.entities.find((e) => e.kind === 'player');
+  if (player === undefined) throw new Error('段位里没有玩家实体');
+  return { x: player.x, y: player.y };
+}
+
+describe('B3-1 —— 东向法阵「送回 (-5,3)」真实传送（不再是空头承诺）', () => {
+  it('选「让法阵送你回」→ 剧本收尾后玩家立于原版落点网格 (2,9)，且可从落点走回主图', () => {
+    grantLawCard('card-law-feather-chest');
+    store().startLevel('level-sb-01');
+    teleportPlayer(14, 11); // 东缘地板（world +7 缓冲带）
+    store().move('right'); // beyond east → script-outskirt-east
+    expect(store().storyRuntime.scriptId).toBe('script-outskirt-east');
+    let guard = 0;
+    while (store().storyRuntime.phase !== 'awaiting-choice' && guard < 8) {
+      store().advanceDialogue();
+      guard += 1;
+    }
+    store().chooseStory('leave'); // 「让法阵送你回 (-5,3)」
+    guard = 0;
+    while (store().phase === 'dialogue' && guard < 12) {
+      store().advanceDialogue();
+      guard += 1;
+    }
+    expect(store().phase).toBe('playing');
+    // 传送真实发生：落点 = worldToGrid(-5,3) = (2,9)（areas.ts 已开为可站地板）
+    expect(playerPos()).toEqual(worldToGrid(-5, 3));
+    expect(playerPos()).toEqual({ x: 2, y: 9 });
+    // 落点可站且连通主图：向南走一步真实位移（不嵌墙、不被拒绝）
+    store().move('down');
+    expect(playerPos()).toEqual({ x: 2, y: 10 });
+  });
+});
+
+describe('B3-2 —— 挑战层 visitSeq 递增：新种子新图 + floorIndex 成长 + 奖励递增', () => {
+  /** 触发东向越界并选「深入」，收尾后自动入层（与既有 A3-1 测试同链路） */
+  function enterEastEndless(): void {
+    teleportPlayer(14, 11);
+    store().move('right');
+    expect(store().storyRuntime.scriptId).toBe('script-outskirt-east');
+    let guard = 0;
+    while (store().storyRuntime.phase !== 'awaiting-choice' && guard < 8) {
+      store().advanceDialogue();
+      guard += 1;
+    }
+    store().chooseStory('enter');
+    store().advanceDialogue(); // 中转第 2 行
+    store().advanceDialogue(); // 收尾 ending → 挂账入层
+    expect(store().phase).toBe('playing');
+  }
+
+  it('第一次进入 f1（旗标 layer:east-endless:1，奖励 80◈）；第二次进入 f2（旗标 :2，奖励 100◈）', () => {
+    grantLawCard('card-law-feather-chest');
+    store().startLevel('level-sb-01');
+    enterEastEndless();
+    expect(store().segment?.levelId ?? '').toMatch(/^endless-challenge-east-endless-f1$/);
+    expect(store().story.flags['layer:east-endless:1']).toBe(true);
+    expect(findLevelAny(store().segment?.levelId ?? '')?.reward.starStones).toBe(80); // 60+1×20
+    // 回标题重新入场（模拟「通关后再次触法阵」），visitSeq 计数 +1 → 第 2 层
+    store().backToTitle();
+    store().startLevel('level-sb-01');
+    enterEastEndless();
+    expect(store().segment?.levelId ?? '').toMatch(/^endless-challenge-east-endless-f2$/);
+    expect(store().story.flags['layer:east-endless:2']).toBe(true);
+    const level = findLevelAny(store().segment?.levelId ?? '');
+    expect(level?.reward.starStones).toBe(100); // 60+2×20：层递增奖励真实生效
+    // 「第 N 层」命名同步层号（「回廊的第 N+1 层在等你」承诺兑现）
+    expect(level?.name).toContain('第 2 层');
+  });
+});
+
+describe('B3-4 —— L12 BOSS 触发进入边沿：r3 内移动不再重演秒杀演出', () => {
+  it('从 r3 外跨入开演一次；区内移动（(6,2)→(6,3)）不开演；走出再跨入可重演', () => {
+    store().startLevel('level-lb-12');
+    teleportPlayer(6, 1); // 距 BOSS (6,5) 曼哈顿 4 —— r3 外
+    store().move('down'); // (6,1)→(6,2)：跨入 r3 → 开演
+    expect(store().phase).toBe('dialogue');
+    expect(store().storyRuntime.scriptId).toBe('script-boss-acts');
+    let guard = 0;
+    while (store().phase === 'dialogue' && guard < 20) {
+      store().advanceDialogue();
+      guard += 1;
+    }
+    expect(store().phase).toBe('playing');
+    // 区内移动（上一格已在 r3 内）：不再重演（修复前每步完整重演一次）
+    store().move('down'); // (6,2)→(6,3)，dist 2 ≤ 3
+    expect(store().phase).toBe('playing');
+    expect(store().storyRuntime.scriptId).toBeNull();
+    // 走出 r3 再跨入：once:false 的可重复触发设计保留
+    teleportPlayer(6, 1);
+    store().move('down'); // 再次跨入 r3 → 重演
+    expect(store().phase).toBe('dialogue');
+    expect(store().storyRuntime.scriptId).toBe('script-boss-acts');
+    guard = 0;
+    while (store().phase === 'dialogue' && guard < 20) {
+      store().advanceDialogue();
+      guard += 1;
+    }
+    expect(store().phase).toBe('playing');
+  });
+});
+
+describe('B4-2 —— 战斗/对话相禁入抽卡；closeOverlay 校验 battle 残留', () => {
+  it('combat 相 rollGacha 被拒（phase 不切走、星石不扣、lastResult 为空）', () => {
+    launchMobBattle();
+    expect(store().phase).toBe('combat');
+    const stones0 = store().gacha.starStones;
+    store().rollGacha(1);
+    expect(store().phase).toBe('combat'); // 抽卡相没有接管
+    expect(store().gacha.lastResult).toBeNull();
+    expect(store().gacha.starStones).toBe(stones0);
+  });
+
+  it('dialogue 相 rollGacha 同样被拒；closeOverlay 在 battle 残留时回 combat 而非 playing', () => {
+    launchMobBattle();
+    // 模拟「战斗中被违规切到抽卡相」的残留场景（双保险路径）
+    useGameStore.setState({ phase: 'gacha' });
+    store().closeOverlay();
+    expect(store().phase).toBe('combat'); // battle!==null → 不落 playing
+    expect(store().battle).not.toBeNull();
+    // 正常战斗收尾后 closeOverlay 恢复 playing（既有语义不受影响）
+    useGameStore.setState({ battle: null, combat: null, phase: 'playing' });
+    useGameStore.setState({ phase: 'gacha' });
+    store().closeOverlay();
+    expect(store().phase).toBe('playing');
+  });
+});
+
+describe('B4-7 —— 怀旧池 pullIndex 跨会话连续（stats 分片为真相源）', () => {
+  // recordPulls 经动态 import 异步落账（模块环规避），断言用 vi.waitFor 等齐
+  it('会话计数器重置（模拟刷新）后再跑一回，pullIndex 从 11 起连续编号', async () => {
+    store().runNostalgiaGacha();
+    await vi.waitFor(() => {
+      expect(useStatsStore.getState().pullHistory.length).toBe(10);
+    });
+    const firstBatch = useStatsStore.getState().pullHistory.slice(-10).map((r) => r.pullIndex);
+    expect(firstBatch).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    // 模拟跨刷新：主档 resetSave 归零会话闭包（nostalgiaSeq 从 0 重计），
+    // stats 分片保留持久化的累计计数（tally=10）——与真刷新的恢复态同构
+    store().resetSave();
+    expect(useStatsStore.getState().poolTallies[POOL_NOSTALGIA]?.pulls).toBe(10);
+    store().runNostalgiaGacha();
+    await vi.waitFor(() => {
+      expect(useStatsStore.getState().pullHistory.length).toBe(20);
+    });
+    const stats = useStatsStore.getState();
+    const secondBatch = stats.pullHistory.slice(-10).map((r) => r.pullIndex);
+    expect(secondBatch).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+    // uid 会话序号重置（nostalgia-0-*）但 pullIndex 语义保真：逐抽记录不再出现两套 #1~#10
+    expect(stats.pullHistory.slice(-10).every((r) => r.uid.startsWith('nostalgia-0-'))).toBe(true);
   });
 });

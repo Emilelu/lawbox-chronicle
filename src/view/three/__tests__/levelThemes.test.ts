@@ -97,6 +97,37 @@ describe('levelThemes · resolveLevelTheme 完整性与 hex 合法性', () => {
   });
 });
 
+describe('levelThemes · 氛围豁免直通（B2-3）', () => {
+  it('L3 暗夜关灯强/雾浓直取 spec 绝对值（双位面一致，不被 LEVEL_MIX 稀释）', () => {
+    // 注释宣称「灯减半、雾浓一倍」：0.6 混色曾把它稀释成 keyLight 0.80/雾 0.0356
+    for (const planeShifted of [false, true] as const) {
+      const theme = resolveLevelTheme('level-sb-03', planeShifted);
+      expect(theme.keyLight.intensity).toBe(0.5);
+      expect(theme.rimLight.intensity).toBe(0.4);
+      expect(theme.fogDensity).toBe(0.042);
+    }
+  });
+
+  it('非豁免关强度/密度仍走 LEVEL_MIX=0.6 混色（其余关行为不变）', () => {
+    // L1：keyLight lerp(1.25, 1.3, 0.6)=1.28、fog lerp(0.026, 0.024, 0.6)=0.0248
+    const l1 = resolveLevelTheme('level-sb-01', false);
+    expect(l1.keyLight.intensity).toBeCloseTo(1.28, 12);
+    expect(l1.fogDensity).toBeCloseTo(0.0248, 12);
+    // L9 阴面（yinPlane 覆盖、无豁免）走混色：keyLight lerp(1.1, 0.9, 0.6)=0.98
+    expect(resolveLevelTheme('level-lb-09', true).keyLight.intensity).toBeCloseTo(0.98, 12);
+  });
+
+  it('直通只豁免强度/密度：色值仍随关混色（关卡识别色职责不变）', () => {
+    const base = planeTheme(false);
+    const spec = LEVEL_THEMES['level-sb-03'];
+    expect(spec).toBeDefined();
+    const l3 = resolveLevelTheme('level-sb-03', false);
+    expect(l3.keyLight.color).toBe(mixHex(base.keyLight.color, spec!.keyLight.color, 0.6));
+    expect(l3.fogColor).toBe(mixHex(base.fogColor, spec!.fog.color, 0.6));
+    expect(l3.sky.top).toBe(mixHex(base.sky.top, spec!.sky.top, 0.6));
+  });
+});
+
 describe('levelThemes · L9 表里回廊 per-plane 双分支', () => {
   it('L9 阴阳两相雾色与识别色（gate.rim）各自成相', () => {
     const yang = resolveLevelTheme('level-lb-09', false);

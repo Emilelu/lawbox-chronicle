@@ -215,3 +215,67 @@ describe('流程冒烟 · 法则门槛与再战', () => {
     expect(playerPos().y).toBe(1);
   });
 });
+
+describe('B4-1 · 结算面板撤销不重复发奖（同段位会话只结算一次）', () => {
+  /**
+   * 真实通关 level-lb-05（双箱双龛 13 步 ≤ 3★ 线 19）：
+   * 玩家 (1,1) → 右×2 到 (3,1) 推 (3,2) 落 (3,5)；返回 (3,1) → 右×2 到 (5,1)
+   * 推 (5,2) 落 (5,5)。3★ → 奖励 200◈ 全额。
+   */
+  function solveLb05(): void {
+    store().move('right');
+    store().move('right');
+    store().move('down');
+    store().move('down');
+    store().move('down');
+    store().move('up');
+    store().move('up');
+    store().move('up');
+    store().move('right');
+    store().move('right');
+    store().move('down');
+    store().move('down');
+    store().move('down');
+    expect(store().phase).toBe('result');
+  }
+
+  it('undo 回 playing 后重新达标：星石与相位充能不再重复入账，结算面板照常显示', () => {
+    store().startLevel('level-lb-05');
+    const stones0 = store().gacha.starStones;
+    solveLb05();
+    // 首次结算：3★ → 200◈ 全额入账，同批 +2 相位充能
+    expect(store().result?.levelId).toBe('level-lb-05');
+    expect(store().result?.stars).toBe(3);
+    expect(store().gacha.starStones).toBe(stones0 + 200);
+    expect((store().puzzle as PuzzleState).phaseCharges).toBeGreaterThanOrEqual(2);
+    // undo：结算面板撤销回局（Z/HUD ↩ 同一入口）——奖励已入账不回收
+    store().undo();
+    expect(store().phase).toBe('playing');
+    expect(store().result).toBeNull();
+    expect(store().gacha.starStones).toBe(stones0 + 200);
+    // undo 回滚到最后一动作前的快照：首结算发放的充能随撤销栈一并回滚（undo
+    // 既有语义），此后的「再达标不再发放」以该值为基线断言
+    const chargesAfterUndo = (store().puzzle as PuzzleState).phaseCharges;
+    // 「undo → 重推最后一步」循环（刷币漏洞的原始路径）：再次达标只刷新
+    // 结算面板，星石不再入账、充能不再重复发放
+    store().move('down');
+    expect(store().phase).toBe('result');
+    expect(store().result?.levelId).toBe('level-lb-05');
+    expect(store().gacha.starStones).toBe(stones0 + 200);
+    expect((store().puzzle as PuzzleState).phaseCharges).toBe(chargesAfterUndo);
+  });
+
+  it('重玩开启新会话：replaySegment 后再次通关重新发奖（既有结算语义保留）', () => {
+    store().startLevel('level-lb-05');
+    const stones0 = store().gacha.starStones;
+    solveLb05();
+    expect(store().gacha.starStones).toBe(stones0 + 200);
+    // replaySegment → beginLevel 开新会话（段位重建、星石不回滚）→ 再次通关 → 重新发奖
+    store().replaySegment();
+    expect(store().phase).toBe('playing');
+    expect(store().gacha.starStones).toBe(stones0 + 200);
+    solveLb05();
+    expect(store().phase).toBe('result');
+    expect(store().gacha.starStones).toBe(stones0 + 400);
+  });
+});

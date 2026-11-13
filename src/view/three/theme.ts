@@ -814,9 +814,18 @@ export function computeExploreResetPose(ctx: PoseContext, viewPreference: ViewPr
  *    0.55 是全局档下的不可达目标（N2 冻结根因），且设计语义为
  *    「combat/victory/boss 永远走既定舞台位」，first 档不参与演出模式。fov 回
  *    基准（与 N4 同语义：FP 贴脸 fov 68 不残留进演出位姿）。
- *  - third 且视角确有切换：explore/dialogue 收敛回 explore 预设（方位角保留、
- *    fov 回基准）；combat/victory/boss 同样回落舞台位 —— 与 first 分支同一
- *    规则，避免 V 往返把战斗取景拽去 explore 俯瞰位。
+ *  - third 且视角确有切换（viewChanged）：按当前 mode 回落 —— combat/victory/
+ *    boss 回落该模式既定舞台位（与 first 分支同一规则，避免 V 往返把战斗取景
+ *    拽去 explore 俯瞰位），dialogue 回落 dialogue 设计位（B1-4：4.6/52°，说话
+ *    者不轮换时位姿管线收不回来，不得拽去 explore 俯瞰位），explore 回落 explore
+ *    预设；两族都保留方位角、fov 回基准。
+ *  - third 且松开 T（prevPeeking=true → peeking=false 的松开沿，B1-1）：按当前
+ *    mode 回落 —— combat/victory/boss 回落舞台位、dialogue 回落 dialogue 设计
+ *    位、explore 回落 explore 预设。俯瞰沿（peeking 分支）把相机收敛到 explore
+ *    俯瞰预设后，若松开不回落，取景会永久停在俯瞰位直到相位切换 —— 该沿不发
+ *    viewChanged，故按 prevPeeking 显式识别（参照 first 分支不查 viewChanged
+ *    的做法）。prevPeeking 缺省 false：非松开沿且 viewChanged=false 仍不发请求
+ *    （explore 常态交还用户全权，现状一致）。
  */
 export function computeSpontaneousPose(
   view: ViewPreference,
@@ -824,6 +833,7 @@ export function computeSpontaneousPose(
   peeking: boolean,
   ctx: PoseContext,
   viewChanged: boolean,
+  prevPeeking = false,
 ): CameraPose | null {
   if (peeking) {
     return { ...computePose('explore', ctx), azimuth: null, fov: BASE_CAMERA_FOV };
@@ -835,11 +845,14 @@ export function computeSpontaneousPose(
     }
     return { ...computePose('first', ctx), azimuth: null }; // FP 头位，保留头向
   }
-  if (viewChanged) {
+  // third：视角确有切换，或 T 松开沿（peeking 分支已提前 return，此处 peeking
+  // 恒 false，prevPeeking=true 即「上一拍按住 T、本拍松开」的回落沿）→ 按当前 mode 回落
+  if (viewChanged || prevPeeking) {
     if (mode === 'combat' || mode === 'victory' || mode === 'boss') {
       return { ...computePose(mode, ctx), fov: BASE_CAMERA_FOV }; // 全局档：同 first 分支规则
     }
-    return { ...computePose('explore', ctx), azimuth: null, fov: BASE_CAMERA_FOV };
+    // explore/dialogue：各自回落该模式预设（B1-4），方位角保留、fov 回基准
+    return { ...computePose(mode, ctx), azimuth: null, fov: BASE_CAMERA_FOV };
   }
   return null;
 }

@@ -212,13 +212,22 @@ describe('META 终端剧本指令（通关后）', () => {
     expect(result.message).toContain('未找到处刑目标');
   });
 
-  it('/give--@p--<武器名> 发放武器；赤手空拳放下武器', () => {
+  it('/give--@p--<武器名> 发放武器（入列 weapons）；赤手空拳放下武器', () => {
     const give = executeCheat('term-give', 'terminal', ['爷爷的拐杖']);
     expect(give.ok).toBe(true);
     expect(useGameStore.getState().player.weaponId).toBe('weapon-gfsStick');
+    // B4-8：终端发放的武器必须入列 player.weapons（战斗界面武器列表的数据源），
+    // 只设 weaponId 不进背包会让列表选不到
+    expect(useGameStore.getState().player.weapons).toContain('weapon-gfsStick');
+    // 重复发放判重：不产生重复条目
+    const again = executeCheat('term-give', 'terminal', ['爷爷的拐杖']);
+    expect(again.ok).toBe(true);
+    expect(useGameStore.getState().player.weapons?.filter((id) => id === 'weapon-gfsStick')).toHaveLength(1);
     const bare = executeCheat('term-give', 'terminal', ['赤手空拳']);
     expect(bare.ok).toBe(true);
     expect(useGameStore.getState().player.weaponId).toBeNull();
+    // 放下武器只清手持，背包不清空（与 gameStore 侧「放下武器」同语义）
+    expect(useGameStore.getState().player.weapons).toContain('weapon-gfsStick');
   });
 
   it('BABA 一次性主角光环：攻击 +233，重复喊话只收到调侃', () => {

@@ -1,10 +1,11 @@
 /**
  * 帷幕界面层 · HudBar 回归 —— L1（左上组窄视口折行）/ L4（◈ 快捷抽卡入口可点）
- * / R5（成就 toast 文案反查）。
+ * / R5（成就 toast 文案反查）/ B4-4（撤销/重玩按钮的 phase 门禁）。
  * ---------------------------------------------------------------------------
  * L1/L4 属挂载期样式断言：仓库未引入 @testing-library，用 react-dom 的
  * createRoot + act 直接挂载，断言回归关键的行内样式与点击行为；
- * R5 是纯函数（resolveToastText），直接喂键断言。
+ * R5/B4-4 是纯函数（resolveToastText / canRewindWorld），直接喂键断言；
+ * B4-4 另断言对话/抽卡相下 ↩/⟲ 渲染为 disabled（与键盘门禁同款谓词）。
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -13,7 +14,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { useGameStore } from '../../../core/store/gameStore';
 import { achievementToastKey } from '../../../archive/logbook';
 import { ACHIEVEMENTS } from '../../../data/lore/achievements';
-import { HudBar, resolveToastText } from '../HudBar';
+import { canRewindWorld, HudBar, resolveToastText } from '../HudBar';
 
 // React 18 要求显式声明 act 环境，否则每次 act 都刷告警
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -84,6 +85,48 @@ describe('L1 · 左上组的窄视口折行策略', () => {
     expect(rightGroup.style.flexWrap).toBe('wrap');
     expect(rightGroup.style.justifyContent).toBe('flex-end');
     expect(rightGroup.style.maxWidth).toBe('calc(100vw - 24px)');
+  });
+});
+
+describe('B4-4 · 撤销/重玩按钮的 phase 门禁（与键盘同款谓词）', () => {
+  /** 按按钮文本找 ↩（撤销）/⟲（重玩）按钮 */
+  function rewindButton(host: HTMLElement, mark: '↩' | '⟲'): HTMLButtonElement {
+    const btn = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes(mark));
+    expect(btn, `找不到 ${mark} 按钮`).toBeDefined();
+    return btn as HTMLButtonElement;
+  }
+
+  it('canRewindWorld：playing/result/combat 放行，title/dialogue/gacha 禁止（与 useKeyActions 门禁同款）', () => {
+    expect(canRewindWorld('playing')).toBe(true);
+    expect(canRewindWorld('result')).toBe(true);
+    expect(canRewindWorld('combat')).toBe(true);
+    expect(canRewindWorld('title')).toBe(false);
+    expect(canRewindWorld('dialogue')).toBe(false);
+    expect(canRewindWorld('gacha')).toBe(false);
+  });
+
+  it('对话相下 ↩/⟲ 渲染为 disabled（剧情遮罩之下不再静默改写世界）', () => {
+    const mounted = mountHud();
+    act(() => {
+      useGameStore.setState({ phase: 'dialogue' });
+    });
+    expect(rewindButton(mounted, '↩').disabled).toBe(true);
+    expect(rewindButton(mounted, '⟲').disabled).toBe(true);
+  });
+
+  it('抽卡相下同样 disabled；回到 playing 相恢复可点（与键盘门禁同步开合）', () => {
+    const mounted = mountHud();
+    expect(rewindButton(mounted, '↩').disabled).toBe(false); // startLevel 后 phase=playing
+    act(() => {
+      useGameStore.setState({ phase: 'gacha' });
+    });
+    expect(rewindButton(mounted, '↩').disabled).toBe(true);
+    expect(rewindButton(mounted, '⟲').disabled).toBe(true);
+    act(() => {
+      useGameStore.setState({ phase: 'playing' });
+    });
+    expect(rewindButton(mounted, '↩').disabled).toBe(false);
+    expect(rewindButton(mounted, '⟲').disabled).toBe(false);
   });
 });
 

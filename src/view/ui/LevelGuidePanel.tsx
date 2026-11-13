@@ -6,8 +6,9 @@
  * 入口：HUD 左上「💡 攻略」（当前关）与选关面板每行的「💡 攻略」。
  * 定位沿用 L3 教训：居中位移并入 motion 的 x/y 百分比，绝不用 CSS transform。
  * Esc / closeOverlay 经总线统一关闭本面板（A4-3：此前漏订阅 ui/closePanels，
- * 键位表「Esc 关闭浮层」对攻略面板失效）；openFor 打开时广播同事件完成
- * 三分片面板互斥（A4-4，与档案/选关面板互不叠开）。
+ * 键位表「Esc 关闭浮层」对攻略面板失效）；openFor 打开时先调 gameStore.closeOverlay
+ * 关掉主浮层（顺带广播同事件），完成三分片面板互斥与反向互斥（A4-4/B3-8，
+ * 与档案/选关面板互不叠开、主浮层开着时不被遮挡）。
  */
 
 import { useEffect } from 'react';
@@ -30,10 +31,13 @@ interface GuidePanelStore {
 export const useGuidePanelStore = create<GuidePanelStore>()((set) => ({
   open: false,
   levelId: null,
-  // A4-4 互斥：先广播 ui/closePanels（关掉档案/选关等其它分片面板），再开自己。
-  // 广播同步送达订阅者，本面板即便已开也会先 close 再 set open，终态正确。
+  // A4-4 互斥 + B3-8 反向互斥补全：开启前先调 gameStore.closeOverlay 关掉主浮层
+  // （activePanel 归 none、gacha 相复位、结算清空），该方法顺带广播 ui/closePanels
+  // —— 关掉档案/选关等其它分片面板，兑现 openPanel 注释承诺的
+  // 「分片 open 广播 closePanels + closeOverlay」。广播同步送达订阅者，本面板
+  // 即便已开也会先 close 再 set open，终态正确。
   openFor: (levelId) => {
-    bus.publish({ type: 'ui/closePanels' });
+    useGameStore.getState().closeOverlay();
     set({ open: true, levelId });
   },
   close: () => set({ open: false }),
