@@ -16,7 +16,7 @@ import { create } from 'zustand';
 import { buildLevelGuide } from '../../data/levels/levelGuide';
 import { bus } from '../../core/events/bus';
 import { useGameStore } from '../../core/store/gameStore';
-import { tUi } from '../../data/i18n/uiText';
+import { levelName as levelNameI18n, tUi } from '../../data/i18n/uiText';
 
 /* ============================== 面板开关分片 =============================== */
 
@@ -83,7 +83,12 @@ export function LevelGuidePanel() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h3 style={{ fontSize: 18, letterSpacing: '0.14em' }}>{tUi(locale, 'guide.entry')} · {guide.name}</h3>
+          {/* 标题关卡名键控（R-5）：guide.name 是数据层中文原文，非 zh 语种须走
+              levelName 覆写表（与选关面板 levelNameI18n 同款）；未收录的 levelId
+              （如程序生成层）由 levelName 回落 guide.name 原文，行为不变 */}
+          <h3 style={{ fontSize: 18, letterSpacing: '0.14em' }}>
+            {tUi(locale, 'guide.entry')} · {levelNameI18n(locale, { id: levelId, name: guide.name })}
+          </h3>
           <span style={{ flex: 1 }} />
           <button className="chip" style={{ cursor: 'pointer' }} onClick={close}>
             ✕ {tUi(locale, 'ui.close')}

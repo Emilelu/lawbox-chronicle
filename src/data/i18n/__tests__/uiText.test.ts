@@ -142,3 +142,95 @@ describe('uiText · 关卡名/副标题 i18n（F4）', () => {
     expect(levelName('zh-Hans', { id: '', name: '' })).toBe('');
   });
 });
+
+describe('uiText · tUi 对白名单外 locale 的防御性回落（R-4 双保险）', () => {
+  it('locale 绕过 store 直达渲染树时（如手改 zh）回落简中，绝不 TypeError', () => {
+    // 修复前：UI_TEXT['zh'] 为 undefined，[key] 上直接 TypeError 崩渲染树
+    expect(tUi('zh' as never, 'hud.hp')).toBe('生命');
+    expect(tUi('zh' as never, 'toast.trueEnding')).toBe('真结局达成：拒绝剧本的人。');
+    expect(() => tUi(undefined as never, 'hud.hp')).not.toThrow();
+    expect(tUi(undefined as never, 'hud.hp')).toBe('生命');
+    // 合法 locale 行为不受影响
+    expect(tUi('en', 'hud.hp')).toBe('HP');
+  });
+});
+
+describe('uiText · 成就/池名/公示行键控（R-6，7 语种对齐）', () => {
+  it('成就 13 条的 titleKey/descriptionKey 全部为合法 uiText 键且七语种齐备', async () => {
+    const { ACHIEVEMENTS } = await import('../../lore/achievements');
+    expect(ACHIEVEMENTS).toHaveLength(13);
+    for (const def of ACHIEVEMENTS) {
+      expect(isUiTextKey(def.titleKey), `${def.id} titleKey 非法：${def.titleKey}`).toBe(true);
+      expect(isUiTextKey(def.descriptionKey), `${def.id} descriptionKey 非法：${def.descriptionKey}`).toBe(true);
+      for (const locale of LOCALES) {
+        expect(UI_TEXT[locale][def.titleKey], `${def.id} · ${locale} title 缺失`).toBeTruthy();
+        expect(UI_TEXT[locale][def.descriptionKey], `${def.id} · ${locale} desc 缺失`).toBeTruthy();
+      }
+      // 简中键文本与数据事实源逐字一致（内容语言唯一事实源纪律）
+      expect(UI_TEXT['zh-Hans'][def.titleKey]).toBe(def.title);
+      expect(UI_TEXT['zh-Hans'][def.descriptionKey]).toBe(def.description);
+    }
+  });
+
+  it('en 下成就标题/描述不再是整句中文（专有名词保留中文属内容语言决策）', async () => {
+    const { ACHIEVEMENTS } = await import('../../lore/achievements');
+    // 原作英文原句两条（cheat-setname / kirakira-first4）逐语种保留英文原文，
+    // title 相同属预期；其余 title 与全部 desc 都按语种本地化。
+    const verbatimEnglishTitles = new Set(['ach-cheat-setname', 'ach-kirakira-first4']);
+    for (const def of ACHIEVEMENTS) {
+      if (!verbatimEnglishTitles.has(def.id)) {
+        expect(tUi('en', def.titleKey)).not.toBe(def.title);
+      }
+      expect(tUi('en', def.descriptionKey)).not.toBe(def.description);
+    }
+    // 两条原作英文原句照旧逐字
+    const setname = ACHIEVEMENTS.find((d) => d.id === 'ach-cheat-setname');
+    const kirakira = ACHIEVEMENTS.find((d) => d.id === 'ach-kirakira-first4');
+    expect(tUi('en', setname!.titleKey)).toBe(setname!.title);
+    expect(tUi('en', kirakira!.titleKey)).toBe(kirakira!.title);
+  });
+
+  it('怀旧池名与概率公示行键控：7 语种齐备且行数与 lines 一致', async () => {
+    const { NOSTALGIA_POOL_INFO, RATE_DISCLOSURE } = await import('../../gacha/pools');
+    expect(isUiTextKey(NOSTALGIA_POOL_INFO.nameKey)).toBe(true);
+    for (const locale of LOCALES) {
+      expect(UI_TEXT[locale][NOSTALGIA_POOL_INFO.nameKey]).toBeTruthy();
+    }
+    const { lineKeys, lines } = RATE_DISCLOSURE.nostalgia;
+    expect(lineKeys).toHaveLength(lines.length);
+    for (const key of lineKeys) {
+      expect(isUiTextKey(key), `公示行键非法：${key}`).toBe(true);
+      for (const locale of LOCALES) expect(UI_TEXT[locale][key]).toBeTruthy();
+    }
+    // 简中键文本与数据事实源逐字一致
+    expect(UI_TEXT['zh-Hans'][NOSTALGIA_POOL_INFO.nameKey]).toBe(NOSTALGIA_POOL_INFO.name);
+    lineKeys.forEach((key, i) => expect(UI_TEXT['zh-Hans'][key]).toBe(lines[i]));
+  });
+
+  it('en 下怀旧池名与公示行不再直显中文整句', async () => {
+    const { NOSTALGIA_POOL_INFO, RATE_DISCLOSURE } = await import('../../gacha/pools');
+    expect(tUi('en', NOSTALGIA_POOL_INFO.nameKey)).toBe('Nostalgia Simulated Pool');
+    for (const key of RATE_DISCLOSURE.nostalgia.lineKeys) {
+      expect(tUi('en', key)).not.toMatch(/[\u4e00-\u9fff]/);
+    }
+  });
+});
+
+describe('uiText · 怀旧对照 toast 键控（R-7）', () => {
+  it('toast.nostalgiaRound 七语种齐备，占位符 {n}/{four}/{three} 全语种插值无残留', () => {
+    for (const locale of LOCALES) {
+      const text = tUi(locale, 'toast.nostalgiaRound', { n: 3, four: 1, three: 4 });
+      expect(text).not.toContain('{');
+      expect(text).toContain('3');
+      expect(text).toContain('1');
+      expect(text).toContain('4');
+    }
+  });
+
+  it('zh-Hans 与既有中文整句口径一致；en 下不再是中文句', () => {
+    expect(tUi('zh-Hans', 'toast.nostalgiaRound', { n: 1, four: 0, three: 1 })).toBe(
+      '怀旧对照第 1 回：4★×0 3★×1（原版复刻，不产出可用卡；实测曲线已更新）。',
+    );
+    expect(tUi('en', 'toast.nostalgiaRound', { n: 2, four: 2, three: 0 })).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+});

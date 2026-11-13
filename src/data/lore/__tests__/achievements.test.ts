@@ -13,6 +13,7 @@ import {
   isLoreEventId,
   type AchievementSnapshot,
 } from '../achievements';
+import { isUiTextKey } from '../../i18n/uiText';
 
 const EMPTY_SNAPSHOT: AchievementSnapshot = {
   bossDefeated: false,
@@ -38,6 +39,13 @@ describe('achievements —— 注册表完整性', () => {
       expect(def.description.length).toBeGreaterThan(0);
       expect(def.lore.length).toBeGreaterThan(0);
       expect(def.lore).toMatch(/java|新增/);
+    }
+  });
+
+  it('titleKey/descriptionKey 引用合法 uiText 键（R-6 展示层键控）', () => {
+    for (const def of ACHIEVEMENTS) {
+      expect(isUiTextKey(def.titleKey), `${def.id} titleKey 非法`).toBe(true);
+      expect(isUiTextKey(def.descriptionKey), `${def.id} descriptionKey 非法`).toBe(true);
     }
   });
 

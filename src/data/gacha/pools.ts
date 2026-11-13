@@ -16,6 +16,7 @@
 import type { GachaConfig } from '../../core/types';
 import type { GachaPoolDef, NostalgiaParams } from '../../engine/gacha/roller';
 import { validateGachaPool } from '../../engine/gacha/roller';
+import type { UiTextKey } from '../i18n/uiText';
 import {
   LAW_CARDS,
   LAW_CARD_CHEST_DETONATE,
@@ -124,9 +125,15 @@ export const NOSTALGIA_PARAMS: NostalgiaParams = {
  */
 export const POOL_NOSTALGIA = 'nostalgia-lottery';
 
+/**
+ * 怀旧池展示元数据。name 是内容语言事实源；R-6 起展示层经 nameKey 引用
+ * uiText 的 pool.* 键（7 语种对齐）按 locale 渲染，nameKey 缺省回落本表中文。
+ */
 export const NOSTALGIA_POOL_INFO = {
   id: POOL_NOSTALGIA,
   name: '怀旧模拟池',
+  /** 展示层 i18n 引用（R-6）：池名 uiText 键 */
+  nameKey: 'pool.nostalgia' as const satisfies UiTextKey,
   souvenir: true,
   source: 'BandoriLotteryEmulator Lottery.java:40-46',
   note: '原版概率与行为对照展品：单 roll 十连、双档重叠、每第 10 回提升均原样复刻，不产出可用卡；出货实测曲线见图鉴页。',
@@ -162,7 +169,12 @@ export function gachaCost(times: 1 | 10): number {
 
 /* ============================== 概率页明示（B4） =========================== */
 
-/** 图鉴/抽卡页的「概率公布」文案：把保底进度与对照档语义向玩家明示 */
+/**
+ * 图鉴/抽卡页的「概率公布」文案：把保底进度与对照档语义向玩家明示。
+ * R-6：nostalgia 三行经 lineKeys 引用 uiText 的 pool.nostalgia.line* 键
+ * （7 语种对齐），非中文语种不再直显中文行；lines 保留为内容语言事实源
+ * （formal 六行当前无 UI 消费点，键控随接线一并补，见 fix notes）。
+ */
 export const RATE_DISCLOSURE = {
   formal: {
     poolName: FORMAL_POOL.name,
@@ -177,6 +189,12 @@ export const RATE_DISCLOSURE = {
   },
   nostalgia: {
     poolName: NOSTALGIA_POOL_INFO.name,
+    /** 展示层 i18n 引用（R-6）：与 lines 一一对应的 uiText 键 */
+    lineKeys: [
+      'pool.nostalgia.line1',
+      'pool.nostalgia.line2',
+      'pool.nostalgia.line3',
+    ] as const satisfies readonly UiTextKey[],
     lines: [
       '原版参数对照：4★ 6% / 3★ 26.05%，每第 10 回提升为 4★ 30% / 3★ 50%',
       '历史行为原样复刻（整组单 roll、双档重叠、每第 10 回全局计数），仅供概率对照',

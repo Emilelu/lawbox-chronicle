@@ -50,6 +50,7 @@ import { starRating, starStoneReward, clampHp } from '../formula';
 import { findEnemy, findLevel } from '../../data';
 import { createWeaponInstance } from '../../data/weapons';
 import { CARDS, GACHA_FLAVOR } from '../../data/gacha';
+import { tUi } from '../../data/i18n/uiText';
 import { FORMAL_POOL, NOSTALGIA_PARAMS, gachaCost } from '../../data/gacha/pools';
 import { ALL_SCRIPTS, STORY_SOLVERS, ALL_TRIGGER_RULES } from '../../data/storyScripts';
 import { runMetaTerminalCommand } from '../../data/story/hiddenGame';
@@ -74,6 +75,7 @@ import {
   submitStoryInput,
   visibleChoices,
   type BattleTuning,
+  type ChallengeLayerId,
   type StoryEffect,
   type StoryRuntimeState,
   type StoryScriptDef,
@@ -569,7 +571,9 @@ export const useGameStore = create<GameStore>()(
               // 由 closeStoryRuntime 统一处理（此处仅兜底）
               break;
             case 'enterChallengeLayer':
-              enterChallengeLayer(eff.layerId);
+              // R-2：不立即入层 —— beginLevel 会截断正在演出的剧本。挂账待收尾
+              //（closeStoryRuntime）统一执行，中转对白与收尾 ending 先完整演出。
+              pendingChallengeLayer = eff.layerId;
               break;
             case 'openMetaTerminal':
               writeFlag('meta:terminal-unlocked', true);
@@ -613,8 +617,26 @@ export const useGameStore = create<GameStore>()(
        */
       let pendingSeenTriggerId: string | null = null;
 
+      /**
+       * 待入层的挑战层挂账（R-2）。outskirts 三剧本的中转（transit）节点经
+       * onEnterEffects 发射 {kind:'enterChallengeLayer', layerId}，此前 store
+       * 收到即 beginLevel —— beginLevel 抢先把 phase 切到 playing，中转对白与
+       * 收尾 ending 被截断（「深入无尽回廊」等收尾承诺文案不再演出），且
+       * applyStoryEffects 循环末尾的 set 会用开演时的快照把 storyRuntime 覆盖回
+       * 对话相（rtPhase=dialogue 残留、last-ending-id 停在旧值）。现在效果只
+       * 挂账，待剧本正常收尾（closeStoryRuntime）后再入层：transit → ending
+       * 收尾对白完整演出，收尾即生成挑战层并接管画面；生成失败时 toast 提示、
+       * phase 已回 playing，玩家留在原地可再触发重试。挂账是会话变量不落盘，
+       * 中断路径（beginLevel/backToTitle/resetSave/startStoryScript）统一作废，
+       * 与 A4-1「中断=未触发」同语义。
+       */
+      let pendingChallengeLayer: ChallengeLayerId | null = null;
+
       const startStoryScript = (scriptId: string, entryNodeId?: string): void => {
         const state = get();
+        // R-2：新剧本开演即视为旧剧本中断 —— 未入层的挂账作废（演出覆盖之下
+        // 不存在「欠着的入层」，对齐 A4-1「中断=未触发」语义）
+        pendingChallengeLayer = null;
         // 运行时旗标种子：持久化旗标 + 持卡镜像（解释器的 requireCard/gate 用）
         const seededFlags: Record<string, boolean | number | string> = { ...state.story.flags };
         for (const owned of state.gacha.owned) seededFlags[`card:${owned.cardId}`] = true;
@@ -652,11 +674,19 @@ export const useGameStore = create<GameStore>()(
           storyRuntime: { ...IDLE_STORY_RUNTIME, flags: { ...story.flags } },
           story,
         });
+        // R-2：挂账在此取出（无论后续走哪条收尾分支都不残留，防止迟到入层
+        // 误打到下一个剧本头上）——北向路由与 phase 恢复之后再执行入层
+        const pendingChallenge = pendingChallengeLayer;
+        pendingChallengeLayer = null;
         if (lastEnding === 'outskirt-north-transit') {
           startStoryScript('script-hidden-game');
           return;
         }
         set({ phase: 'playing' });
+        // R-2：剧本完整收尾后才入层。生成成功 → beginLevel 接管画面（phase
+        // 同为 playing，幂等）；生成失败 → toast 提示，phase 已回 playing，
+        // 玩家留在原地，再次触发即可重试（ending 收尾对白已承诺该口径）。
+        if (pendingChallenge !== null) enterChallengeLayer(pendingChallenge);
       };
 
       /* --------------------------- 战斗装配 ------------------------------- */
@@ -864,6 +894,9 @@ export const useGameStore = create<GameStore>()(
         // 换关即作废未收尾剧本的封印账目（剧本被 beginLevel 重置为中断态，
         // 与 A4-1「演完才封印」语义一致：中断的触发保持可重触发）
         pendingSeenTriggerId = null;
+        // R-2：换关同样作废未入层的挑战层挂账（本函数被 closeStoryRuntime 的
+        // 正常入层路径调用时，挂账已取出并清空，此处清的是中断路径）
+        pendingChallengeLayer = null;
         const level = findLevelAny(levelId);
         if (level === undefined) return;
         const parsed = parseLevelGeometry(level);
@@ -1123,6 +1156,8 @@ export const useGameStore = create<GameStore>()(
           // 旧关卡与旧结算（closeOverlay 的 title 回退也依赖 segment===null）
           // A4-1：未收尾剧本的封印账目一并作废（回标题=中断）
           pendingSeenTriggerId = null;
+          // R-2：未入层的挑战层挂账同上（回标题=中断）
+          pendingChallengeLayer = null;
           set({
             phase: 'title',
             activePanel: 'none',
@@ -1432,7 +1467,17 @@ export const useGameStore = create<GameStore>()(
             .catch((e: unknown) => console.error('[statsCollector] 动态加载失败，怀旧池本回未记档', e));
           bus.publish({
             type: 'ui/toast',
-            messageKey: `怀旧对照第 ${round + 1} 回：4★×${fourCount} 3★×${threeCount}（原版复刻，不产出可用卡；实测曲线已更新）。`,
+            // R-7：中文整句拼串改为 uiText 键控（toast.nostalgiaRound，7 语种）。
+            // bus 的 ui/toast 事件只有 messageKey 单通道（bus.ts:29），HudBar 的
+            // resolveToastText 调 tUi 也不传 vars —— 插值参数机制无法穿透展示层，
+            // 故在 store 侧经 tUi 按 locale 完成插值（vars 即 tUi 的参数机制），
+            // messageKey 携带成品文本；展示层对非键 messageKey 走旧字典回落、
+            // 缺键回落字面量，成品文本原样上屏，非中文语种不再显示中文整句。
+            messageKey: tUi(get().locale, 'toast.nostalgiaRound', {
+              n: round + 1,
+              four: fourCount,
+              three: threeCount,
+            }),
           });
         },
 
@@ -1663,6 +1708,7 @@ export const useGameStore = create<GameStore>()(
           nostalgiaSeq = 0;
           nostalgiaPullsTotal = 0;
           pendingSeenTriggerId = null; // A4-1：清档一并作废未收尾剧本的封印账目
+          pendingChallengeLayer = null; // R-2：清档一并作废未入层的挑战层挂账
           set({ ...initialState, visitCount: get().visitCount });
         },
       };

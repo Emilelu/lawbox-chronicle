@@ -803,7 +803,8 @@ describe('outskirts —— 四方向越界（Game.java:121-284 的事件表化�
         `${c.scriptId.replace('script-outskirt-', 'outskirt-')}-choice`,
       );
       const stepped = chooseStory([script], s1, c.choice);
-      // 中转对话节点进入即发射 enterChallengeLayer（解释器产出 → gameStore 消费）
+      // 中转对话节点进入即发射 enterChallengeLayer（解释器产出 → gameStore 挂账，
+      // R-2 起延迟到剧本收尾才入层，中转/收尾对白完整演出）
       expect(stepped.state.nodeId, `${c.scriptId} 应进入中转节点`).toBe(c.transitId);
       expect(stepped.state.phase).toBe('dialogue');
       expect(stepped.effects, `${c.scriptId} 必须发射 enterChallengeLayer`).toContainEqual({
@@ -842,7 +843,9 @@ describe('outskirts —— 四方向越界（Game.java:121-284 的事件表化�
 /* ==================== A3-2 · HUB 越界几何（缓冲带行） ==================== */
 /* 方向约定以 classifyPosition 为准（world y>0 = north，时空裂缝/隐藏关一侧）；
  * 网格底部新增行让该侧真实可达；网格顶部（world −y = 深渊坠道一侧）受网格
- * 非负索引限制无法用数据补行，属 gameStore 判定路线的 G4 协调项。 */
+ * 非负索引限制无法用数据补行，其 beyond 判定已由 gameStore 的南缘外推路线
+ * 实装（A3-2 南向判定：南缘撞墙 → 虚拟位外推直达 beyond south，store 端到端
+ * 回归见 core/store/__tests__/wiring.test.ts 的 A3-2 组）。 */
 
 describe('outskirts —— HUB 越界几何（A3-2：缓冲带行让时空裂缝一侧 beyond 真实可达）', () => {
   const hub = findAreaLevel('level-sb-01');
@@ -891,7 +894,7 @@ describe('outskirts —— HUB 越界几何（A3-2：缓冲带行让时空裂缝
     expect(hit?.when).toMatchObject({ kind: 'outskirts', dir: 'west', zone: 'beyond' });
   });
 
-  it('深渊坠道侧（world −y）beyond 仍不可达（row0 全墙，最北可站 world −5 → 虚拟 −6 仅 buffer）——判定路线属 gameStore（G4 协调项）', () => {
+  it('深渊坠道侧（world −y）数据侧保持不可站立（row0 全墙，最深可站 world −5 → 单步虚拟 −6 仅 buffer）——beyond 由 gameStore 南缘外推路线判定（A3-2 已实装）', () => {
     expect(hub.grid[0]?.every((c) => c === 1)).toBe(true); // 该侧首行全墙，无可站格
     const deepStanding = gridToWorld(1, 1); // 该侧最深可站格（世界 (−6,−5)）
     expect(deepStanding).toEqual({ x: -6, y: -5 });

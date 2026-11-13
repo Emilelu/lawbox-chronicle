@@ -233,6 +233,47 @@ const ZH_HANS_UI = {
   'settings.clearArchiveDone': '档案已清空（图鉴、成就与抽卡统计）',
   /* ---- 真结局 toast（A4-5：gameStore 键控，7 语种不再直显中文句） ---- */
   'toast.trueEnding': '真结局达成：拒绝剧本的人。',
+  /* ---- 怀旧对照 toast（R-7：gameStore 侧 tUi 插值，替代中文整句拼串） ---- */
+  'toast.nostalgiaRound': '怀旧对照第 {n} 回：4★×{four} 3★×{three}（原版复刻，不产出可用卡；实测曲线已更新）。',
+  /* ---- 成就名/描述（R-6：展示层键控，7 语种对齐） ----
+   * achievements.ts 的 title/description 是「内容语言」事实源：原作成就句逐字
+   * 保真（含「祖传的的」「㊙hotel」等原件错字，lore 纪律不许改），本表提供各语
+   * 种展示文本，数据侧经 titleKey/descriptionKey 引用（界面层接 tUi）。
+   * 内容语言决策：专有名词——敌名「影流之主」、武器名「爷爷的拐杖」「迷吼tiao」、
+   * 原作梗「㊙hotel」「穿墙术」、卡牌/文案专名——在各语种文本中保留中文原文
+   * （必要时首次出现处括注小译），不强行意译；原作英文原句
+   * （Module "SetName" is Skipped.、★KiraKira~★DokiDoki~★）逐语种保留英文。 */
+  'ach.eg-fist-boss.title': '赤手空拳打败BOSS的男人',
+  'ach.eg-fist-boss.desc': '不装备任何武器击败影流之主。原作隐藏关的真结局路线。',
+  'ach.eg-stick-boss.title': '用一根爷爷祖传的的拐杖打败BOSS的男人',
+  'ach.eg-stick-boss.desc': '装备爷爷的拐杖（weapon-gfsStick）击败影流之主。',
+  'ach.eg-mihotel-boss.title': '用㊙hotel打败BOSS的男人',
+  'ach.eg-mihotel-boss.desc': '装备迷吼tiao（原作名㊙Hotel）击败影流之主。爆炸，也是一种审判。',
+  'ach.boss-slayer.title': '影流之主 灰飞烟灭了',
+  'ach.boss-slayer.desc': '击败 BOSS。掉落的那封信，记得打开。',
+  'ach.first-clear.title': '石板归位',
+  'ach.first-clear.desc': '第一次把所有箱子推上旗位，完成一段关卡。',
+  'ach.perfect-par.title': '一步不多，一步不少',
+  'ach.perfect-par.desc': '以 3 星评价（≤par 步数）完成任意关卡。',
+  'ach.hardhead.title': '撞墙二十次，穿墙术(?)已开启',
+  'ach.hardhead.desc': '累计撞墙 20 次。原作的「穿墙术」是一句 console.log；新作的相位穿行是真的。',
+  'ach.plane-walker.title': '表里世界的访客',
+  'ach.plane-walker.desc': '首次切换阴阳位面。世界的里侧向你敞开。',
+  'ach.kirakira-first4.title': '★KiraKira~★DokiDoki~★',
+  'ach.kirakira-first4.desc': '第一次抽出 4★。',
+  'ach.collector-half.title': '星愿收藏家',
+  'ach.collector-half.desc': '图鉴收录 7 张不同卡牌。',
+  'ach.collector-full.title': '卡池于是有了形状',
+  'ach.collector-full.desc': '图鉴收录全部 14 张卡牌。星石从此不再是无限的。',
+  'ach.cheat-setname.title': 'Module "SetName" is Skipped.',
+  'ach.cheat-setname.desc': '在 META 终端输入 /kill--SetName，跳过了不该跳过的东西。',
+  'ach.baba.title': '对着天空大喊——BABA',
+  'ach.baba.desc': '在宝箱前喊出 DNA 里刻着的最后四个元素。',
+  /* ---- 怀旧池名与概率公示行（R-6：ArchivePanel 曲线页键控） ---- */
+  'pool.nostalgia': '怀旧模拟池',
+  'pool.nostalgia.line1': '原版参数对照：4★ 6% / 3★ 26.05%，每第 10 回提升为 4★ 30% / 3★ 50%',
+  'pool.nostalgia.line2': '历史行为原样复刻（整组单 roll、双档重叠、每第 10 回全局计数），仅供概率对照',
+  'pool.nostalgia.line3': '怀旧池不产出可用卡，出货数据进入图鉴页实测曲线',
   /* ---- 版本 ---- */
   'common.version': '法则箱庭异闻录 · v0.1.0',
   'common.stoneUnit': '◈',
@@ -440,6 +481,39 @@ const ZH_HANT_UI: UiDict = {
   'settings.clearArchiveDone': '檔案已清空（圖鑑、成就與抽卡統計）',
   /* ---- 真結局 toast（A4-5） ---- */
   'toast.trueEnding': '真結局達成：拒絕劇本的人。',
+  'toast.nostalgiaRound': '懷舊對照第 {n} 回：4★×{four} 3★×{three}（原版復刻，不產出可用卡；實測曲線已更新）。',
+  /* ---- 成就名/描述（R-6，鍵序與簡中鍵源一致；專有名詞內容語言決策見簡中註釋） ---- */
+  'ach.eg-fist-boss.title': '赤手空拳打敗BOSS的男人',
+  'ach.eg-fist-boss.desc': '不裝備任何武器擊敗影流之主。原作隱藏關的真結局路線。',
+  'ach.eg-stick-boss.title': '用一根爺爺祖傳的的拐杖打敗BOSS的男人',
+  'ach.eg-stick-boss.desc': '裝備爺爺的拐杖（weapon-gfsStick）擊敗影流之主。',
+  'ach.eg-mihotel-boss.title': '用㊙hotel打敗BOSS的男人',
+  'ach.eg-mihotel-boss.desc': '裝備迷吼tiao（原作名㊙Hotel）擊敗影流之主。爆炸，也是一種審判。',
+  'ach.boss-slayer.title': '影流之主 灰飛煙滅了',
+  'ach.boss-slayer.desc': '擊敗 BOSS。掉落的那封信，記得打開。',
+  'ach.first-clear.title': '石板歸位',
+  'ach.first-clear.desc': '第一次把所有箱子推上旗位，完成一段關卡。',
+  'ach.perfect-par.title': '一步不多，一步不少',
+  'ach.perfect-par.desc': '以 3 星評價（≤par 步數）完成任意關卡。',
+  'ach.hardhead.title': '撞牆二十次，穿牆術(?)已開啟',
+  'ach.hardhead.desc': '累計撞牆 20 次。原作的「穿牆術」是一句 console.log；新作的相位穿行是真的。',
+  'ach.plane-walker.title': '表裡世界的訪客',
+  'ach.plane-walker.desc': '首次切換陰陽位面。世界的裡側向你敞開。',
+  'ach.kirakira-first4.title': '★KiraKira~★DokiDoki~★',
+  'ach.kirakira-first4.desc': '第一次抽出 4★。',
+  'ach.collector-half.title': '星願收藏家',
+  'ach.collector-half.desc': '圖鑑收錄 7 張不同卡牌。',
+  'ach.collector-full.title': '卡池於是有了形狀',
+  'ach.collector-full.desc': '圖鑑收錄全部 14 張卡牌。星石從此不再是無限的。',
+  'ach.cheat-setname.title': 'Module "SetName" is Skipped.',
+  'ach.cheat-setname.desc': '在 META 終端輸入 /kill--SetName，跳過了不該跳過的東西。',
+  'ach.baba.title': '對著天空大喊——BABA',
+  'ach.baba.desc': '在寶箱前喊出 DNA 裡刻著的最後四個元素。',
+  /* ---- 懷舊池名與機率公示行（R-6） ---- */
+  'pool.nostalgia': '懷舊模擬池',
+  'pool.nostalgia.line1': '原版參數對照：4★ 6% / 3★ 26.05%，每第 10 回提升為 4★ 30% / 3★ 50%',
+  'pool.nostalgia.line2': '歷史行為原樣復刻（整組單 roll、雙檔重疊、每第 10 回全局計數），僅供機率對照',
+  'pool.nostalgia.line3': '懷舊池不產出可用卡，出貨數據進入圖鑑頁實測曲線',
   'common.version': '法則箱庭異聞錄 · v0.1.0',
   'common.stoneUnit': '◈',
   'legacy.levelPassed': '你通過這關了!',
@@ -640,6 +714,41 @@ const EN_UI: UiDict = {
   'settings.clearArchiveDone': 'Archive cleared (codex, achievements and pull stats)',
   /* ---- True ending toast (A4-5) ---- */
   'toast.trueEnding': 'True ending reached: The One Who Rejected the Script.',
+  'toast.nostalgiaRound': 'Nostalgia comparison round {n}: 4★×{four} 3★×{three} (faithful to the original, yields no usable cards; the measured curve has been updated).',
+  /* ---- Achievement names/descriptions (R-6, key order mirrors the zh source;
+   *      proper nouns keep their Chinese original per the content-language
+   *      decision documented in the zh-Hans block) ---- */
+  'ach.eg-fist-boss.title': 'The Man Who Defeated the Boss Bare-Handed',
+  'ach.eg-fist-boss.desc': 'Defeat 影流之主 (the Shadowlord) with no weapon equipped. The true-ending route of the original hidden stage.',
+  'ach.eg-stick-boss.title': 'The Man Who Defeated the Boss with Grandpa’s Heirloom Cane',
+  'ach.eg-stick-boss.desc': 'Defeat 影流之主 while wielding 爷爷的拐杖 (Grandpa’s Heirloom Cane, weapon-gfsStick).',
+  'ach.eg-mihotel-boss.title': 'The Man Who Defeated the Boss with ㊙hotel',
+  'ach.eg-mihotel-boss.desc': 'Defeat 影流之主 while wielding 迷吼tiao (original name: ㊙Hotel). Explosion, too, is a form of judgment.',
+  'ach.boss-slayer.title': '影流之主 Has Vanished into Smoke',
+  'ach.boss-slayer.desc': 'Defeat the boss. The letter it drops — remember to open it.',
+  'ach.first-clear.title': 'The Slab Settles into Place',
+  'ach.first-clear.desc': 'Push every chest onto a flag plinth and clear a level for the first time.',
+  'ach.perfect-par.title': 'Not One Step More, Not One Step Less',
+  'ach.perfect-par.desc': 'Clear any level with a 3-star rating (≤ par steps).',
+  'ach.hardhead.title': 'Twenty Times into the Wall — 穿墙术(?) Enabled',
+  'ach.hardhead.desc': 'Get blocked 20 times in total. In the original, 穿墙术 (“wall-passing”) was just a console.log; the remake’s Phase Walk is real.',
+  'ach.plane-walker.title': 'Visitor of the Two-Sided World',
+  'ach.plane-walker.desc': 'Switch the Yin-Yang planes for the first time. The far side of the world opens up to you.',
+  'ach.kirakira-first4.title': '★KiraKira~★DokiDoki~★',
+  'ach.kirakira-first4.desc': 'Pull your first 4★.',
+  'ach.collector-half.title': 'Collector of Star Wishes',
+  'ach.collector-half.desc': 'Have the codex record 7 different cards.',
+  'ach.collector-full.title': 'And So the Pool Took Shape',
+  'ach.collector-full.desc': 'Have the codex record all 14 cards. Star Stones are no longer infinite.',
+  'ach.cheat-setname.title': 'Module "SetName" is Skipped.',
+  'ach.cheat-setname.desc': 'Type /kill--SetName into the META terminal and skip the thing that should never be skipped.',
+  'ach.baba.title': 'Shouting at the Sky — BABA',
+  'ach.baba.desc': 'Before the treasure chest, shout the last four elements carved into your DNA.',
+  /* ---- Nostalgia pool name & rate disclosure lines (R-6) ---- */
+  'pool.nostalgia': 'Nostalgia Simulated Pool',
+  'pool.nostalgia.line1': 'Original parameter comparison: 4★ 6% / 3★ 26.05%; every 10th round raises to 4★ 30% / 3★ 50%',
+  'pool.nostalgia.line2': 'Historical behavior reproduced as-is (single roll per group, overlapping tiers, global count per 10th round) — for probability comparison only',
+  'pool.nostalgia.line3': 'The nostalgia pool yields no usable cards; its pulls feed the measured curve on the codex page',
   'common.version': 'Lawbox Chronicle · v0.1.0',
   'common.stoneUnit': '◈',
   'legacy.levelPassed': 'You have passed this level!',
@@ -840,6 +949,40 @@ const JA_UI: UiDict = {
   'settings.clearArchiveDone': 'アーカイブを消去しました（図鑑・実績・ガチャ統計）',
   /* ---- トゥルーエンド toast（A4-5） ---- */
   'toast.trueEnding': 'トゥルーエンド到達：台本を拒んだ者。',
+  'toast.nostalgiaRound': '懐旧対照 第 {n} 回：4★×{four} 3★×{three}（原版再現、使用可能カードは出ない。実測カーブは更新済み）。',
+  /* ---- 成就名/説明（R-6、鍵順は簡中鍵源と一致。固有名詞は簡中ブロックの注釈
+   *      の内容言語決策に従い中国語原文を保持） ---- */
+  'ach.eg-fist-boss.title': '素手でBOSSを倒した男',
+  'ach.eg-fist-boss.desc': '武器を一切装備せず影流之主（シャドウロード）を倒す。原作隠しステージの真エンドルート。',
+  'ach.eg-stick-boss.title': '爺爺的拐杖（おじいちゃんの伝家の杖）でBOSSを倒した男',
+  'ach.eg-stick-boss.desc': '爷爷的拐杖（weapon-gfsStick）を装備して影流之主を倒す。',
+  'ach.eg-mihotel-boss.title': '㊙hotelでBOSSを倒した男',
+  'ach.eg-mihotel-boss.desc': '迷吼tiao（原作名：㊙Hotel）を装備して影流之主を倒す。爆発もまた、一つの裁き。',
+  'ach.boss-slayer.title': '影流之主、煙のように消えた',
+  'ach.boss-slayer.desc': 'BOSSを倒す。落とした手紙——忘れずに開いておくこと。',
+  'ach.first-clear.title': '石板、定位置へ',
+  'ach.first-clear.desc': '初めてすべての箱を旗の台座に押し込み、ステージをクリアする。',
+  'ach.perfect-par.title': '一歩多くなく、一歩少なからず',
+  'ach.perfect-par.desc': '3つ星評価（≤par 手数）で任意のステージをクリアする。',
+  'ach.hardhead.title': '壁に二十回 —— 穿墙术(?) 解放',
+  'ach.hardhead.desc': '合計 20 回壁に阻まれる。原作の「穿墙术」は console.log の一言だった。新作のフェイズウォークは本物。',
+  'ach.plane-walker.title': '表裏世界の訪問者',
+  'ach.plane-walker.desc': '初めて陰陽の位面を切り替える。世界の裏側があなたに開かれる。',
+  'ach.kirakira-first4.title': '★KiraKira~★DokiDoki~★',
+  'ach.kirakira-first4.desc': '初めて 4★ を引く。',
+  'ach.collector-half.title': '星願のコレクター',
+  'ach.collector-half.desc': '図鑑に 7 種類のカードを収録する。',
+  'ach.collector-full.title': 'そしてガチャは形を持った',
+  'ach.collector-full.desc': '図鑑に全 14 枚を収録する。星石はもう無限ではない。',
+  'ach.cheat-setname.title': 'Module "SetName" is Skipped.',
+  'ach.cheat-setname.desc': 'META ターミナルに /kill--SetName と打ち込み、スキップされるべきではないものをスキップした。',
+  'ach.baba.title': '空に向かって叫ぶ——BABA',
+  'ach.baba.desc': '宝箱の前で、DNA に刻まれた最後の四つの要素を叫ぶ。',
+  /* ---- 懐旧プール名と確率公開行（R-6） ---- */
+  'pool.nostalgia': '懐旧シミュレートプール',
+  'pool.nostalgia.line1': '原版パラメータ対照：4★ 6% ／ 3★ 26.05%、10 回ごとに 4★ 30% ／ 3★ 50% に上昇',
+  'pool.nostalgia.line2': '歴史的挙動をそのまま再現（グループ単位の単一ロール、二段的重複、10 回ごとの全体カウント）。確率対照専用',
+  'pool.nostalgia.line3': '懐旧プールは使用可能カードを出さず、出荷データは図鑑ページの実測カーブに記録される',
   'common.version': '法則箱庭異聞録 · v0.1.0',
   'common.stoneUnit': '◈',
   'legacy.levelPassed': 'あなたはこのレベルを通過しました！',
@@ -1040,6 +1183,41 @@ const RU_UI: UiDict = {
   'settings.clearArchiveDone': 'Архив очищен (каталог, достижения, статистика)',
   /* ---- Истинная концовка (A4-5) ---- */
   'toast.trueEnding': 'Истинная концовка достигнута: Тот, кто отверг сценарий.',
+  'toast.nostalgiaRound': 'Ностальгическое сравнение, раунд {n}: 4★×{four} 3★×{three} (точная копия оригинала, пригодных карт не даёт; измеренная кривая обновлена).',
+  /* ---- Названия/описания достижений (R-6, порядок ключей повторяет
+   *      китайский источник; имена собственные сохранены по-китайски —
+   *      решение о языке содержания см. в комментарии блока zh-Hans) ---- */
+  'ach.eg-fist-boss.title': 'Мужчина, победивший босса голыми руками',
+  'ach.eg-fist-boss.desc': 'Победите 影流之主 (Повелителя Теней) без какого-либо оружия. Путь истинной концовки оригинальной скрытой стадии.',
+  'ach.eg-stick-boss.title': 'Мужчина, победивший босса дедовой наследственной тростью',
+  'ach.eg-stick-boss.desc': 'Победите 影流之主, вооружившись 爷爷的拐杖 («Дедова трость», weapon-gfsStick).',
+  'ach.eg-mihotel-boss.title': 'Мужчина, победивший босса с ㊙hotel',
+  'ach.eg-mihotel-boss.desc': 'Победите 影流之主, вооружившись 迷吼tiao (оригинальное имя: ㊙Hotel). Взрыв — тоже форма суда.',
+  'ach.boss-slayer.title': '影流之主 развеялся дымом',
+  'ach.boss-slayer.desc': 'Победите босса. Падённое им письмо — не забудьте открыть.',
+  'ach.first-clear.title': 'Плита встала на место',
+  'ach.first-clear.desc': 'Впервые столкните все сундуки на пьедесталы флагов и пройдите уровень.',
+  'ach.perfect-par.title': 'Ни шагом больше, ни шагом меньше',
+  'ach.perfect-par.desc': 'Пройдите любой уровень с оценкой 3 звезды (≤ par ходов).',
+  'ach.hardhead.title': 'Двадцать раз в стену — 穿墙术(?) включён',
+  'ach.hardhead.desc': 'Всего 20 раз удариться в стену. В оригинале 穿墙术 («прохождение стен») был лишь строкой console.log; фазовый шаг ремейка — настоящий.',
+  'ach.plane-walker.title': 'Гость двустороннего мира',
+  'ach.plane-walker.desc': 'Впервые переключите планы Инь-Ян. Изнанка мира откроется вам.',
+  'ach.kirakira-first4.title': '★KiraKira~★DokiDoki~★',
+  'ach.kirakira-first4.desc': 'Впервые выбить 4★.',
+  'ach.collector-half.title': 'Коллекционер звёздных желаний',
+  'ach.collector-half.desc': 'Собрать в кодексе 7 разных карт.',
+  'ach.collector-full.title': 'И пул обрёл форму',
+  'ach.collector-full.desc': 'Собрать в кодексе все 14 карт. Звёздные камни больше не бесконечны.',
+  'ach.cheat-setname.title': 'Module "SetName" is Skipped.',
+  'ach.cheat-setname.desc': 'Введите /kill--SetName в META-терминал и пропустите то, что пропускать было нельзя.',
+  'ach.baba.title': 'Крикнуть в небо — BABA',
+  'ach.baba.desc': 'Перед сундуком выкрикнуть последние четыре элемента, вписанные в вашу ДНК.',
+  /* ---- Название ностальгического пула и строки раскрытия вероятностей (R-6) ---- */
+  'pool.nostalgia': 'Ностальгический имитационный пул',
+  'pool.nostalgia.line1': 'Сравнение с оригинальными параметрами: 4★ 6% / 3★ 26.05%; каждый 10-й раунд — 4★ 30% / 3★ 50%',
+  'pool.nostalgia.line2': 'Историческое поведение воспроизведено как есть (одна прокрутка на группу, перекрытие двух ступеней, глобальный счёт каждого 10-го раунда) — только для сравнения вероятностей',
+  'pool.nostalgia.line3': 'Ностальгический пул не даёт пригодных карт; его прокрутки попадают в измеренную кривую на странице кодекса',
   'common.version': 'Хроника Законной Шкатулки · v0.1.0',
   'common.stoneUnit': '◈',
   'legacy.levelPassed': 'Вы прошли этот уровень!',
@@ -1240,6 +1418,41 @@ const DE_UI: UiDict = {
   'settings.clearArchiveDone': 'Archiv geleert (Katalog, Erfolge, Statistik)',
   /* ---- Wahres Ende (A4-5) ---- */
   'toast.trueEnding': 'Wahres Ende erreicht: Derjenige, der das Skript ablehnte.',
+  'toast.nostalgiaRound': 'Nostalgie-Vergleich, Runde {n}: 4★×{four} 3★×{three} (originalgetreu, liefert keine brauchbaren Karten; die gemessene Kurve wurde aktualisiert).',
+  /* ---- Erfolgsnamen/Beschreibungen (R-6, Schlüsselreihenfolge wie die
+   *      chinesische Schlüsselquelle; Eigennamen bleiben gemäß der
+   *      Inhaltssprache-Entscheidung im zh-Hans-Kommentar chinesisch) ---- */
+  'ach.eg-fist-boss.title': 'Der Mann, der den Boss mit bloßen Händen besiegte',
+  'ach.eg-fist-boss.desc': 'Besiege 影流之主 (den Schattenfürsten) ganz ohne Waffe. Der True-End-Weg der originalen Geheimstufe.',
+  'ach.eg-stick-boss.title': 'Der Mann, der den Boss mit Großvaters Erbstock besiegte',
+  'ach.eg-stick-boss.desc': 'Besiege 影流之主 mit 爷爷的拐杖 („Großvaters Erbstock“, weapon-gfsStick) ausgerüstet.',
+  'ach.eg-mihotel-boss.title': 'Der Mann, der den Boss mit ㊙hotel besiegte',
+  'ach.eg-mihotel-boss.desc': 'Besiege 影流之主 mit 迷吼tiao (Originalname: ㊙Hotel) ausgerüstet. Explosion ist auch eine Form des Gerichts.',
+  'ach.boss-slayer.title': '影流之主 zerfiel zu Rauch',
+  'ach.boss-slayer.desc': 'Besiege den Boss. Der fallen gelassene Brief — denk dran, ihn zu öffnen.',
+  'ach.first-clear.title': 'Die Platte findet ihren Platz',
+  'ach.first-clear.desc': 'Schiebe zum ersten Mal alle Kisten auf die Fahnenpodeste und schließe ein Level ab.',
+  'ach.perfect-par.title': 'Kein Schritt mehr, kein Schritt weniger',
+  'ach.perfect-par.desc': 'Schließe ein beliebiges Level mit 3 Sternen (≤ par Schritte) ab.',
+  'ach.hardhead.title': 'Zwanzigmal in die Wand — 穿墙术(?) freigeschaltet',
+  'ach.hardhead.desc': 'Insgesamt 20-mal abgeblockt. In der Originalversion war 穿墙术 („Mauerdurchgang“) nur ein console.log; der Phasengang des Remakes ist echt.',
+  'ach.plane-walker.title': 'Besucher der zweiseitigen Welt',
+  'ach.plane-walker.desc': 'Wechsle zum ersten Mal die Yin-Yang-Ebenen. Die Kehrseite der Welt öffnet sich dir.',
+  'ach.kirakira-first4.title': '★KiraKira~★DokiDoki~★',
+  'ach.kirakira-first4.desc': 'Ziehe deinen ersten 4★.',
+  'ach.collector-half.title': 'Sammler von Sternwünschen',
+  'ach.collector-half.desc': 'Trage 7 verschiedene Karten ins Codex ein.',
+  'ach.collector-full.title': 'Und so nahm der Pool Gestalt an',
+  'ach.collector-full.desc': 'Trage alle 14 Karten ins Codex ein. Sternsteine sind ab jetzt nicht mehr unendlich.',
+  'ach.cheat-setname.title': 'Module "SetName" is Skipped.',
+  'ach.cheat-setname.desc': 'Tippe /kill--SetName ins META-Terminal ein und überspringe, was nie hätte übersprungen werden dürfen.',
+  'ach.baba.title': 'Ruf in den Himmel — BABA',
+  'ach.baba.desc': 'Rufe vor der Truhe die letzten vier Elemente, die in deiner DNA eingraviert sind.',
+  /* ---- Name des Nostalgie-Pools & Wahrscheinlichkeitszeilen (R-6) ---- */
+  'pool.nostalgia': 'Nostalgie-Simulationspool',
+  'pool.nostalgia.line1': 'Vergleich mit den Originalparametern: 4★ 6% / 3★ 26.05%; jede 10. Runde erhöht auf 4★ 30% / 3★ 50%',
+  'pool.nostalgia.line2': 'Historisches Verhalten exakt nachgebaut (ein Roll pro Gruppe, zwei überlappende Stufen, globale Zählung je 10. Runde) — nur zum Wahrscheinlichkeitsvergleich',
+  'pool.nostalgia.line3': 'Der Nostalgie-Pool liefert keine brauchbaren Karten; seine Züge fließen in die gemessene Kurve auf der Codex-Seite ein',
   'common.version': 'Lawbox Chronik · v0.1.0',
   'common.stoneUnit': '◈',
   'legacy.levelPassed': 'Du hast dieses Level bestanden!',
@@ -1440,6 +1653,41 @@ const FR_UI: UiDict = {
   'settings.clearArchiveDone': 'Archives vidées (codex, succès, statistiques)',
   /* ---- Fin vraie (A4-5) ---- */
   'toast.trueEnding': 'Fin vraie atteinte : Celui qui a rejeté le scénario.',
+  'toast.nostalgiaRound': 'Comparaison nostalgie, round {n} : 4★×{four} 3★×{three} (fidèle à l’original, ne produit aucune carte utilisable ; la courbe mesurée a été mise à jour).',
+  /* ---- Noms/descriptions des succès (R-6, ordre des clés identique à la
+   *      source zh-Hans ; les noms propres restent en chinois selon la
+   *      décision de langue du contenu, voir le commentaire du bloc zh-Hans) ---- */
+  'ach.eg-fist-boss.title': 'L’homme qui a vaincu le boss à mains nues',
+  'ach.eg-fist-boss.desc': 'Vaincre 影流之主 (le Seigneur des Ombres) sans aucune arme équipée. La route de la fin vraie de la scène cachée d’origine.',
+  'ach.eg-stick-boss.title': 'L’homme qui a vaincu le boss avec la canne héritée de grand-papa',
+  'ach.eg-stick-boss.desc': 'Vaincre 影流之主 en portant 爷爷的拐杖 (la canne héritée de grand-papa, weapon-gfsStick).',
+  'ach.eg-mihotel-boss.title': 'L’homme qui a vaincu le boss avec ㊙hotel',
+  'ach.eg-mihotel-boss.desc': 'Vaincre 影流之主 en portant 迷吼tiao (nom d’origine : ㊙Hotel). L’explosion, elle aussi, est une forme de jugement.',
+  'ach.boss-slayer.title': '影流之主 s’est évanoui en fumée',
+  'ach.boss-slayer.desc': 'Vaincre le boss. La lettre qu’il laisse tomber — pense à l’ouvrir.',
+  'ach.first-clear.title': 'La dalle retrouve sa place',
+  'ach.first-clear.desc': 'Pousser tous les coffres sur les socles des drapeaux et terminer un niveau pour la première fois.',
+  'ach.perfect-par.title': 'Pas un pas de plus, pas un pas de moins',
+  'ach.perfect-par.desc': 'Terminer n’importe quel niveau avec 3 étoiles (≤ par pas).',
+  'ach.hardhead.title': 'Vingt fois dans le mur — 穿墙术(?) activé',
+  'ach.hardhead.desc': 'Être bloqué 20 fois au total. Dans l’original, 穿墙术 (« passer les murs ») n’était qu’un console.log ; la marche de phase du remake, elle, est réelle.',
+  'ach.plane-walker.title': 'Visiteur du monde à deux faces',
+  'ach.plane-walker.desc': 'Basculer pour la première fois entre les plans Yin-Yang. L’envers du monde s’ouvre à toi.',
+  'ach.kirakira-first4.title': '★KiraKira~★DokiDoki~★',
+  'ach.kirakira-first4.desc': 'Tirer son premier 4★.',
+  'ach.collector-half.title': 'Collectionneur de vœux d’étoiles',
+  'ach.collector-half.desc': 'Faire figurer 7 cartes différentes dans le codex.',
+  'ach.collector-full.title': 'Et le pool prit forme',
+  'ach.collector-full.desc': 'Faire figurer les 14 cartes dans le codex. Les pierres d’étoile ne sont plus infinies.',
+  'ach.cheat-setname.title': 'Module "SetName" is Skipped.',
+  'ach.cheat-setname.desc': 'Taper /kill--SetName dans le terminal META et sauter ce qui n’aurait jamais dû être sauté.',
+  'ach.baba.title': 'Crier vers le ciel — BABA',
+  'ach.baba.desc': 'Devant le coffre, crier les quatre derniers éléments gravés dans ton ADN.',
+  /* ---- Nom du pool nostalgie & lignes de probabilités (R-6) ---- */
+  'pool.nostalgia': 'Pool de simulation nostalgie',
+  'pool.nostalgia.line1': 'Comparaison avec les paramètres d’origine : 4★ 6% / 3★ 26.05% ; chaque 10e round passe à 4★ 30% / 3★ 50%',
+  'pool.nostalgia.line2': 'Comportement historique reproduit tel quel (un tirage par groupe, deux paliers superposés, comptage global chaque 10e round) — pour comparaison de probabilités uniquement',
+  'pool.nostalgia.line3': 'Le pool nostalgie ne produit aucune carte utilisable ; ses tirages alimentent la courbe mesurée de la page codex',
   'common.version': 'Chronique de la Lawbox · v0.1.0',
   'common.stoneUnit': '◈',
   'legacy.levelPassed': 'Vous avez passé ce niveau!',
@@ -1483,13 +1731,19 @@ export function isUiTextKey(key: string): key is UiTextKey {
 /**
  * 取文案：locale → 简中 → key 本身（三级回落，绝不 undefined）。
  * {name} 形式的占位符经 vars 插值；缺参占位原样保留，便于发现漏传。
+ * R-4 双保险（N-2 之外的展示层防线）：gameStore 的 setLocale/migrate/merge
+ * 三通道已把白名单外的 locale 拦在状态外，这里再挡一次「绕过 store 直达渲染
+ * 树」的坏值（如手改组件 props / 外部测试直接传 locale）——locale 不在
+ * UI_TEXT 里时 UI_TEXT[locale] 为 undefined，[key] 上即 TypeError 崩渲染树；
+ * 防御性回落简中，绝不抛错。
  */
 export function tUi(
   locale: LocaleId,
   key: UiTextKey,
   vars?: Readonly<Record<string, string | number>>,
 ): string {
-  const raw = UI_TEXT[locale][key] ?? UI_TEXT['zh-Hans'][key] ?? key;
+  const dict = (UI_TEXT as Readonly<Record<string, UiDict | undefined>>)[locale] ?? UI_TEXT['zh-Hans'];
+  const raw = dict[key] ?? UI_TEXT['zh-Hans'][key] ?? key;
   if (vars === undefined) return raw;
   return raw.replace(/\{(\w+)\}/g, (match, name: string) =>
     vars[name] !== undefined ? String(vars[name]) : match,

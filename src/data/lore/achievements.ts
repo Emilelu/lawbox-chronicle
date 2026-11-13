@@ -13,7 +13,17 @@
  *
  * 本文件只描述「什么时候达成」与「文案是什么」；解锁状态与持久化归
  * src/archive/logbook.ts（zustand persist 分片）所有。
+ *
+ * 【R-6 展示层 i18n】title/description 是「内容语言」事实源：原作句逐字保真
+ * （含原件错字，lore 纪律不许改），非中文语种下的展示文本由 uiText 的
+ * ach.* 键提供（7 语种对齐），本表经 titleKey/descriptionKey 显式引用；
+ * 展示层（图鉴页/成就 toast）按 locale 经 tUi 取键，回落本表中文原文。
+ * 专有名词（敌名「影流之主」、武器名「爷爷的拐杖」「迷吼tiao」、原作梗
+ * 「㊙hotel」「穿墙术」）按内容语言决策保留中文 —— 决策记录见 uiText.ts
+ * 成就键区块注释。唯一依赖是 uiText 的类型（type-only，无运行期环）。
  */
+
+import type { UiTextKey } from '../i18n/uiText';
 
 /* ============================== 成就快照（对接点） ========================= */
 
@@ -48,9 +58,12 @@ export interface AchievementSnapshot {
 
 export interface AchievementDef {
   readonly id: string;
-  /** 成就名（原作成就逐字保留原文，含「（草」） */
+  /** 成就名（内容语言事实源：原作成就逐字保留原文，含「（草」） */
   readonly title: string;
   readonly description: string;
+  /** 展示层 i18n 引用（R-6）：非中文语种经 tUi 取 uiText 的 ach.* 键 */
+  readonly titleKey: UiTextKey;
+  readonly descriptionKey: UiTextKey;
   /** 文案/条件的原作出处（文件:行）；新作成就标注「新增」并注明衔接点 */
   readonly lore: string;
   /** true = 图鉴中隐藏，解锁前显示为「??？」 */
@@ -66,6 +79,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-eg-fist-boss',
     title: '赤手空拳打败BOSS的男人',
     description: '不装备任何武器击败影流之主。原作隐藏关的真结局路线。',
+    titleKey: 'ach.eg-fist-boss.title' as const,
+    descriptionKey: 'ach.eg-fist-boss.desc' as const,
     lore: 'KichikuAdventure EasterEgg.java:195',
     secret: true,
     test: (s) => s.bossKillWeapons.some((w) => w === null),
@@ -74,6 +89,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-eg-stick-boss',
     title: '用一根爷爷祖传的的拐杖打败BOSS的男人',
     description: '装备爷爷的拐杖（weapon-gfsStick）击败影流之主。',
+    titleKey: 'ach.eg-stick-boss.title' as const,
+    descriptionKey: 'ach.eg-stick-boss.desc' as const,
     lore: 'KichikuAdventure EasterEgg.java:202 / Game.java:1854（原句多一个「（草」）',
     test: (s) => s.bossKillWeapons.some((w) => w === 'weapon-gfsStick'),
   },
@@ -81,6 +98,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-eg-mihotel-boss',
     title: '用㊙hotel打败BOSS的男人',
     description: '装备迷吼tiao（原作名㊙Hotel）击败影流之主。爆炸，也是一种审判。',
+    titleKey: 'ach.eg-mihotel-boss.title' as const,
+    descriptionKey: 'ach.eg-mihotel-boss.desc' as const,
     lore: 'KichikuAdventure EasterEgg.java:208',
     test: (s) => s.bossKillWeapons.some((w) => w === 'weapon-mihotel'),
   },
@@ -88,6 +107,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-boss-slayer',
     title: '影流之主 灰飞烟灭了',
     description: '击败 BOSS。掉落的那封信，记得打开。',
+    titleKey: 'ach.boss-slayer.title' as const,
+    descriptionKey: 'ach.boss-slayer.desc' as const,
     lore: 'KichikuAdventure Game.java:1844-1846',
     test: (s) => s.bossKillWeapons.length >= 1,
   },
@@ -95,6 +116,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-first-clear',
     title: '石板归位',
     description: '第一次把所有箱子推上旗位，完成一段关卡。',
+    titleKey: 'ach.first-clear.title' as const,
+    descriptionKey: 'ach.first-clear.desc' as const,
     lore: '新增（衔接 SanBPushChest 的推箱通关流）',
     test: (s) => s.levelsCleared >= 1,
   },
@@ -102,6 +125,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-perfect-par',
     title: '一步不多，一步不少',
     description: '以 3 星评价（≤par 步数）完成任意关卡。',
+    titleKey: 'ach.perfect-par.title' as const,
+    descriptionKey: 'ach.perfect-par.desc' as const,
     lore: '新增（对应 core/formula.ts starRating 的 par 语义）',
     test: (s) => s.threeStarClears >= 1,
   },
@@ -109,6 +134,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-hardhead',
     title: '撞墙二十次，穿墙术(?)已开启',
     description: '累计撞墙 20 次。原作的「穿墙术」是一句 console.log；新作的相位穿行是真的。',
+    titleKey: 'ach.hardhead.title' as const,
+    descriptionKey: 'ach.hardhead.desc' as const,
     lore: '新增（原出处 SanBPushChest service.js:53-55，原空壳彩蛋，S17）',
     test: (s) => s.pushBlockedCount >= 20,
   },
@@ -116,6 +143,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-plane-walker',
     title: '表里世界的访客',
     description: '首次切换阴阳位面。世界的里侧向你敞开。',
+    titleKey: 'ach.plane-walker.title' as const,
+    descriptionKey: 'ach.plane-walker.desc' as const,
     lore: '新增（升格自 SanBPushChest README:26「可由用户控制的障碍物定时变换」）',
     test: (s) => s.planeShiftsUsed >= 1,
   },
@@ -123,6 +152,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-kirakira-first4',
     title: '★KiraKira~★DokiDoki~★',
     description: '第一次抽出 4★。',
+    titleKey: 'ach.kirakira-first4.title' as const,
+    descriptionKey: 'ach.kirakira-first4.desc' as const,
     lore: 'BandoriLotteryEmulator Lottery.java:26（原宣传语）',
     test: (s) => s.fourStarPulls >= 1,
   },
@@ -130,6 +161,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-collector-half',
     title: '星愿收藏家',
     description: '图鉴收录 7 张不同卡牌。',
+    titleKey: 'ach.collector-half.title' as const,
+    descriptionKey: 'ach.collector-half.desc' as const,
     lore: '新增（卡池共 14 条，见 data/gacha.ts）',
     test: (s) => s.distinctCardsOwned >= 7,
   },
@@ -137,6 +170,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-collector-full',
     title: '卡池于是有了形状',
     description: '图鉴收录全部 14 张卡牌。星石从此不再是无限的。',
+    titleKey: 'ach.collector-full.title' as const,
+    descriptionKey: 'ach.collector-full.desc' as const,
     lore: '新增（对照 Lottery.java:25「当前的星石数：∞」）',
     test: (s) => s.distinctCardsOwned >= 14,
   },
@@ -144,6 +179,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-cheat-setname',
     title: 'Module "SetName" is Skipped.',
     description: '在 META 终端输入 /kill--SetName，跳过了不该跳过的东西。',
+    titleKey: 'ach.cheat-setname.title' as const,
+    descriptionKey: 'ach.cheat-setname.desc' as const,
     lore: 'KichikuAdventure EasterEgg.java:83-90（开 幕 雷 击）',
     secret: true,
     test: (s) => s.loreEventsSeen.includes('cheat-kill--setname'),
@@ -152,6 +189,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = Object.freeze([
     id: 'ach-baba',
     title: '对着天空大喊——BABA',
     description: '在宝箱前喊出 DNA 里刻着的最后四个元素。',
+    titleKey: 'ach.baba.title' as const,
+    descriptionKey: 'ach.baba.desc' as const,
     lore: 'KichikuAdventure EasterEgg.java:115-171',
     secret: true,
     test: (s) => s.loreEventsSeen.includes('cheat-baba'),

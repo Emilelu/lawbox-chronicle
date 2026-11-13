@@ -632,8 +632,8 @@ describe('F 位面切换全链路（R6 实机验证的存档态接线）', () =>
 
 /* ================== A3-1 · 越界挑战层接线（store 端到端） ================== */
 
-describe('A3-1 —— 东侧越界「深入」经 enterChallengeLayer 真实进层（不再无声回主城）', () => {
-  it('beyond east 剧情 → 选「深入」→ 中转节点效果被 store 消费 → 注册会话层并 beginLevel', () => {
+describe('A3-1/R-2 —— 东侧越界「深入」：收尾对白完整演出后经挂账入层（不再截断 ending）', () => {
+  it('beyond east 剧情 → 选「深入」→ 中转/收尾 ending 逐拍演出 → 收尾才挂账入层', () => {
     grantLawCard('card-law-feather-chest'); // 主城无关卡门，防干扰
     store().startLevel('level-sb-01');
     expect(store().segment?.levelId).toBe('level-sb-01');
@@ -648,15 +648,58 @@ describe('A3-1 —— 东侧越界「深入」经 enterChallengeLayer 真实进�
       guard += 1;
     }
     expect(store().storyRuntime.phase).toBe('awaiting-choice');
-    // 选择「深入」：中转节点 onEnterEffects 发射 enterChallengeLayer →
-    // gameStore 消费 → generateEndlessFloor 成功 → beginLevel 进层
+    // 选择「深入」：中转节点 onEnterEffects 发射 enterChallengeLayer —— R-2 起
+    // store 只挂账不立即入层：phase 仍是 dialogue，玩家站在主城（段位未换）
     store().chooseStory('enter');
+    expect(store().phase).toBe('dialogue');
+    expect(store().storyRuntime.nodeId).toBe('outskirt-east-transit');
+    expect(store().segment?.levelId).toBe('level-sb-01');
+    // 中转对白 2 行逐拍演出（R-2 修复点：此前 chooseStory 后被 beginLevel
+    // 抢先切 playing，中转对白一瞬即被覆盖、收尾 ending 永不到达）
+    store().advanceDialogue(); // 中转第 2 行
+    expect(store().phase).toBe('dialogue');
+    expect(store().storyRuntime.nodeId).toBe('outskirt-east-transit');
+    expect(store().segment?.levelId).toBe('level-sb-01');
+    // 中转行耗尽 → 收尾 ending 节点（endingId 'outskirt-east-enter'，求解器
+    // 最短推数承诺的收尾口径）→ 剧本收尾 → 挂账执行：生成成功 → beginLevel 进层
+    //（ending 节点「进入即收尾」是全系统既有语义，北向同款——见 probe/flow 回归）
+    store().advanceDialogue();
     expect(store().phase).toBe('playing');
     expect(store().puzzle).not.toBeNull();
     expect(store().segment?.levelId).toContain('endless-challenge-east-endless');
     expect(store().segment?.levelId ?? '').toMatch(/-f1$/);
     // 会话层不在 LEVELS 静态表内（注册表注入），且是可解析的完整关卡
     expect(store().segment?.entities.some((e) => e.kind === 'player')).toBe(true);
+    // storyRuntime 不再残留对话相（收尾合并为 IDLE + 收尾旗标，含新 endingId）
+    expect(store().storyRuntime.phase).toBe('idle');
+    expect(store().storyRuntime.flags['last-ending-id']).toBe('outskirt-east-enter');
+  });
+
+  it('南向深渊坠道（R-1 × R-2 交叉）：南缘撞墙外推开演 →「接受挑战」收尾后入层', () => {
+    grantLawCard('card-law-feather-chest'); // 主城无关卡门，防干扰
+    store().startLevel('level-sb-01');
+    teleportPlayer(7, 1); // 网格 y=1 = 世界 y=−5（南缘最深可站位；row0 全墙不可站）
+    store().move('up'); // 南向撞边界墙 → A3-2 南缘外推 → script-outskirt-south
+    expect(store().phase).toBe('dialogue');
+    expect(store().storyRuntime.scriptId).toBe('script-outskirt-south');
+    let guard = 0;
+    while (store().storyRuntime.phase !== 'awaiting-choice' && guard < 8) {
+      store().advanceDialogue();
+      guard += 1;
+    }
+    store().chooseStory('accept'); // 「接受挑战：进入『深渊坠道』」
+    expect(store().storyRuntime.nodeId).toBe('outskirt-south-transit');
+    // 中转对白 2 行逐拍演出，期间不进层（段位仍是主城）
+    store().advanceDialogue(); // 中转第 2 行
+    expect(store().storyRuntime.nodeId).toBe('outskirt-south-transit');
+    expect(store().segment?.levelId).toBe('level-sb-01');
+    // 中转行耗尽 → 收尾 ending（endingId 'outskirt-south-enter'）→ 收尾挂账入层
+    store().advanceDialogue();
+    expect(store().phase).toBe('playing');
+    expect(store().segment?.levelId).toContain('endless-challenge-south-abyss');
+    expect(store().segment?.levelId ?? '').toMatch(/-f1$/);
+    expect(store().storyRuntime.phase).toBe('idle');
+    expect(store().storyRuntime.flags['last-ending-id']).toBe('outskirt-south-enter');
   });
 });
 
@@ -689,6 +732,24 @@ describe('A3-2 —— 南向 beyond：南缓冲带不可站立，南缘撞墙外
     store().move('up');
     expect(store().phase).toBe('playing');
     expect(store().storyRuntime.scriptId).toBeNull();
+  });
+});
+
+/* ================== R-7 · 怀旧对照 toast 键控（store 侧 tUi 插值） ================== */
+
+describe('R-7 —— 怀旧对照 toast 按 locale 渲染（不再直显中文整句）', () => {
+  it('en locale 下 toast 为英文插值文本；zh-Hans 保持既有中文口径', () => {
+    store().startLevel('level-sb-01');
+    store().setLocale('en');
+    const enEvents = captureDuring(() => store().runNostalgiaGacha());
+    const enToast = enEvents.find((e) => e.type === 'ui/toast');
+    expect(enToast).toBeDefined();
+    expect((enToast as { messageKey: string }).messageKey).not.toMatch(/[\u4e00-\u9fff]/);
+    expect((enToast as { messageKey: string }).messageKey).toMatch(/^Nostalgia comparison round \d+: 4★×\d+ 3★×\d+/);
+    store().setLocale('zh-Hans');
+    const zhEvents = captureDuring(() => store().runNostalgiaGacha());
+    const zhToast = zhEvents.find((e) => e.type === 'ui/toast');
+    expect((zhToast as { messageKey: string }).messageKey).toMatch(/^怀旧对照第 \d+ 回：4★×\d+ 3★×\d+（原版复刻/);
   });
 });
 

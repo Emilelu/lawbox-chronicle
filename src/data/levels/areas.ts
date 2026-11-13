@@ -103,7 +103,11 @@ export const AREA_LEVELS: readonly Level3D[] = [
       // 时，虚拟位 world y=+8 达到 beyond 阈值（≥|8|），script-outskirt-north
       // （时空裂缝 → script-hidden-game）自此真实可达。只增行不挪行：既有格的
       // 世界坐标（grid-(7,6)）与全部既有触发零位移。对侧（世界 −y，深渊坠道）
-      // 受网格非负索引限制无法用数据补行，判定路线在 gameStore（G4 协调项）。
+      // 受网格非负索引限制无法用数据补行，beyond 判定已由 gameStore 的南缘外推
+      // 路线实装（A3-2：玩家立于世界南缘 y=−5 被边界墙拒绝时，从虚拟位沿被拒
+      // 方向逐格外推、穿过不可站的缓冲带直达 beyond south 再求值，见
+      // gameStore.applyPuzzleAction 的 southEdgeRejected 分支）——数据侧零改动，
+      // 本关网格保持 15×14，无需重跑 genSolutionSteps。
       [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1],
     ]),
     heights: H_SB_01,

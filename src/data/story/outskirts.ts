@@ -13,10 +13,12 @@
  *   - 南 / 西 = 高难挑战层（原版即死/直接退出的内容反转为可挑战内容）；
  *   - 缓冲带 |6|~|7| 保留原版警示文案。
  * A3-1 接线：三个挑战层的「进入」分支经中转对话节点的 onEnterEffects 显式
- * 发射 {kind:'enterChallengeLayer', layerId}（解释器产出 → gameStore 消费，
- * 结束ending 后无声返回主城的死内容自此接通）。中转节点台词只在「生成失败」
- * 的回退路径展示（生成成功时 beginLevel 立即接管画面直接进层），ending 节点
- * 保留为显式图终点（结构校验需要），文案按「生成中断」口径书写。
+ * 发射 {kind:'enterChallengeLayer', layerId}（解释器产出 → gameStore 挂账，
+ * 结束ending 后无声返回主城的死内容自此接通）。R-2 起 store 侧把入层延迟到
+ * 剧本收尾（closeStoryRuntime）：中转节点与收尾 ending 完整演出后才生成挑战
+ * 层并 beginLevel 接管画面，生成失败（toast 提示）时玩家留在原地可重试，
+ * ending 节点保留为显式图终点（结构校验需要），文案按「收尾后自动入层」
+ * 口径书写。
  */
 
 import type { ChallengeLayerId, StoryScriptDef } from '../../engine/story/interpreter';
@@ -192,15 +194,16 @@ export const OUTSKIRT_SOUTH_SCRIPT: StoryScriptDef = {
       defaultNext: 'outskirt-south-transit',
     },
     {
-      // A3-1：进入效果在节点进入时发射（gameStore 消费 enterChallengeLayer →
-      // 生成挑战层并 beginLevel）。生成成功时本节点台词被入层演出覆盖；
-      // 生成失败（toast 提示）时走显式 ending 收尾，玩家留在原地可重试。
+      // A3-1/R-2：进入效果在节点进入时发射（解释器产出 → gameStore 挂账），
+      // 但 store 侧把它延迟到剧本收尾才入层 —— 本节点与下方收尾 ending 完整
+      // 演出后，closeStoryRuntime 才执行 enterChallengeLayer（生成挑战层并
+      // beginLevel）。生成失败（toast 提示）时玩家留在原地，再次坠落即可重试。
       kind: 'dialogue',
       id: 'outskirt-south-transit',
       onEnterEffects: [{ kind: 'enterChallengeLayer', layerId: 'south-abyss' }],
       lines: [
         { speakerId: 'narration', text: '坠道在你脚下继续向下延展——岩层一块块亮起，像是有人在深处点灯。' },
-        { speakerId: 'meta', text: '（深渊坠道由世界实时生成并经内置求解器校验可解。若生成中断，关闭此窗口留在原地，再次坠落即可重试。）' },
+        { speakerId: 'meta', text: '（深渊坠道由世界实时生成并经内置求解器校验可解。收尾对白演完即自动入层；若生成中断，你会留在原地，再次坠落即可重试。）' },
       ],
       next: 'outskirt-south-enter',
     },
@@ -209,7 +212,7 @@ export const OUTSKIRT_SOUTH_SCRIPT: StoryScriptDef = {
       id: 'outskirt-south-enter',
       endingId: 'outskirt-south-enter',
       closable: true,
-      lines: [{ speakerId: 'meta', text: '（生成中断——你被留在了原地。再次坠入裂缝，挑战层会重新生成。）' }],
+      lines: [{ speakerId: 'meta', text: '（关闭此窗口后，「深渊坠道」挑战层将自动生成并开启。若生成中断，你会留在原地——再次坠入裂缝即可重试。）' }],
     },
     {
       kind: 'ending',
@@ -253,15 +256,16 @@ export const OUTSKIRT_EAST_SCRIPT: StoryScriptDef = {
       defaultNext: 'outskirt-east-transit',
     },
     {
-      // A3-1：进入效果在节点进入时发射（gameStore 消费 enterChallengeLayer →
-      // 生成回廊层并 beginLevel）。生成成功时本节点台词被入层演出覆盖；
-      // 生成失败（toast 提示）时走显式 ending 收尾，玩家留在原地可重试。
+      // A3-1/R-2：进入效果在节点进入时发射（解释器产出 → gameStore 挂账），
+      // 但 store 侧把它延迟到剧本收尾才入层 —— 本节点与下方收尾 ending 完整
+      // 演出后，closeStoryRuntime 才执行 enterChallengeLayer（生成回廊层并
+      // beginLevel）。生成失败（toast 提示）时玩家留在原地，再次触发即可重试。
       kind: 'dialogue',
       id: 'outskirt-east-transit',
       onEnterEffects: [{ kind: 'enterChallengeLayer', layerId: 'east-endless' }],
       lines: [
         { speakerId: 'narration', text: '法阵深处，回廊的砖石正一块块拼合——下一层亮起来了。' },
-        { speakerId: 'meta', text: '（无尽回廊由世界实时生成并经内置求解器校验可解，通关后展示最短推数。若生成中断，关闭此窗口留在原地，再次触发法阵即可重试。）' },
+        { speakerId: 'meta', text: '（无尽回廊由世界实时生成并经内置求解器校验可解，通关后展示最短推数。收尾对白演完即自动入层；若生成中断，你会留在原地，再次触发法阵即可重试。）' },
       ],
       next: 'outskirt-east-enter',
     },
@@ -270,7 +274,7 @@ export const OUTSKIRT_EAST_SCRIPT: StoryScriptDef = {
       id: 'outskirt-east-enter',
       endingId: 'outskirt-east-enter',
       closable: true,
-      lines: [{ speakerId: 'meta', text: '（生成中断——你被留在了原地。再次触发法阵，回廊会重新生成。）' }],
+      lines: [{ speakerId: 'meta', text: '（关闭此窗口后，「无尽回廊」下一层将自动生成并开启。若生成中断，你会留在原地——再次触发法阵即可重试。）' }],
     },
     {
       kind: 'dialogue',
@@ -320,15 +324,16 @@ export const OUTSKIRT_WEST_SCRIPT: StoryScriptDef = {
       defaultNext: 'outskirt-west-transit',
     },
     {
-      // A3-1：进入效果在节点进入时发射（gameStore 消费 enterChallengeLayer →
-      // 生成挑战层并 beginLevel）。生成成功时本节点台词被入层演出覆盖；
-      // 生成失败（toast 提示）时走显式 ending 收尾，玩家留在原地可重试。
+      // A3-1/R-2：进入效果在节点进入时发射（解释器产出 → gameStore 挂账），
+      // 但 store 侧把它延迟到剧本收尾才入层 —— 本节点与下方收尾 ending 完整
+      // 演出后，closeStoryRuntime 才执行 enterChallengeLayer（生成挑战层并
+      // beginLevel）。生成失败（toast 提示）时玩家留在原地，再次触墙即可重试。
       kind: 'dialogue',
       id: 'outskirt-west-transit',
       onEnterEffects: [{ kind: 'enterChallengeLayer', layerId: 'west-end-wall' }],
       lines: [
         { speakerId: 'narration', text: '墙下的裂缝缓缓拓宽，E N D 的字样沉入裂缝深处——关底在下面等你。' },
-        { speakerId: 'meta', text: '（E N D 之壁由世界实时生成并经内置求解器校验可解。若生成中断，关闭此窗口留在原地，再次触墙即可重试。）' },
+        { speakerId: 'meta', text: '（E N D 之壁由世界实时生成并经内置求解器校验可解。收尾对白演完即自动入层；若生成中断，你会留在原地，再次触墙即可重试。）' },
       ],
       next: 'outskirt-west-enter',
     },
@@ -337,7 +342,7 @@ export const OUTSKIRT_WEST_SCRIPT: StoryScriptDef = {
       id: 'outskirt-west-enter',
       endingId: 'outskirt-west-enter',
       closable: true,
-      lines: [{ speakerId: 'meta', text: '（生成中断——你被留在了原地。再次走向巨墙，裂缝会重新打开。）' }],
+      lines: [{ speakerId: 'meta', text: '（关闭此窗口后，「E N D 之壁」挑战层将自动生成并开启。若生成中断，你会留在原地——再次走向巨墙即可重试。）' }],
     },
     {
       kind: 'ending',
